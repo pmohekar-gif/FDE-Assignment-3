@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen --extra dev
+      - name: Lint
+        run: make lint
+      - name: Typecheck
+        run: make typecheck
+      - name: Unit
+        run: make unit
+      - name: Integration and E2E
+        run: make integration
+      - name: Evaluation and unsafe-allow gate
+        run: make eval
+      - name: Build package
+        run: make build
+      - name: Build container
+        run: docker build -t warrant-control-plane:test .

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Warrant{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark">W</span><span>Warrant</span></a>
+    <nav aria-label="Primary navigation">
+      <a href="/">Inbox</a><a href="/policy">Policy</a><a id="audit-nav" href="/audit?actor_id=admin-demo">Audit</a><a href="/evaluation">Evaluation</a>
+    </nav>
+    <label class="actor-switcher">Acting as:
+      <select id="actor-switcher" aria-label="Session actor">
+        {% for user in users|default([]) %}<option value="{{ user.id }}" {% if user.id == 'admin-demo' %}selected{% endif %}>{{ user.display_name }} · {{ user.role }}</option>{% endfor %}
+      </select>
+    </label>
+    <div id="health-mode" class="mode {{ 'degraded' if fixture_failure else ('fixture' if fixture_mode else 'live') }}">
+      <span></span><b>{{ 'DEGRADED · ' ~ fixture_failure if fixture_failure else ('SIMULATED / FIXTURE AI' if fixture_mode else 'LIVE MODEL') }}</b>
+    </div>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script>
+    window.WARRANT = {
+      csrf: {{ csrf_token|default('')|tojson }}, fixture: {{ fixture_mode|default(true)|tojson }},
+      workspace: {{ workspace_id|default('ws-demo')|tojson }}, actor: localStorage.getItem('warrant.actor') || 'admin-demo'
+    };
+    class ApiError extends Error { constructor(status, body) { super(body.error || body.detail || `Request failed (${status})`); this.status=status; this.body=body; } }
+    function toast(message) { const node=document.getElementById('toast'); node.textContent=message; node.className='toast show'; setTimeout(()=>node.className='toast',2800); }
+    async function api(path, options={}) {
+      options.headers=Object.assign({'Content-Type':'application/json','X-CSRF-Token':window.WARRANT.csrf,'X-Workspace-Id':window.WARRANT.workspace,'X-Actor-Id':window.WARRANT.actor},options.headers||{});
+      const response=await fetch(path,options), type=response.headers.get('content-type')||'';
+      const body=type.includes('json')?await response.json():await response.text();
+      if(!response.ok) throw new ApiError(response.status,typeof body==='object'?body:{error:body}); return body;
+    }
+    function renderError(container,error,context='request') {
+      const labels={401:'Authentication required',403:'Authority prohibited',409:'State conflict',410:'Authority expired',422:'Evidence or policy invalid'};
+      container.hidden=false; container.className=`inline-error error-${error.status||500}`;
+      container.innerHTML=`<strong>${labels[error.status]||'Request failed'}</strong><p>${error.message}</p><small>${context} was not applied.</small>`;
+    }
+    function formatRelative(value) { const delta=(new Date(value).getTime()-Date.now())/1000,future=delta>0,seconds=Math.abs(delta); let amount,unit; if(seconds<60){amount=Math.max(1,Math.round(seconds));unit='second';}else if(seconds<3600){amount=Math.round(seconds/60);unit='minute';}else if(seconds<86400){amount=Math.round(seconds/3600);unit='hour';}else{amount=Math.round(seconds/86400);unit='day';}return future?`in ${amount} ${unit}${amount===1?'':'s'}`:`${amount} ${unit}${amount===1?'':'s'} ago`; }
+    document.querySelectorAll('.relative-time').forEach(node=>{node.textContent=formatRelative(node.dataset.time);node.title=node.dataset.time;});
+    const actorSelect=document.getElementById('actor-switcher'),auditNav=document.getElementById('audit-nav'); function syncActor(){if(auditNav)auditNav.href=`/audit?actor_id=${encodeURIComponent(window.WARRANT.actor)}`;} if(actorSelect){actorSelect.value=[...actorSelect.options].some(option=>option.value===window.WARRANT.actor)?window.WARRANT.actor:'admin-demo';window.WARRANT.actor=actorSelect.value;syncActor();actorSelect.addEventListener('change',()=>{window.WARRANT.actor=actorSelect.value;localStorage.setItem('warrant.actor',actorSelect.value);syncActor();window.dispatchEvent(new Event('warrant:actor'));});}
+    fetch('/healthz').then(response=>response.json()).then(health=>{if(health.status==='degraded'){const node=document.getElementById('health-mode');node.className='mode degraded';node.querySelector('b').textContent=`DEGRADED · ${health.degraded.join(', ')}`;}}).catch(()=>{});
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

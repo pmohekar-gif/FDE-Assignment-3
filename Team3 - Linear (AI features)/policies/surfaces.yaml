@@ -1,0 +1,43 @@
+surfaces:
+  - glob: services/billing/**
+    label: Billing services
+    protected: true
+    irreversible: false
+    security_sensitive: false
+    data_classes: [payment_instrument, customer_data]
+    owners: [lead-payments, admin-demo]
+  - glob: services/billing/ledger/**
+    label: Immutable billing ledger
+    protected: true
+    irreversible: true
+    security_sensitive: false
+    data_classes: [payment_instrument, financial_record]
+    owners: [lead-payments, admin-demo]
+  - glob: services/auth/keys/**
+    label: Authentication keys
+    protected: true
+    irreversible: true
+    security_sensitive: true
+    data_classes: [credential]
+    owners: [security-lead, admin-demo]
+  - glob: infra/deploy/**
+    label: Production deployment
+    protected: true
+    irreversible: false
+    security_sensitive: false
+    data_classes: []
+    owners: [platform-lead, admin-demo]
+  - glob: web/**
+    label: Web application
+    protected: false
+    irreversible: false
+    security_sensitive: false
+    data_classes: []
+    owners: [lead-web, admin-demo]
+  - glob: docs/**
+    label: Documentation
+    protected: false
+    irreversible: false
+    security_sensitive: false
+    data_classes: []
+    owners: [lead-web, admin-demo]

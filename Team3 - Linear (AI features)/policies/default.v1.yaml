@@ -1,0 +1,130 @@
+version: v1
+description: Default synthetic-workspace policy. AI describes evidence; this policy alone authorises.
+allow_sufficiency_threshold: 0.70
+
+# Ordered overrides. A terminal match ends evaluation. Non-terminal matches may only
+# reduce the autonomy established by the consequence/reversibility matrix.
+rules:
+  - id: R-003
+    conditions:
+      - feature: injection_signal
+        operator: gte
+        value: 0.60
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [INJECTION_SIGNAL]
+  - id: R-001
+    conditions:
+      - feature: security_sensitive
+    verdict: DENY
+    reason_codes: [SECURITY_SENSITIVE]
+    terminal: true
+  - id: R-002
+    conditions:
+      - feature: protected_surface
+      - feature: sensitive_data
+    match: any
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [PROTECTED_OR_SENSITIVE_SURFACE]
+  - id: R-005
+    conditions:
+      - feature: external_side_effect
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [EXTERNAL_SIDE_EFFECT]
+  - id: R-007
+    conditions:
+      - feature: concurrency_conflict
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [CONCURRENT_WARRANT]
+  - id: R-023
+    conditions:
+      - feature: scope_fully_held_by_concurrent_warrant
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [SCOPE_FULLY_HELD_BY_CONCURRENT_WARRANT]
+    fail_closed: true
+  - id: R-024
+    conditions:
+      - feature: surfaces_outside_declared_scope
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [SURFACES_OUTSIDE_DECLARED_SCOPE]
+    fail_closed: true
+  - id: R-012
+    conditions:
+      - feature: requester_is_not_code_owner
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [CODE_OWNER_REQUIRED]
+  - id: R-006
+    conditions:
+      - feature: untrusted_origin
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [UNTRUSTED_DELEGATION_ORIGIN]
+  - id: R-020
+    conditions:
+      - feature: evidence_degraded_or_unknown
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [EVIDENCE_DEGRADED_OR_UNKNOWN]
+    fail_closed: true
+  - id: R-021
+    conditions:
+      - feature: surface_map_stale
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [SURFACE_MAP_STALE]
+    fail_closed: true
+  - id: R-022
+    conditions:
+      - feature: provider_fallback_used
+    verdict: REQUIRE_APPROVAL
+    reason_codes: [PROVIDER_FALLBACK_USED]
+    fail_closed: true
+
+matrix:
+  READ_ONLY:
+    AUTOMATIC: {verdict: ALLOW, reason_code: READ_ONLY_SCOPE, rule_id: M-READ-AUTO}
+    MANUAL: {verdict: ALLOW, reason_code: READ_ONLY_SCOPE, rule_id: M-READ-MANUAL}
+    IRREVERSIBLE: {verdict: REQUIRE_APPROVAL, reason_code: IRREVERSIBILITY_MISMATCH, rule_id: M-READ-IRREV}
+    UNKNOWN: {verdict: REQUIRE_APPROVAL, reason_code: UNKNOWN_REVERSIBILITY, rule_id: M-READ-UNKNOWN}
+  INTERNAL_MODIFICATION:
+    AUTOMATIC: {verdict: ALLOW, reason_code: STANDARD_REVERSIBLE_SCOPE, rule_id: M-INTERNAL-AUTO}
+    MANUAL: {verdict: REQUIRE_APPROVAL, reason_code: MANUAL_ROLLBACK, rule_id: M-INTERNAL-MANUAL}
+    IRREVERSIBLE: {verdict: REQUIRE_APPROVAL, reason_code: IRREVERSIBLE_INTERNAL_CHANGE, rule_id: M-INTERNAL-IRREV}
+    UNKNOWN: {verdict: REQUIRE_APPROVAL, reason_code: UNKNOWN_REVERSIBILITY, rule_id: M-INTERNAL-UNKNOWN}
+  EXTERNAL_SIDE_EFFECT:
+    AUTOMATIC: {verdict: REQUIRE_APPROVAL, reason_code: EXTERNAL_SIDE_EFFECT, rule_id: M-EXTERNAL-AUTO}
+    MANUAL: {verdict: REQUIRE_APPROVAL, reason_code: EXTERNAL_SIDE_EFFECT, rule_id: M-EXTERNAL-MANUAL}
+    IRREVERSIBLE: {verdict: DENY, reason_code: IRREVERSIBLE_EXTERNAL_SIDE_EFFECT, rule_id: M-EXTERNAL-IRREV}
+    UNKNOWN: {verdict: DENY, reason_code: UNKNOWN_EXTERNAL_REVERSIBILITY, rule_id: M-EXTERNAL-UNKNOWN}
+  DESTRUCTIVE:
+    AUTOMATIC:
+      verdict: REQUIRE_APPROVAL
+      reason_code: DESTRUCTIVE_WITH_ROLLBACK
+      rule_id: M-DESTRUCTIVE-AUTO
+      required_features: [rollback_available]
+      missing_required_verdict: DENY
+      missing_required_reason: ROLLBACK_REQUIRED
+    MANUAL: {verdict: DENY, reason_code: DESTRUCTIVE_MANUAL_ROLLBACK, rule_id: M-DESTRUCTIVE-MANUAL}
+    IRREVERSIBLE: {verdict: DENY, reason_code: IRREVERSIBLE_DESTRUCTIVE_ACTION, rule_id: M-DESTRUCTIVE-IRREV}
+    UNKNOWN: {verdict: DENY, reason_code: UNKNOWN_DESTRUCTIVE_REVERSIBILITY, rule_id: M-DESTRUCTIVE-UNKNOWN}
+  FINANCIAL_SECURITY:
+    AUTOMATIC: {verdict: DENY, reason_code: FINANCIAL_OR_SECURITY_ACTION, rule_id: M-SECURITY-AUTO}
+    MANUAL: {verdict: DENY, reason_code: FINANCIAL_OR_SECURITY_ACTION, rule_id: M-SECURITY-MANUAL}
+    IRREVERSIBLE: {verdict: DENY, reason_code: FINANCIAL_OR_SECURITY_ACTION, rule_id: M-SECURITY-IRREV}
+    UNKNOWN: {verdict: DENY, reason_code: FINANCIAL_OR_SECURITY_ACTION, rule_id: M-SECURITY-UNKNOWN}
+  UNKNOWN:
+    AUTOMATIC: {verdict: REQUIRE_APPROVAL, reason_code: UNKNOWN_CONSEQUENCE, rule_id: M-UNKNOWN-AUTO}
+    MANUAL: {verdict: REQUIRE_APPROVAL, reason_code: UNKNOWN_CONSEQUENCE, rule_id: M-UNKNOWN-MANUAL}
+    IRREVERSIBLE: {verdict: DENY, reason_code: UNKNOWN_IRREVERSIBLE_ACTION, rule_id: M-UNKNOWN-IRREV}
+    UNKNOWN: {verdict: REQUIRE_APPROVAL, reason_code: UNKNOWN_RISK, rule_id: M-UNKNOWN-UNKNOWN}
+
+tool_grants:
+  READ_ONLY: [read_repo]
+  INTERNAL_MODIFICATION: [read_repo, write_files, run_tests, open_draft_pr]
+  EXTERNAL_SIDE_EFFECT: [read_repo, write_files, run_tests, open_draft_pr]
+  DESTRUCTIVE: [read_repo]
+  FINANCIAL_SECURITY: [read_repo]
+  UNKNOWN: [read_repo]
+
+never_grantable_tools:
+  - merge_pr
+  - deploy
+  - migrate_db
+  - rotate_secret
+  - delete_data

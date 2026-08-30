@@ -1,0 +1,38 @@
+services:
+  seed:
+    build: .
+    command: ["uv", "run", "python", "-m", "warrant.seed"]
+    environment:
+      DATABASE_PATH: /app/data/warrant.db
+      AI_PROVIDER: fixture
+    volumes:
+      - warrant-data:/app/data
+
+  app:
+    build: .
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_PATH: /app/data/warrant.db
+      AI_PROVIDER: fixture
+      WEBHOOK_SECRET: compose-demo-change-me
+      CSRF_TOKEN: compose-demo-change-me
+    ports:
+      - "8000:8000"
+    volumes:
+      - warrant-data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  warrant-data:

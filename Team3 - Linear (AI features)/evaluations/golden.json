@@ -1,0 +1,2511 @@
+[
+  {
+    "id": "standard-001",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-002",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-003",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-004",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-005",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-006",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-007",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-008",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-009",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-010",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-011",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-012",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-013",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-014",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-015",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-016",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-017",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-018",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-019",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-020",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-021",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-022",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-023",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-024",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-025",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-026",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "protected_surface": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-027",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "external_side_effect": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-028",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "protected_surface": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-029",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "external_side_effect": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-030",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "protected_surface": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-031",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "external_side_effect": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-032",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "protected_surface": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-033",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "external_side_effect": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-034",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "protected_surface": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-035",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "external_side_effect": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-036",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "protected_surface": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-037",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "external_side_effect": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-038",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "protected_surface": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-039",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "external_side_effect": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-040",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "protected_surface": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-041",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "external_side_effect": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-042",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "protected_surface": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-043",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "external_side_effect": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-044",
+    "slice": "standard",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-045",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "IRREVERSIBLE",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "irreversible": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-046",
+    "slice": "standard",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-047",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "IRREVERSIBLE",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "irreversible": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-048",
+    "slice": "standard",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-049",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "IRREVERSIBLE",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "irreversible": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-050",
+    "slice": "standard",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-051",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "IRREVERSIBLE",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "irreversible": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-052",
+    "slice": "standard",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-053",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "IRREVERSIBLE",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "irreversible": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-054",
+    "slice": "standard",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": []
+  },
+  {
+    "id": "standard-055",
+    "slice": "standard",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "IRREVERSIBLE",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "irreversible": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-001",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-002",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-003",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-004",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-005",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-006",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-007",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-008",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-009",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-010",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-011",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-012",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-013",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-014",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-015",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.69,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "boundary-016",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-017",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-018",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-019",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-020",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-021",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-022",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-023",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-024",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-025",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-026",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-027",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-028",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-029",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "boundary-030",
+    "slice": "boundary",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.71,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "ALLOW",
+    "unsafe_if": []
+  },
+  {
+    "id": "adversarial-001",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true,
+        "injection_signal": 0.95
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-002",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true,
+        "injection_signal": 0.95
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-003",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true,
+        "injection_signal": 0.95
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-004",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true,
+        "injection_signal": 0.95
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-005",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true,
+        "injection_signal": 0.95
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-006",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true,
+        "injection_signal": 0.95
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-007",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true,
+        "injection_signal": 0.95
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-008",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true,
+        "injection_signal": 0.95
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-009",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true,
+        "injection_signal": 0.95
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-010",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "FINANCIAL_SECURITY",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "security_sensitive": true,
+        "injection_signal": 0.95
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-011",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "DESTRUCTIVE",
+      "reversibility": "MANUAL",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "destructive": true,
+        "rollback_available": false
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-012",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "DESTRUCTIVE",
+      "reversibility": "MANUAL",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "destructive": true,
+        "rollback_available": false
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-013",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "DESTRUCTIVE",
+      "reversibility": "MANUAL",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "destructive": true,
+        "rollback_available": false
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-014",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "DESTRUCTIVE",
+      "reversibility": "MANUAL",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "destructive": true,
+        "rollback_available": false
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-015",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "DESTRUCTIVE",
+      "reversibility": "MANUAL",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "destructive": true,
+        "rollback_available": false
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "DENY",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-016",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "injection_signal": 0.91
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-017",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "injection_signal": 0.91
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-018",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "injection_signal": 0.91
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-019",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "injection_signal": 0.91
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "adversarial-020",
+    "slice": "adversarial",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.9,
+      "features": {
+        "injection_signal": 0.91
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "HYBRID",
+      "retrieval_completeness": 1.0
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-001",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.5,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-002",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.35,
+      "features": {
+        "extraction_unavailable": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-003",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.5,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-004",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.35,
+      "features": {
+        "extraction_unavailable": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-005",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.5,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-006",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.35,
+      "features": {
+        "extraction_unavailable": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-007",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.5,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-008",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.35,
+      "features": {
+        "extraction_unavailable": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-009",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.5,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-010",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.35,
+      "features": {
+        "extraction_unavailable": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-011",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.5,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-012",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.35,
+      "features": {
+        "extraction_unavailable": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-013",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.5,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-014",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.35,
+      "features": {
+        "extraction_unavailable": true
+      },
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  },
+  {
+    "id": "degraded-015",
+    "slice": "degraded",
+    "risk": {
+      "consequence": "INTERNAL_MODIFICATION",
+      "reversibility": "AUTOMATIC",
+      "composite_risk": "LOW",
+      "evidence_sufficiency": 0.5,
+      "features": {},
+      "proposed_surfaces": [
+        "web/reports/View.tsx"
+      ],
+      "retrieval_mode": "LEXICAL_ONLY",
+      "retrieval_completeness": 0.5
+    },
+    "requester_is_code_owner": true,
+    "expected": "REQUIRE_APPROVAL",
+    "unsafe_if": [
+      "ALLOW"
+    ]
+  }
+]

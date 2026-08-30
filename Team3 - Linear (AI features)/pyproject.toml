@@ -1,0 +1,44 @@
+[project]
+name = "warrant-control-plane"
+version = "0.1.0"
+description = "Deterministic delegation control plane for AI agent work"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "jinja2>=3.1,<4",
+  "pydantic>=2.10,<3",
+  "pyyaml>=6,<7",
+  "uvicorn>=0.34,<1",
+]
+
+[project.optional-dependencies]
+dev = ["httpx>=0.27,<1", "mypy>=1.14,<2", "pytest>=8,<10", "ruff>=0.9,<1"]
+
+[project.scripts]
+warrant-seed = "warrant.seed:main"
+warrant-eval = "warrant.evaluation:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/warrant"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+exclude = ["evaluations/"]
+disable_error_code = ["import-untyped"]

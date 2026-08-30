@@ -1,0 +1,45 @@
+.PHONY: setup dev seed demo-reset lint typecheck unit integration test eval build check demo clean
+
+UV_CACHE_DIR ?= .uv-cache
+RUN = UV_CACHE_DIR=$(UV_CACHE_DIR) uv run
+
+setup:
+	UV_CACHE_DIR=$(UV_CACHE_DIR) uv sync --extra dev
+
+seed demo-reset:
+	$(RUN) python -m warrant.seed
+
+dev:
+	@test -f data/warrant.db || $(MAKE) seed
+	$(RUN) uvicorn warrant.main:app --reload --host 127.0.0.1 --port 8000
+
+demo:
+	$(MAKE) demo-reset
+	$(RUN) uvicorn warrant.main:app --host 127.0.0.1 --port 8000
+
+test:
+	$(RUN) pytest
+
+unit:
+	$(RUN) pytest tests/unit
+
+integration:
+	$(RUN) pytest tests/integration tests/security tests/e2e
+
+eval:
+	$(RUN) python -m warrant.evaluation
+
+lint:
+	$(RUN) ruff check src tests
+
+typecheck:
+	$(RUN) mypy src/warrant
+
+build:
+	UV_CACHE_DIR=$(UV_CACHE_DIR) uv build
+
+# Required order: static checks first, then progressively wider runtime evidence.
+check: lint typecheck unit integration eval build
+
+clean:
+	find src tests -type d -name __pycache__ -prune -exec rm -r {} +
