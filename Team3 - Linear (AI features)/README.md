@@ -4,6 +4,9 @@ Warrant is a working delegation control plane for coding-agent work. It decides 
 
 > **Synthetic demo:** every issue, identity, agent, and activity in this repository is fictional. The default AI provider is a visibly labelled deterministic fixture. Fixture results are not represented as live-model evaluation evidence.
 
+> **Hard data rule:** the experimental OpenRouter free endpoint may receive synthetic
+> data only. Never point it at real customer issues, code, credentials, or attachments.
+
 ## Why it exists
 
 Issue trackers and coding agents provide delegation mechanics, OAuth scopes, and post-hoc review. They do not produce a reproducible per-work-item answer to four connected questions: should this work have been delegated, what was the agent allowed to touch, who authorised it, and did its returned evidence satisfy the request? Warrant owns that workflow-level accountability boundary without becoming another tracker or agent.

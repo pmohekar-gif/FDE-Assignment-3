@@ -234,17 +234,25 @@ class FixtureProvider(LLMProvider):
         )
 
 
-def _json_from_wrapped_content(content: str) -> Any:
-    candidate = content.strip()
-    fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", candidate, re.I | re.S)
-    if fenced:
-        candidate = fenced.group(1).strip()
-    else:
-        start = candidate.find("{")
-        end = candidate.rfind("}")
-        if start != -1 and end != -1 and end >= start:
-            candidate = candidate[start : end + 1]
-    return json.loads(candidate)
+def tolerant_json_loads(content: str) -> Any:
+    """Decode the first JSON value, tolerating fences and surrounding prose.
+
+    Uses raw_decode to consume exactly the first complete JSON value from the
+    content, rather than slicing from the first '{' to the last '}' which
+    breaks if the model emits prose containing a brace after the JSON.
+    """
+    cleaned = re.sub(r"^\s*```(?:json)?\s*", "", content, flags=re.I)
+    cleaned = re.sub(r"\s*```\s*$", "", cleaned)
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(cleaned):
+        if character not in "[{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(cleaned[index:])
+            return value
+        except json.JSONDecodeError:
+            continue
+    raise json.JSONDecodeError("no JSON object or array found", cleaned, 0)
 
 
 def _nested_value(raw: dict[str, Any], paths: list[tuple[str, ...]]) -> Any:
@@ -347,7 +355,7 @@ class ChatCompletionsProvider(LLMProvider):
         raw = self._post_chat_completions(payload)
         try:
             content = raw["choices"][0]["message"]["content"]
-            parsed = _json_from_wrapped_content(content)
+            parsed = tolerant_json_loads(content)
             value = (
                 ExtractionResult.model_validate(parsed)
                 if operation == "extract"

@@ -183,17 +183,19 @@ class WarrantService:
             ),
         )
         repairs = getattr(response, "schema_repair_count", 0) if response else 0
-        if repairs:
-            self.telemetry(
-                workspace_id,
-                "schema_repair",
-                delegation_id,
-                operation=operation,
-                provider=getattr(response, "provider", self.provider.name),
-                model=getattr(response, "model", self.provider.model),
-                structured_output_mode=getattr(response, "structured_output_mode", None),
-                count=repairs,
-            )
+        # Fire on every call (including failures with repairs=0) so the metric
+        # denominator is always accurate; logging only on repairs > 0 understates
+        # the rate precisely when failures are most important to track.
+        self.telemetry(
+            workspace_id,
+            "schema_repair",
+            delegation_id,
+            operation=operation,
+            provider=getattr(response, "provider", self.provider.name),
+            model=getattr(response, "model", self.provider.model),
+            structured_output_mode=getattr(response, "structured_output_mode", None),
+            count=repairs,
+        )
 
     def _workspace_resource(
         self, table: str, resource_id: str, workspace_id: str
