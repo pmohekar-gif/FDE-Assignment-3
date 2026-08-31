@@ -130,6 +130,18 @@ arbitrary expression evaluator.
 **Revisit trigger:** Add typed operators only with policy conformance tests; never embed
 general code execution in policy documents.
 
+**Live-inference amendment:** The experimental `AI_PROVIDER=openrouter` path uses the
+named MiniMax M3 slug `minimax/minimax-m3:free` only for synthetic assignment data,
+because no assignment inference budget is available and the endpoint currently has free
+access. Compared with an unnamed endpoint, the model identity is explicit. What remains
+unresolved is the serving path: OpenRouter and the serving inference provider are
+separate processing layers, OpenRouter may route to different providers, and retention
+or processing policies can differ. Warrant mitigates this by keeping the deterministic
+policy engine authoritative; the model cannot produce an authorisation, widen scope,
+grant tools, extend expiry, or consume a nonce. Before non-synthetic use, provider
+routing, retention, sub-processor, DPA/ZDR, and `data_collection: "deny"` compatibility
+must be explicitly verified.
+
 ## D-ENG-010 — Failed evidence checks reduce trust without consuming retry authority
 
 **Context:** Consuming a nonce on a structural evidence error prevents an agent from
@@ -149,12 +161,16 @@ production reputation model.
 ## D-ENG-011 — Bounded provider recovery, lexical circuit fallback
 
 **Context:** Transient providers and embeddings must not expand authority or create
-unbounded request latency.
+unbounded request latency. The OpenRouter MiniMax M3 free endpoint supports JSON output
+but not server-enforced JSON Schema for this configuration.
 
 **Chosen approach:** Provider transport calls receive two exponential-backoff retries
 with jitter; malformed structured output receives one repair attempt carrying the
-validation error; an explicit fallback may run only after that budget. Three embedding
-failures in 60 seconds open a 60-second lexical-only circuit.
+validation error; an explicit fallback may run only after that budget. OpenAI defaults
+to `json_schema`; the configured `minimax/minimax-m3:free` capability defaults to
+`json_object`, inlines the schema in the system prompt, strips common wrappers before
+parsing, and still validates with the same Pydantic `extra="forbid"` schemas. Three
+embedding failures in 60 seconds open a 60-second lexical-only circuit.
 
 **Why:** Recovery is bounded, observable, and monotonic: fallback extraction is marked
 degraded and requires approval, while fallback judging can produce at most
@@ -162,10 +178,13 @@ degraded and requires approval, while fallback judging can produce at most
 verification.
 
 **Trade-offs:** Circuit state is process-local and the fixture fallback is unsuitable as
-live-model quality evidence.
+live-model quality evidence. OpenRouter free-endpoint pricing, availability, rate
+limits, routing, and serving-provider data handling may change; reported $0 cost is
+free-endpoint evidence, not production unit economics.
 
-**Revisit trigger:** Multiple replicas or measured provider SLOs; move circuit state and
-retry budgets into shared operational infrastructure without changing policy semantics.
+**Revisit trigger:** Multiple replicas, non-synthetic data, measured provider SLOs, or a
+paid live-model evaluation; move circuit state and retry budgets into shared operational
+infrastructure without changing policy semantics.
 
 ## D-ENG-012 — Synthetic scale and delivery evidence remain explicitly local
 

@@ -108,9 +108,7 @@ def test_audit_table_rejects_mutation(client):
 
 def test_audit_export_requires_admin_for_json_and_csv(client):
     for suffix in ("", "?format=csv"):
-        non_admin = client.get(
-            f"/v1/audit{suffix}", headers={"X-Actor-ID": "engineer-demo"}
-        )
+        non_admin = client.get(f"/v1/audit{suffix}", headers={"X-Actor-ID": "engineer-demo"})
         assert non_admin.status_code == 403
 
         admin = client.get(f"/v1/audit{suffix}", headers={"X-Actor-ID": "admin-demo"})

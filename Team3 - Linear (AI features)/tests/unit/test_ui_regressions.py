@@ -18,9 +18,7 @@ def test_fixture_extracts_sentence_level_acceptance_criteria():
 
 
 def test_near_duplicate_title_detection_is_token_based():
-    assert titles_are_near_duplicates(
-        "Billing timeout after retry", "Billing: timeout after retry"
-    )
+    assert titles_are_near_duplicates("Billing timeout after retry", "Billing: timeout after retry")
     assert not titles_are_near_duplicates(
         "Billing timeout after retry during renewal",
         "Billing duplicate notification during a bulk operation",

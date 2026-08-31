@@ -26,8 +26,33 @@
 ## AI and retrieval
 
 - Fixture mode is deterministic simulation. It is useful for workflow, safety, and demo testing, not for measuring language-model quality.
-- The real provider path has not been called because no credential was provided. Live
-  extraction F1, judge precision, token use, cost, and latency are `NOT_MEASURED`.
+- The committed default remains fixture mode. The experimental live path is
+  `AI_PROVIDER=openrouter` with MiniMax M3, slug `minimax/minimax-m3:free`, and base URL
+  `https://openrouter.ai/api/v1`. It is restricted to synthetic assignment data; never
+  point it at real customer issues, code, credentials, or telemetry.
+- For the configured MiniMax M3 free endpoint, OpenRouter supports JSON output but does
+  not enforce Warrant's JSON Schema server-side. Client-side Pydantic validation with
+  `extra="forbid"` is therefore the structured-output enforcement boundary. Parsed JSON
+  that fails schema validation is rejected as malformed and fails closed.
+- OpenRouter and the serving inference provider are separate processing layers.
+  OpenRouter may route to different serving providers, and provider-specific retention
+  and processing behaviour must be checked before any non-synthetic use. The dossier
+  §26 target claims "no training use · zero retention where offered · named in the
+  sub-processor list"; the current free OpenRouter configuration is not claimed to
+  satisfy that requirement unless the exact serving-provider path is verified.
+- MiniMax M3 advertises a 1,048,576-token context window, but this MVP has not measured
+  live extraction F1, judge precision, token use, cost, or latency. MiniMax M3
+  free-endpoint p95 preflight latency against the §24 `<12s` target is `NOT_MEASURED`.
+  If `make live-check` later measures p95 above target, it must be reported as a
+  finding rather than hidden by changing the target.
+- The `minimax/minimax-m3:free` endpoint currently reports $0 input/output pricing, but
+  free-endpoint availability, rate limits, provider routing, and pricing may change.
+  Reported $0 inference cost is promotional/free-endpoint economics and does not
+  establish production unit economics or satisfy the `<$0.06` production target.
+- If non-synthetic data is ever needed, investigate and explicitly configure OpenRouter
+  provider routing controls such as provider allowlists, `data_collection: "deny"`,
+  and/or ZDR requirements. Do not silently enable controls that cause automatic fallback
+  or a model change.
 - Local semantic retrieval uses stable hashed token vectors, not a hosted embedding
   model. Retrieval Recall@K and MRR are `NOT_MEASURED`.
 - The fixture evidence judge uses token overlap and is intentionally labelled simulated.

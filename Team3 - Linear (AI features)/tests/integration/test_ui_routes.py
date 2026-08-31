@@ -48,9 +48,7 @@ def test_delegation_page_shows_full_preapproval_contract_and_pipeline(client, he
     assert len(set(item["semantic_score"] for item in candidates)) > 1
 
     long_criterion = (
-        "Expected: "
-        + "the delegated worker preserves every invariant " * 6
-        + "without ambiguity."
+        "Expected: " + "the delegated worker preserves every invariant " * 6 + "without ambiguity."
     )
     extraction = client.app.state.db.one(
         "SELECT result_json FROM extractions WHERE delegation_id = ?",
@@ -76,7 +74,7 @@ def test_policy_and_evaluation_pages_render_operator_views(client):
     assert "Policy workbench" in policy.text
     assert "Authority matrix" in policy.text
     assert "Edit, simulate, activate" in policy.text
-    assert "id=\"rule-R-001\"" in policy.text
+    assert 'id="rule-R-001"' in policy.text
     css = client.get("/static/app.css").text
     assert ".policy-layout .table-wrap" in css
     assert "overflow-x:auto" in css
@@ -105,9 +103,7 @@ def test_audit_filters_cursor_and_actor_identity_boundary(client, headers):
     assert all(item["agent_id"] == "codex-cloud" for item in body["events"])
     assert all(item["verdict"] == "REQUIRE_APPROVAL" for item in body["events"])
     if body["next_cursor"]:
-        older = client.get(
-            f"/v1/audit?cursor={body['next_cursor']}&limit=2", headers=admin
-        )
+        older = client.get(f"/v1/audit?cursor={body['next_cursor']}&limit=2", headers=admin)
         assert older.status_code == 200
         assert all(item["seq"] < body["next_cursor"] for item in older.json()["events"])
 

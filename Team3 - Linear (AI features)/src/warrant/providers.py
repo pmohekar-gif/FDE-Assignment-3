@@ -40,6 +40,12 @@ class ProviderResponse:
     output_tokens: int | None
     estimated_cost_usd: float | None
     degraded: bool = False
+    reasoning_tokens: int | None = None
+    total_tokens: int | None = None
+    reported_cost_usd: float | None = None
+    serving_provider: str | None = None
+    structured_output_mode: str = "none"
+    schema_repair_count: int = 0
 
 
 class LLMProvider(ABC):
@@ -98,9 +104,7 @@ class FixtureProvider(LLMProvider):
         criteria: list[str] = []
         for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
             cleaned = sentence.strip(" -*\t")
-            if not re.search(
-                r"\b(must|should|acceptance|expected|verify|ensure)\b", cleaned, re.I
-            ):
+            if not re.search(r"\b(must|should|acceptance|expected|verify|ensure)\b", cleaned, re.I):
                 continue
             if len(cleaned) > 300:
                 cleaned = cleaned[:296].rsplit(" ", 1)[0] + "…"
@@ -230,43 +234,120 @@ class FixtureProvider(LLMProvider):
         )
 
 
-class OpenAICompatibleProvider(LLMProvider):
+def _json_from_wrapped_content(content: str) -> Any:
+    candidate = content.strip()
+    fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", candidate, re.I | re.S)
+    if fenced:
+        candidate = fenced.group(1).strip()
+    else:
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start != -1 and end != -1 and end >= start:
+            candidate = candidate[start : end + 1]
+    return json.loads(candidate)
+
+
+def _nested_value(raw: dict[str, Any], paths: list[tuple[str, ...]]) -> Any:
+    for path in paths:
+        value: Any = raw
+        for key in path:
+            if isinstance(value, list) and key.isdigit():
+                index = int(key)
+                if index >= len(value):
+                    value = None
+                    break
+                value = value[index]
+                continue
+            if not isinstance(value, dict) or key not in value:
+                value = None
+                break
+            value = value[key]
+        if value is not None:
+            return value
+    return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, int | float):
+        return int(value)
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _float_or_none(value: Any) -> float | None:
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+class ChatCompletionsProvider(LLMProvider):
     name = "openai-compatible"
 
     def __init__(self, settings: Settings):
-        if not settings.openai_api_key:
-            raise ProviderError("OPENAI_API_KEY is required when AI_PROVIDER=openai")
-        self.api_key = settings.openai_api_key
-        self.base_url = settings.openai_base_url.rstrip("/")
-        self.model = settings.openai_model
+        raise NotImplementedError
+
+    def _configure(
+        self,
+        *,
+        api_key: str | None,
+        missing_key_message: str,
+        base_url: str,
+        model: str,
+        structured_output_mode: str,
+        timeout_seconds: float,
+        extra_headers: dict[str, str] | None = None,
+        include_usage: bool = False,
+        reasoning: str | None = None,
+    ) -> None:
+        if not api_key:
+            raise ProviderError(missing_key_message)
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.structured_output_mode = structured_output_mode
+        self.timeout_seconds = timeout_seconds
+        self.extra_headers = extra_headers or {}
+        self.include_usage = include_usage
+        self.reasoning = reasoning
 
     def _call(
         self, operation: str, system: str, user: str, schema: dict[str, Any]
     ) -> ProviderResponse:
         started = time.perf_counter()
+        if self.structured_output_mode == "json_object":
+            system = (
+                f"{system}\nReturn exactly one JSON object matching this required JSON Schema. "
+                f"Do not wrap it in markdown or prose.\nJSON_SCHEMA:\n{json.dumps(schema)}"
+            )
         payload = {
             "model": self.model,
             "temperature": 0,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "response_format": {
+        }
+        if self.structured_output_mode == "json_schema":
+            payload["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {"name": operation, "strict": True, "schema": schema},
-            },
-        }
-        request = urllib.request.Request(
-            f"{self.base_url}/chat/completions",
-            data=json.dumps(payload).encode(),
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=12) as response:
-                raw = json.loads(response.read())
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            raise ProviderError(f"provider call failed: {type(exc).__name__}") from exc
+            }
+        elif self.structured_output_mode == "json_object":
+            payload["response_format"] = {"type": "json_object"}
+        if self.include_usage:
+            payload["usage"] = {"include": True}
+        if self.reasoning:
+            try:
+                payload["reasoning"] = json.loads(self.reasoning)
+            except json.JSONDecodeError:
+                payload["reasoning"] = self.reasoning
+        raw = self._post_chat_completions(payload)
         try:
             content = raw["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
+            parsed = _json_from_wrapped_content(content)
             value = (
                 ExtractionResult.model_validate(parsed)
                 if operation == "extract"
@@ -279,15 +360,62 @@ class OpenAICompatibleProvider(LLMProvider):
                 f"provider returned malformed structured output: {exc}"
             ) from exc
         usage = raw.get("usage", {})
+        reasoning_tokens = _int_or_none(
+            _nested_value(
+                usage,
+                [
+                    ("completion_tokens_details", "reasoning_tokens"),
+                    ("reasoning_tokens",),
+                ],
+            )
+        )
+        actual_model = str(raw.get("model") or self.model)
+        serving_provider = _nested_value(
+            raw,
+            [
+                ("provider",),
+                ("provider_name",),
+                ("route", "provider"),
+                ("choices", "0", "provider"),
+            ],
+        )
+        if serving_provider is not None:
+            serving_provider = str(serving_provider)
+        reported_cost_value = _nested_value(usage, [("cost",), ("total_cost",), ("cost_usd",)])
+        if reported_cost_value is None:
+            reported_cost_value = raw.get("cost")
+        reported_cost = _float_or_none(reported_cost_value)
         return ProviderResponse(
             value,
             self.name,
-            self.model,
+            actual_model,
             int((time.perf_counter() - started) * 1000),
-            usage.get("prompt_tokens"),
-            usage.get("completion_tokens"),
+            _int_or_none(usage.get("prompt_tokens")),
+            _int_or_none(usage.get("completion_tokens")),
             None,
+            reasoning_tokens=reasoning_tokens,
+            total_tokens=_int_or_none(usage.get("total_tokens")),
+            reported_cost_usd=reported_cost,
+            serving_provider=serving_provider,
+            structured_output_mode=self.structured_output_mode,
         )
+
+    def _post_chat_completions(self, payload: dict[str, Any]) -> dict[str, Any]:
+        request = urllib.request.Request(
+            f"{self.base_url}/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                **self.extra_headers,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                return json.loads(response.read())
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise ProviderError(f"provider call failed: {type(exc).__name__}") from exc
 
     def extract(
         self,
@@ -335,6 +463,40 @@ class OpenAICompatibleProvider(LLMProvider):
         return self._call("brief", system, user, BriefNarrative.model_json_schema())
 
 
+class OpenAICompatibleProvider(ChatCompletionsProvider):
+    name = "openai-compatible"
+
+    def __init__(self, settings: Settings):
+        self._configure(
+            api_key=settings.openai_api_key,
+            missing_key_message="OPENAI_API_KEY is required when AI_PROVIDER=openai",
+            base_url=settings.openai_base_url,
+            model=settings.openai_model,
+            structured_output_mode=settings.resolved_structured_output_mode,
+            timeout_seconds=settings.resolved_provider_timeout_seconds,
+        )
+
+
+class OpenRouterProvider(ChatCompletionsProvider):
+    name = "openrouter"
+
+    def __init__(self, settings: Settings):
+        self._configure(
+            api_key=settings.openrouter_api_key,
+            missing_key_message="OPENROUTER_API_KEY is required when AI_PROVIDER=openrouter",
+            base_url=settings.openrouter_base_url,
+            model=settings.openrouter_model,
+            structured_output_mode=settings.resolved_structured_output_mode,
+            timeout_seconds=settings.resolved_provider_timeout_seconds,
+            extra_headers={
+                "HTTP-Referer": settings.openrouter_http_referer,
+                "X-Title": settings.openrouter_title,
+            },
+            include_usage=True,
+            reasoning=settings.openrouter_reasoning,
+        )
+
+
 class ResilientProvider(LLMProvider):
     """Retry transport errors, repair one malformed response, then use optional fallback."""
 
@@ -358,11 +520,19 @@ class ResilientProvider(LLMProvider):
         repair_error = None
         while True:
             try:
-                return call(repair_error)
+                response = call(repair_error)
+                return (
+                    replace(response, schema_repair_count=response.schema_repair_count + 1)
+                    if repair_used
+                    else response
+                )
             except ProviderMalformed as exc:
                 if repair_used:
                     if self.fallback:
-                        return self._degraded_fallback(fallback_call)
+                        response = self._degraded_fallback(fallback_call)
+                        return replace(
+                            response, schema_repair_count=response.schema_repair_count + 1
+                        )
                     raise
                 repair_used = True
                 repair_error = str(exc)
@@ -420,6 +590,8 @@ class ResilientProvider(LLMProvider):
 def build_provider(settings: Settings) -> LLMProvider:
     if settings.ai_provider == "openai":
         primary: LLMProvider = OpenAICompatibleProvider(settings)
+    elif settings.ai_provider == "openrouter":
+        primary = OpenRouterProvider(settings)
     else:
         primary = FixtureProvider(settings.fixture_failure)
     fallback = (

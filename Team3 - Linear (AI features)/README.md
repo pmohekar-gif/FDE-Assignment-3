@@ -13,7 +13,9 @@ Issue trackers and coding agents provide delegation mechanics, OAuth scopes, and
 - Manual delegation and signed/idempotent webhook ingress.
 - 400 fictional issues across five teams, 12 users, three agents, and six governed repository surfaces.
 - Hybrid SQLite FTS5 plus deterministic local-vector retrieval with reciprocal-rank fusion.
-- `LLMProvider` abstraction with offline fixture and genuine OpenAI-compatible structured-inference implementations.
+- `LLMProvider` abstraction with offline fixture, OpenAI JSON-Schema mode, and an
+  experimental OpenRouter MiniMax M3 JSON-object live path that remains client-schema
+  validated.
 - Closed extraction schema with no authorisation field.
 - Deterministic consequence, reversibility, surface, concurrency, injection, ownership, and evidence-sufficiency features.
 - Validated executable YAML policy engine with a consequence × reversibility matrix.
@@ -81,10 +83,16 @@ was not executed in this environment because the Docker daemon was unavailable.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `AI_PROVIDER` | `fixture` | `fixture` for visibly simulated offline operation; `openai` for genuine structured inference. |
+| `AI_PROVIDER` | `fixture` | `fixture` for visibly simulated offline operation; `openai` for OpenAI JSON-Schema inference; `openrouter` for the experimental synthetic-data live check. |
 | `OPENAI_API_KEY` | unset | Required only in `AI_PROVIDER=openai`; never committed or logged. |
 | `OPENAI_BASE_URL` | OpenAI API | OpenAI-compatible chat-completions endpoint. |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | Model identifier used for extraction and judging. |
+| `OPENROUTER_API_KEY` | unset | Required only in `AI_PROVIDER=openrouter`; never committed or logged. |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter chat-completions endpoint. |
+| `OPENROUTER_MODEL` | `minimax/minimax-m3:free` | Experimental live-check model slug for MiniMax M3. |
+| `OPENROUTER_REASONING` | unset | Optional raw reasoning control passed through to OpenRouter when explicitly configured. |
+| `STRUCTURED_OUTPUT_MODE` | `auto` | `json_schema`, `json_object`, or `none`; auto maps OpenAI to JSON Schema and the configured MiniMax M3 free endpoint to JSON object plus client-side schema validation. |
+| `PROVIDER_TIMEOUT_SECONDS` | provider default | Safety ceiling: 12s for OpenAI, 45s for OpenRouter experiments. Not a latency claim. |
 | `DATABASE_PATH` | `data/warrant.db` | Local persistent SQLite database. |
 | `WORKSPACE_ID` | `ws-demo` | Workspace used by server-rendered operator routes and as the API header default. |
 | `WEBHOOK_SECRET` | insecure demo value | HMAC key for tracker webhook verification; replace outside local demo. |
@@ -97,6 +105,13 @@ was not executed in this environment because the Docker daemon was unavailable.
 
 `.env` is ignored. `.env.example` contains placeholders only.
 
+The OpenRouter MiniMax M3 free endpoint is experimental and must receive synthetic
+assignment data only. It supports JSON output, not server-enforced JSON Schema for this
+configuration, so Warrant's unchanged Pydantic validation is the enforcement boundary.
+OpenRouter and the serving inference provider are separate processing layers; retention,
+processing, routing, pricing, free-tier availability, and rate limits must be verified
+before any non-synthetic use.
+
 ## Commands
 
 ```bash
@@ -105,6 +120,7 @@ make demo-reset  # delete only data/warrant.db and create the repeatable fiction
 make dev         # local development server
 make test        # automated tests
 make eval        # 120-case policy evaluation + unsafe-allow gate
+make live-check  # three synthetic reference issues against configured live provider
 make lint        # Ruff checks
 make typecheck   # mypy static typecheck
 make check       # lint → typecheck → unit → integration → eval → package build
@@ -171,6 +187,11 @@ interpreter. The synthetic fixture-backed E2E slice is the run's only end-to-end
 The E2E slice uses synthetic issues and the fixture provider. Live-model risk macro-F1,
 retrieval Recall@10, judge precision, p95 preflight latency, and cost per delegation are
 `NOT_MEASURED`.
+
+`make live-check` can write `evaluations/live-run-<date>.json` for a configured live
+provider. For OpenRouter's `minimax/minimax-m3:free`, any reported $0 model cost is
+free-endpoint/promotional evidence and must not be treated as production unit economics
+or as silently satisfying the `< $0.06` production target.
 
 ## Security and data handling
 

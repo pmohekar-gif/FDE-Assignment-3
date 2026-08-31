@@ -4,9 +4,7 @@ from warrant.policy import PolicyContext, evaluate_policy, load_policy
 from warrant.retrieval import RetrievalResult
 from warrant.schemas import ExtractionResult, Verdict
 
-POLICY = load_policy(
-    (Path(__file__).parents[2] / "policies" / "default.v1.yaml").read_text()
-)
+POLICY = load_policy((Path(__file__).parents[2] / "policies" / "default.v1.yaml").read_text())
 
 
 def test_extracted_surface_outside_declared_scope_is_retained_as_risk_signal(client):

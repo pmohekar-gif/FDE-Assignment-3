@@ -75,9 +75,7 @@ def _targets(metrics: dict[str, Any]) -> dict[str, dict[str, Any]]:
             metrics["operational_adversarial_non_allow_rate"],
             metrics["operational_adversarial_non_allow_rate"] == 1.0,
         ),
-        "risk_class_macro_f1": _target_record(
-            ">= 0.75", metrics["risk_class_macro_f1"], None
-        ),
+        "risk_class_macro_f1": _target_record(">= 0.75", metrics["risk_class_macro_f1"], None),
         "retrieval_recall_at_10": _target_record(
             ">= 0.85", metrics["retrieval_recall_at_10"], None
         ),
@@ -152,13 +150,9 @@ def _e2e_slices() -> list[dict[str, Any]]:
                 EvidenceSubmission(
                     nonce=incomplete_warrant["demo_nonce"],
                     files=incomplete_warrant["scope_surfaces"],
-                    artifacts=[
-                        EvidenceArtifact(type="test", ref="ci://claimed-without-output")
-                    ],
+                    artifacts=[EvidenceArtifact(type="test", ref="ci://claimed-without-output")],
                     test_output="",
-                    claimed_criteria=(
-                        incomplete["extraction"]["result"]["acceptance_criteria"]
-                    ),
+                    claimed_criteria=(incomplete["extraction"]["result"]["acceptance_criteria"]),
                 ),
             )
             missing_tests_safe = False
@@ -332,8 +326,7 @@ def _markdown(report: dict[str, Any]) -> str:
         value = target["measured_value"]
         rendered = json.dumps(value, sort_keys=True) if isinstance(value, dict) else str(value)
         lines.append(
-            f"| `{key}` | {target['proposed_target']} | `{rendered}` | "
-            f"**{target['status']}** |"
+            f"| `{key}` | {target['proposed_target']} | `{rendered}` | **{target['status']}** |"
         )
     lines += [
         "",

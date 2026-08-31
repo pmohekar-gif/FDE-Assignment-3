@@ -22,10 +22,20 @@ The product is a modular monolith. FastAPI/Jinja own the interface, SQLite/FTS5 
 
 ## AI implementation
 
-`LLMProvider` has deterministic fixture and OpenAI-compatible implementations. Extraction is closed-schema descriptive output with no authorisation field. Judging occurs only after deterministic evidence validation and supports abstention. Provider usage records accept nullable tokens/cost rather than inventing unavailable values.
+`LLMProvider` has deterministic fixture, OpenAI-compatible JSON-Schema, and
+OpenRouter MiniMax M3 JSON-object implementations. The OpenRouter
+`minimax/minimax-m3:free` path is experimental and synthetic-data only; because that
+endpoint does not enforce Warrant's JSON Schema server-side, Warrant strips common
+wrappers, parses JSON, and enforces the unchanged Pydantic schemas client-side.
+Extraction is closed-schema descriptive output with no authorisation field. Judging
+occurs only after deterministic evidence validation and supports abstention. Provider
+usage records accept nullable tokens/cost and serving-provider metadata rather than
+inventing unavailable values.
 
-No live-provider call was run. Live-model quality, cost, latency, and token usage are
-`NOT_MEASURED`.
+No live-provider call was run. Live-model quality, cost, latency, token usage, and
+MiniMax M3 free-endpoint p95 preflight latency are `NOT_MEASURED`. `make live-check`
+can generate a dated synthetic OpenRouter/OpenAI report; any $0 OpenRouter free-endpoint
+cost is reported as promotional/free-endpoint evidence, not production unit economics.
 
 ## Deterministic safeguards
 
@@ -85,7 +95,12 @@ This is not a compliance-certified or production-authenticated system.
 
 ## Observability
 
-Persisted telemetry records meaningful lifecycle events. `/metrics` publishes product counters and verdict distribution. Model usage stores operation, provider/model, nullable token/cost fields, latency, success, and error class. Audit records the rule/version/reasons rather than raw prompts. OpenTelemetry tracing and alerts are not implemented.
+Persisted telemetry records meaningful lifecycle events and schema-repair events.
+`/metrics` publishes product counters and verdict distribution. Model usage stores
+operation, provider/model, nullable token/cost fields, provider-reported cost,
+reasoning/total tokens, serving provider when exposed, latency, success, repair count,
+and error class. Audit records the rule/version/reasons rather than raw prompts.
+OpenTelemetry tracing and alerts are not implemented.
 
 ## Performance
 

@@ -17,6 +17,7 @@ dev = ["httpx>=0.27,<1", "mypy>=1.14,<2", "pytest>=8,<10", "ruff>=0.9,<1"]
 [project.scripts]
 warrant-seed = "warrant.seed:main"
 warrant-eval = "warrant.evaluation:main"
+warrant-live-check = "warrant.live_check:main"
 
 [build-system]
 requires = ["hatchling"]

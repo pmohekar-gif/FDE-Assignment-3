@@ -130,8 +130,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "SELECT COUNT(*) AS n FROM telemetry_events WHERE name='extraction_cache_hit'"
         )
         cache_misses = scalar_count(
-            "SELECT COUNT(*) AS n FROM model_usage "
-            "WHERE operation='extract_delegation_facts'"
+            "SELECT COUNT(*) AS n FROM model_usage WHERE operation='extract_delegation_facts'"
         )
         evaluation_metrics["extraction_cache_hit_rate"] = (
             round(cache_hits / (cache_hits + cache_misses), 4)
@@ -161,9 +160,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             [*params, page_size, (page - 1) * page_size],
         )
         delegations = service.list_delegations(workspace_id)
-        needs_decision = [
-            item for item in delegations if item["status"] == "awaiting_approval"
-        ]
+        needs_decision = [item for item in delegations if item["status"] == "awaiting_approval"]
         return templates.TemplateResponse(
             request,
             "dashboard.html",
@@ -204,13 +201,16 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
                     Consequence(detail["risk_assessment"]["consequence"]),
                 )
             except PolicyValidationError:
-                preview_allowed, preview_denied = ["read_repo"], [
-                    "merge_pr",
-                    "deploy",
-                    "migrate_db",
-                    "rotate_secret",
-                    "delete_data",
-                ]
+                preview_allowed, preview_denied = (
+                    ["read_repo"],
+                    [
+                        "merge_pr",
+                        "deploy",
+                        "migrate_db",
+                        "rotate_secret",
+                        "delete_data",
+                    ],
+                )
         reason_details = explain_codes((detail.get("decision") or {}).get("reason_codes", []))
         rule_details = explain_rules((detail.get("decision") or {}).get("matched_rule_ids", []))
         remediation = next(
@@ -563,8 +563,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "SELECT COUNT(*) AS n FROM telemetry_events WHERE name='extraction_cache_hit'"
         )
         cache_misses = scalar_count(
-            "SELECT COUNT(*) AS n FROM model_usage "
-            "WHERE operation='extract_delegation_facts'"
+            "SELECT COUNT(*) AS n FROM model_usage WHERE operation='extract_delegation_facts'"
         )
         if cache_hits + cache_misses:
             lines.append("# TYPE warrant_extraction_cache_hit_rate gauge")
@@ -573,6 +572,21 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             )
         else:
             lines.append("# warrant_extraction_cache_hit_rate NOT_MEASURED")
+        for row in db.all(
+            "SELECT provider,model,COUNT(*) AS total,"
+            "SUM(schema_repair_count) AS repairs FROM model_usage "
+            "GROUP BY provider,model ORDER BY provider,model"
+        ):
+            metric = "warrant_schema_repair_rate"
+            repairs = int(row["repairs"] or 0)
+            total = int(row["total"] or 0)
+            rate = repairs / total if total else 0
+            provider_label = str(row["provider"]).replace('"', '\\"')
+            model_label = str(row["model"]).replace('"', '\\"')
+            lines.append("# TYPE warrant_schema_repair_rate gauge")
+            lines.append(
+                f'{metric}{{provider="{provider_label}",model="{model_label}"}} {rate:.4f}'
+            )
         return "\n".join(lines) + "\n"
 
     @app.get("/healthz")

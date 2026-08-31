@@ -45,7 +45,17 @@ sequenceDiagram
 
 ## AI flow
 
-`FixtureProvider` is deterministic and clearly labelled simulated. `OpenAICompatibleProvider` performs genuine JSON-schema constrained inference through an OpenAI-compatible chat-completions API. Both return a `ProviderResponse` with provider/model/latency and any available token usage. Missing token counts and costs remain null; the system never fabricates them.
+`FixtureProvider` is deterministic and clearly labelled simulated.
+`OpenAICompatibleProvider` performs genuine JSON-Schema constrained inference through an
+OpenAI-compatible chat-completions API. `OpenRouterProvider` is a first-class
+OpenAI-compatible transport for synthetic live checks; the configured
+`minimax/minimax-m3:free` capability uses `response_format: {"type": "json_object"}`,
+inlines the schema in the prompt, tolerantly strips wrappers, then enforces the same
+Pydantic schemas client-side. Parsed JSON that fails validation is malformed output, not
+partial evidence. Providers return `ProviderResponse` with provider/model/latency,
+structured-output mode, schema repair count, token usage, reported cost, and serving
+provider when exposed. Missing token counts, costs, and serving-provider metadata remain
+null; the system never fabricates them.
 
 Extraction fields are reproduction presence, criteria, affected surfaces, data classes, external side effects, missing information, scope estimate, injection detection, and confidence. No authorisation field exists. Provider failure or malformed output sets extraction unavailable, reduces evidence sufficiency, and reaches rule `R-020` (`REQUIRE_APPROVAL`).
 
@@ -101,7 +111,14 @@ The trusted core is request validation, workspace resolution, redaction, determi
 
 ## Observability
 
-Product events are persisted for delegation receipt, policy decision, warrant issuance, and evidence verification. `/metrics` emits counters derived from those records and verdict distribution. `model_usage` records provider, model, operation, nullable token/cost values, latency, success, and error class. Audit events store decisions and references rather than raw prompts. Full OpenTelemetry tracing from the R&D design is not implemented and is recorded as a limitation.
+Product events are persisted for delegation receipt, policy decision, warrant issuance,
+evidence verification, and schema repair. `/metrics` emits counters derived from those
+records and verdict distribution. `model_usage` records provider, model, operation,
+nullable token/cost values, provider-reported cost, reasoning/total tokens,
+serving-provider metadata when exposed, latency, success, schema repair count, and error
+class. Audit events store decisions and references rather than raw prompts. Full
+OpenTelemetry tracing from the R&D design is not implemented and is recorded as a
+limitation.
 
 ## Deployment
 

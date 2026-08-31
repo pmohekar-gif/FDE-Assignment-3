@@ -1,4 +1,4 @@
-.PHONY: setup doctor dev seed demo-reset lint typecheck unit integration test eval build check demo package clean
+.PHONY: setup doctor dev seed demo-reset lint typecheck unit integration test eval live-check build check demo package clean
 
 UV_CACHE_DIR ?= .uv-cache
 RUN = UV_CACHE_DIR=$(UV_CACHE_DIR) uv run
@@ -47,6 +47,9 @@ integration:
 
 eval:
 	$(RUN) python -m warrant.evaluation
+
+live-check:
+	$(RUN) python -m warrant.live_check
 
 lint:
 	$(RUN) python -m ruff check src tests

@@ -8,6 +8,7 @@ No provider billing data was available to this coding session. Cost is therefore
 | OpenAI Codex (GPT-5 family) | Repository/specification analysis and implementation assistance | Read the complete Week3 dossier; generated implementation, conformance tests, evaluation, CI/container assets, and documentation. | Product owner/engineer must review code and claims. Executed pinned tests, lint, mypy, build, evaluation, and Compose validation. | NOT_MEASURED |
 | Deterministic fixture provider inside Warrant | Offline development, tests, and reliable demo replay | Extracts synthetic descriptive features and produces a simulated evidence judgement through the same schemas as a real provider. | UI permanently labels fixture mode; results are excluded from live-model quality claims. | $0 runtime inference; no external call |
 | OpenAI-compatible provider inside Warrant | Optional real extraction, criterion judging, and non-authorising prose | Genuine JSON-schema constrained calls when `AI_PROVIDER=openai` and credentials are configured. | Not called or measured. Run a live evaluation before reporting quality, latency, token use, or cost. | NOT_MEASURED |
+| OpenRouter MiniMax M3 provider inside Warrant | Experimental synthetic-data live check | Uses OpenRouter slug `minimax/minimax-m3:free`. This endpoint provides JSON output but not server-enforced JSON Schema, so Warrant strips common wrappers, parses JSON, and enforces the same Pydantic schemas client-side. | Use synthetic assignment data only. OpenRouter and the serving inference provider are separate processing layers; provider routing, retention, processing, DPA/ZDR, and sub-processor status must be verified before non-synthetic use. | NOT_MEASURED until `make live-check`; any $0 cost is free-endpoint/promotional evidence, not production unit economics |
 
 ## Verification performed in this session
 
@@ -26,3 +27,7 @@ No provider billing data was available to this coding session. Cost is therefore
 ## Integrity boundary
 
 AI assistance did not generate users, interviews, quotes, willingness-to-pay evidence, customer feedback, live-model scores, latency numbers, cost numbers, or compliance claims. No such evidence exists in this implementation.
+
+MiniMax M3's experimental free endpoint is not a committed reliability dependency. Its
+current free status, availability, rate limits, and serving-provider routing may change.
+The shipped default remains the labelled deterministic fixture.

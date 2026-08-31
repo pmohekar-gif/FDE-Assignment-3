@@ -58,17 +58,20 @@ def evidence_for(created, warrant):
         "stale_surface_map",
     ],
 )
-def test_every_expressible_failure_mode_never_allows(
-    client_factory, headers, monkeypatch, failure
-):
-    injected = failure if failure in {
-        "provider_5xx",
-        "malformed",
-        "embedding",
-        "policy_unloadable",
-        "judge_unavailable",
-        "stale_surface_map",
-    } else None
+def test_every_expressible_failure_mode_never_allows(client_factory, headers, monkeypatch, failure):
+    injected = (
+        failure
+        if failure
+        in {
+            "provider_5xx",
+            "malformed",
+            "embedding",
+            "policy_unloadable",
+            "judge_unavailable",
+            "stale_surface_map",
+        }
+        else None
+    )
     client = client_factory(injected)
     observed_authority = "ABORTED"
 
@@ -115,6 +118,7 @@ def test_every_expressible_failure_mode_never_allows(
             assert response.json()["verdict"] == "INCONCLUSIVE"
 
     elif failure == "audit_write_failure":
+
         def fail_audit(*args, **kwargs):
             raise RuntimeError("injected audit write failure")
 

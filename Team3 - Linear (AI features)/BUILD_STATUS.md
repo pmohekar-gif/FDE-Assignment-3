@@ -6,7 +6,9 @@
 - Signed/timestamped tracker webhook validation and delivery-id idempotency.
 - Redaction and deterministic prompt-injection scoring before provider inference.
 - Hybrid SQLite FTS5 + local-vector retrieval with reciprocal-rank fusion.
-- Provider abstraction with labelled fixture and genuine OpenAI-compatible structured inference.
+- Provider abstraction with labelled fixture, OpenAI JSON-Schema inference, and
+  experimental OpenRouter MiniMax M3 JSON-object inference with client-side schema
+  enforcement.
 - Validated YAML policy interpreter: ordered/terminal/fail-closed rules, complete
   consequence × reversibility matrix, and consequence-derived tool grants.
 - Immutable admin-only policy activation with line-aware 422 validation, simulation,
@@ -24,7 +26,8 @@
 - Append-only, hash-chained audit ledger with integrity check and CSV/JSON export.
 - Admin/owner authorization on JSON and CSV audit API exports, with non-admin access
   rejected at the service boundary.
-- Persisted product/model telemetry and Prometheus-format metrics endpoint.
+- Persisted product/model telemetry, provider-reported usage/cost/routing metadata,
+  schema-repair events, and Prometheus-format metrics endpoint.
 - Responsive UI with explicit simulated/live provider labelling and core workflow states.
 - Policy workbench containment: the authority matrix owns its horizontal scroller, the
   editor and matrix columns cannot overlap, and the layout switches to one column at
@@ -67,7 +70,8 @@
 
 - PostgreSQL/pgvector deployment, RLS, HNSW, worker queue, and production concurrency constraints.
 - Live Linear adapter and external coding-agent execution.
-- Live-model evaluation; no API credential was provided or used.
+- Live-model evaluation; OpenRouter MiniMax M3 free endpoint support and `make
+  live-check` are implemented, but no API credential was provided or used.
 - Production OAuth/SSO, rate limiting, OpenTelemetry traces/alerts, hosted deployment, or external audit-chain anchoring.
 - Real customer interviews, user feedback, and willingness-to-pay evidence; these require authorised human research and were not fabricated.
 

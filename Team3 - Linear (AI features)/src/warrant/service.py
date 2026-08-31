@@ -154,7 +154,12 @@ class WarrantService:
         error: Exception | None = None,
     ) -> None:
         self.db.execute(
-            "INSERT INTO model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO model_usage "
+            "(id,workspace_id,delegation_id,operation,provider,model,input_tokens,"
+            "output_tokens,estimated_cost_usd,latency_ms,success,error_class,"
+            "reasoning_tokens,total_tokens,reported_cost_usd,serving_provider,"
+            "structured_output_mode,schema_repair_count,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 self.new_id("mu"),
                 workspace_id,
@@ -168,9 +173,27 @@ class WarrantService:
                 getattr(response, "latency_ms", 0),
                 0 if error else 1,
                 type(error).__name__ if error else None,
+                getattr(response, "reasoning_tokens", None),
+                getattr(response, "total_tokens", None),
+                getattr(response, "reported_cost_usd", None),
+                getattr(response, "serving_provider", None),
+                getattr(response, "structured_output_mode", None),
+                getattr(response, "schema_repair_count", 0),
                 self.now(),
             ),
         )
+        repairs = getattr(response, "schema_repair_count", 0) if response else 0
+        if repairs:
+            self.telemetry(
+                workspace_id,
+                "schema_repair",
+                delegation_id,
+                operation=operation,
+                provider=getattr(response, "provider", self.provider.name),
+                model=getattr(response, "model", self.provider.model),
+                structured_output_mode=getattr(response, "structured_output_mode", None),
+                count=repairs,
+            )
 
     def _workspace_resource(
         self, table: str, resource_id: str, workspace_id: str
@@ -455,11 +478,7 @@ class WarrantService:
         provider_fallback_used: bool,
     ) -> tuple[RiskAssessment, list[str], bool]:
         declared = Database.loads(issue["path_hints_json"], [])
-        extracted = (
-            extraction.affected_surfaces
-            if extraction
-            else declared
-        )
+        extracted = extraction.affected_surfaces if extraction else declared
         proposed, outside_declared = partition_declared_scope(extracted, declared)
         if extraction is not None and outside_declared:
             additions = [
@@ -704,9 +723,7 @@ class WarrantService:
         ]
         return slice_cases + supplemental
 
-    def simulate_policy(
-        self, source: str, workspace_id: str, n: int = 50
-    ) -> dict[str, Any]:
+    def simulate_policy(self, source: str, workspace_id: str, n: int = 50) -> dict[str, Any]:
         try:
             policy = load_policy(source)
         except PolicyValidationError as exc:
@@ -750,8 +767,7 @@ class WarrantService:
                     "previous_verdict": previous.verdict.value,
                     "proposed_verdict": proposed.verdict.value,
                     "newly_allowed": (
-                        proposed.verdict == Verdict.ALLOW
-                        and previous.verdict != Verdict.ALLOW
+                        proposed.verdict == Verdict.ALLOW and previous.verdict != Verdict.ALLOW
                     ),
                     "reason_codes": proposed.reason_codes,
                     "matched_rule_ids": proposed.matched_rule_ids,
@@ -792,8 +808,7 @@ class WarrantService:
                     "proposed_verdict": proposed.verdict.value,
                     "changed": previous.verdict != proposed.verdict,
                     "newly_allowed": (
-                        proposed.verdict == Verdict.ALLOW
-                        and previous.verdict != Verdict.ALLOW
+                        proposed.verdict == Verdict.ALLOW and previous.verdict != Verdict.ALLOW
                     ),
                     "reason_codes": proposed.reason_codes,
                 }
@@ -1339,9 +1354,9 @@ class WarrantService:
             "verdict": decision,
             "risk": risk,
             "retrieved_evidence": detail["retrieval"],
-            "missing_information": (
-                (detail["extraction"] or {}).get("result") or {}
-            ).get("missing_information", []),
+            "missing_information": ((detail["extraction"] or {}).get("result") or {}).get(
+                "missing_information", []
+            ),
             "warrant": detail["warrant"],
             "degraded": bool(decision and decision.get("fail_closed")),
             "prose": narrative,
@@ -1461,9 +1476,7 @@ class WarrantService:
                 row["authority_id"] == authority_id or row["actor_id"] == authority_id
             ):
                 continue
-            if surface and not any(
-                surface.lower() in item.lower() for item in row["surfaces"]
-            ):
+            if surface and not any(surface.lower() in item.lower() for item in row["surfaces"]):
                 continue
             if verdict and row["verdict"] != verdict:
                 continue
