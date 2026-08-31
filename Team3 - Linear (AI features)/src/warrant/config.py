@@ -27,6 +27,13 @@ class Settings:
     ai_fallback_provider: str | None = None
     provider_retry_base_ms: int = 25
     workspace_id: str = "ws-demo"
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "minimax/minimax-m3:free"
+    openrouter_http_referer: str = "https://github.com/pmohekar-gif/FDE-Assignment-3"
+    openrouter_x_title: str = "Warrant"
+    structured_output_mode: str | None = None
+    provider_timeout_seconds: float | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -46,6 +53,22 @@ class Settings:
             ai_fallback_provider=os.getenv("AI_FALLBACK_PROVIDER") or None,
             provider_retry_base_ms=int(os.getenv("PROVIDER_RETRY_BASE_MS", "25")),
             workspace_id=os.getenv("WORKSPACE_ID", "ws-demo"),
+            openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+            openrouter_base_url=os.getenv(
+                "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+            ),
+            openrouter_model=os.getenv("OPENROUTER_MODEL", "minimax/minimax-m3:free"),
+            openrouter_http_referer=os.getenv(
+                "OPENROUTER_HTTP_REFERER",
+                "https://github.com/pmohekar-gif/FDE-Assignment-3",
+            ),
+            openrouter_x_title=os.getenv("OPENROUTER_X_TITLE", "Warrant"),
+            structured_output_mode=os.getenv("STRUCTURED_OUTPUT_MODE") or None,
+            provider_timeout_seconds=(
+                float(os.environ["PROVIDER_TIMEOUT_SECONDS"])
+                if "PROVIDER_TIMEOUT_SECONDS" in os.environ
+                else None
+            ),
         )
 
     @property

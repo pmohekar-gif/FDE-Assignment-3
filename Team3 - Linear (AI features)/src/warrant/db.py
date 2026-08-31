@@ -114,7 +114,8 @@ CREATE TABLE IF NOT EXISTS model_usage (
   operation TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
   input_tokens INTEGER, output_tokens INTEGER, estimated_cost_usd REAL,
   latency_ms INTEGER NOT NULL, success INTEGER NOT NULL, error_class TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL, reasoning_tokens INTEGER, total_tokens INTEGER,
+  reported_cost_usd REAL, serving_provider TEXT, schema_repair_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS telemetry_events (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL,
@@ -161,6 +162,21 @@ class Database:
                 connection.execute(
                     "ALTER TABLE issues ADD COLUMN is_demo_path INTEGER NOT NULL DEFAULT 0"
                 )
+            usage_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(model_usage)").fetchall()
+            }
+            for name, definition in (
+                ("reasoning_tokens", "INTEGER"),
+                ("total_tokens", "INTEGER"),
+                ("reported_cost_usd", "REAL"),
+                ("serving_provider", "TEXT"),
+                ("schema_repair_count", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if name not in usage_columns:
+                    connection.execute(
+                        f"ALTER TABLE model_usage ADD COLUMN {name} {definition}"
+                    )
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

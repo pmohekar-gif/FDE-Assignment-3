@@ -153,8 +153,13 @@ class WarrantService:
         response: Any | None,
         error: Exception | None = None,
     ) -> None:
+        metadata = response if response is not None else error
         self.db.execute(
-            "INSERT INTO model_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO model_usage "
+            "(id,workspace_id,delegation_id,operation,provider,model,input_tokens,"
+            "output_tokens,estimated_cost_usd,latency_ms,success,error_class,created_at,"
+            "reasoning_tokens,total_tokens,reported_cost_usd,serving_provider,"
+            "schema_repair_count) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 self.new_id("mu"),
                 workspace_id,
@@ -169,7 +174,20 @@ class WarrantService:
                 0 if error else 1,
                 type(error).__name__ if error else None,
                 self.now(),
+                getattr(response, "reasoning_tokens", None),
+                getattr(response, "total_tokens", None),
+                getattr(response, "reported_cost_usd", None),
+                getattr(response, "serving_provider", None),
+                getattr(metadata, "schema_repair_count", 0),
             ),
+        )
+        self.telemetry(
+            workspace_id,
+            "schema_repair",
+            delegation_id,
+            provider=getattr(response, "provider", self.provider.name),
+            model=getattr(response, "model", self.provider.model),
+            repair_count=getattr(metadata, "schema_repair_count", 0),
         )
 
     def _workspace_resource(

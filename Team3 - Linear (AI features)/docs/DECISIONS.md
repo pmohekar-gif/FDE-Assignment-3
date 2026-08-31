@@ -112,7 +112,32 @@
 
 **Revisit trigger:** External auditor usage or production retention requirements; add periodic external hash anchoring.
 
-## D-ENG-009 — YAML is executable policy, not policy-shaped documentation
+## D-ENG-009 — Use named MiniMax M3 through OpenRouter only for a synthetic experiment
+
+**Context:** The assignment has no inference budget. OpenRouter currently offers the named
+MiniMax M3 endpoint `minimax/minimax-m3:free`, but it does not enforce our JSON Schema and
+free-endpoint availability, pricing, rate limits, and routing may change.
+
+**Chosen approach:** Add OpenRouter as a first-class, opt-in live provider while retaining
+`AI_PROVIDER=fixture` as the shipped default. For this explicit model capability, request a
+JSON object, inline the extraction schema, and enforce the unchanged closed Pydantic schema
+client-side. Use it with synthetic assignment data only.
+
+**Why:** Temporary free access permits a live experiment and the model identity is known,
+which improves reproducibility compared with an unnamed stealth endpoint. The deterministic
+policy engine remains authoritative; model output cannot authorise anything.
+
+**Trade-offs:** OpenRouter and its serving inference provider are separate processing layers.
+OpenRouter may route to different providers whose retention and processing policies differ.
+No zero-retention, DPA, sub-processor, or other contractual guarantee is assumed. Reported
+$0 inference cost is free-endpoint economics, not production unit economics.
+
+**Mitigation/revisit trigger:** Record the actual model/provider when exposed. Before any
+non-synthetic use, verify the exact provider path and investigate explicit allowlists,
+`data_collection: "deny"`, and/or ZDR requirements without silently allowing fallback or a
+model change.
+
+## D-ENG-010 — YAML is executable policy, not policy-shaped documentation
 
 **Context:** The initial MVP stored YAML but duplicated its logic in Python branches.
 
@@ -130,7 +155,7 @@ arbitrary expression evaluator.
 **Revisit trigger:** Add typed operators only with policy conformance tests; never embed
 general code execution in policy documents.
 
-## D-ENG-010 — Failed evidence checks reduce trust without consuming retry authority
+## D-ENG-011 — Failed evidence checks reduce trust without consuming retry authority
 
 **Context:** Consuming a nonce on a structural evidence error prevents an agent from
 correcting the submission, while ignoring the failure would hide operational risk.

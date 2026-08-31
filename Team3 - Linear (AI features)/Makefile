@@ -1,4 +1,4 @@
-.PHONY: setup doctor dev seed demo-reset lint typecheck unit integration test eval build check demo package clean
+.PHONY: setup doctor dev seed demo-reset lint typecheck unit integration test eval live-check build check demo package clean
 
 UV_CACHE_DIR ?= .uv-cache
 RUN = UV_CACHE_DIR=$(UV_CACHE_DIR) uv run
@@ -48,6 +48,9 @@ integration:
 eval:
 	$(RUN) python -m warrant.evaluation
 
+live-check:
+	$(RUN) python -m warrant.live_check
+
 lint:
 	$(RUN) python -m ruff check src tests
 
@@ -70,7 +73,7 @@ package:
 	     'data/*.db' 'data/*.db-shm' 'data/*.db-wal' '.env'
 	@if unzip -l "$(ZIP)" | grep -Eq '(\.venv/|\.uv-cache/|/dist/|__pycache__|\.env$$)'; then \
 	  echo "REFUSING: excluded path present in $(ZIP)"; exit 1; fi
-	@if grep -rEl '(sk|ghp|lin_api)_[A-Za-z0-9_-]{12,}' --exclude-dir=.venv --exclude-dir=.uv-cache \
+	@if grep -rEl '(^|[^A-Za-z0-9])(sk|ghp|lin_api)_[A-Za-z0-9_-]{12,}' --exclude-dir=.venv --exclude-dir=.uv-cache \
 	     --exclude-dir=.git . 2>/dev/null | grep -v 'security.py' | grep -q .; then \
 	  echo "REFUSING: key-shaped string found; inspect before shipping"; exit 1; fi
 	@echo "wrote $(ZIP)"

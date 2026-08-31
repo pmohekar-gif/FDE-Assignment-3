@@ -26,8 +26,24 @@
 ## AI and retrieval
 
 - Fixture mode is deterministic simulation. It is useful for workflow, safety, and demo testing, not for measuring language-model quality.
-- The real provider path has not been called because no credential was provided. Live
-  extraction F1, judge precision, token use, cost, and latency are `NOT_MEASURED`.
+- MiniMax M3 (`minimax/minimax-m3:free`) is an experimental OpenRouter live option, not a
+  shipped reliability dependency. This endpoint provides JSON output but not JSON-Schema
+  enforcement; the unchanged `extra="forbid"` Pydantic models are the client-side boundary.
+- The MiniMax M3 free-endpoint p95 preflight latency against the dossier §24 `<12s` target
+  is `NOT_MEASURED` until `make live-check` produces sufficient real samples. The 45-second
+  OpenRouter timeout is only a safety ceiling. Token use and reported cost are likewise
+  `NOT_MEASURED` until a live artifact records them.
+- Current $0 pricing is promotional/free-endpoint status and may change; it must not silently
+  satisfy the `<$0.06` production cost target or be treated as production unit economics.
+- OpenRouter and the serving inference provider are separate processing layers. Routing,
+  retention, and processing policies may differ, and serving-provider identity is recorded
+  only when the API exposes it. The dossier §26 requirement says “no training use · zero
+  retention where offered · named in the sub-processor list”; the current free configuration
+  is not claimed to satisfy it because its exact serving-provider path has not been verified.
+- The OpenRouter experiment is restricted to synthetic data. Before non-synthetic use,
+  verify the exact provider path and investigate explicit provider allowlists,
+  `data_collection: "deny"`, and/or ZDR requirements. Do not enable controls in a way that
+  silently causes provider fallback or a model change.
 - Local semantic retrieval uses stable hashed token vectors, not a hosted embedding
   model. Retrieval Recall@K and MRR are `NOT_MEASURED`.
 - The fixture evidence judge uses token overlap and is intentionally labelled simulated.
@@ -57,7 +73,7 @@
 
 ## Testing and packaging
 
-- Latest test result: 53 passed with one Starlette/FastAPI TestClient deprecation warning
+- Latest test result: 61 passed with one Starlette/FastAPI TestClient deprecation warning
   about the current `httpx` compatibility layer.
 - Tests run against a real SQLite file, not PostgreSQL.
 - Compose configuration validates. `docker build` and `docker compose up --build` were

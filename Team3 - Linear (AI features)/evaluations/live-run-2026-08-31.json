@@ -1,0 +1,68 @@
+{
+  "status": "FINDINGS",
+  "measured_at": "2026-08-31T05:21:26.831714+00:00",
+  "synthetic_data_only": true,
+  "provider": "openrouter",
+  "configured_model": "minimax/minimax-m3:free",
+  "structured_output_mode": "json_object",
+  "calls": [
+    {
+      "issue": "PAY-4471",
+      "expected_verdict": "REQUIRE_APPROVAL",
+      "verdict": "REQUIRE_APPROVAL",
+      "provider": "openrouter",
+      "model": "minimax/minimax-m3:free",
+      "serving_provider": "GMICloud",
+      "schema_repair_count": 0,
+      "latency_ms": 4699,
+      "input_tokens": 1011,
+      "output_tokens": 284,
+      "reasoning_tokens": 0,
+      "total_tokens": 1295,
+      "reported_cost_usd": 0.0
+    },
+    {
+      "issue": "SEC-4502",
+      "expected_verdict": "DENY",
+      "verdict": "DENY",
+      "provider": "openrouter",
+      "model": "minimax/minimax-m3:free",
+      "serving_provider": "GMICloud",
+      "schema_repair_count": 0,
+      "latency_ms": 26069,
+      "input_tokens": 980,
+      "output_tokens": 148,
+      "reasoning_tokens": 0,
+      "total_tokens": 1128,
+      "reported_cost_usd": 0.0
+    },
+    {
+      "issue": "WEB-4519",
+      "expected_verdict": "ALLOW",
+      "verdict": "REQUIRE_APPROVAL",
+      "provider": "openrouter",
+      "model": "minimax/minimax-m3:free",
+      "serving_provider": "GMICloud",
+      "schema_repair_count": 0,
+      "latency_ms": 19014,
+      "input_tokens": 955,
+      "output_tokens": 164,
+      "reasoning_tokens": 0,
+      "total_tokens": 1119,
+      "reported_cost_usd": 0.0
+    }
+  ],
+  "latency_ms": {
+    "sample_count": 3,
+    "p50": 19014,
+    "p95": 26069
+  },
+  "cost_note": "Measured while using OpenRouter's free MiniMax M3 endpoint; $0 inference cost is promotional/free-endpoint economics and is not representative of production unit economics. A $0 result does not satisfy the <$0.06 production cost target.",
+  "findings": [
+    {
+      "issue": "WEB-4519",
+      "expected_verdict": "ALLOW",
+      "actual_verdict": "REQUIRE_APPROVAL"
+    }
+  ]
+}

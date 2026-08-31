@@ -4,6 +4,9 @@ Warrant is a working delegation control plane for coding-agent work. It decides 
 
 > **Synthetic demo:** every issue, identity, agent, and activity in this repository is fictional. The default AI provider is a visibly labelled deterministic fixture. Fixture results are not represented as live-model evaluation evidence.
 
+> **Hard data rule:** the experimental OpenRouter free endpoint may receive synthetic
+> data only. Never point it at real customer issues, code, credentials, or attachments.
+
 ## Why it exists
 
 Issue trackers and coding agents provide delegation mechanics, OAuth scopes, and post-hoc review. They do not produce a reproducible per-work-item answer to four connected questions: should this work have been delegated, what was the agent allowed to touch, who authorised it, and did its returned evidence satisfy the request? Warrant owns that workflow-level accountability boundary without becoming another tracker or agent.
@@ -13,7 +16,7 @@ Issue trackers and coding agents provide delegation mechanics, OAuth scopes, and
 - Manual delegation and signed/idempotent webhook ingress.
 - 400 fictional issues across five teams, 12 users, three agents, and six governed repository surfaces.
 - Hybrid SQLite FTS5 plus deterministic local-vector retrieval with reciprocal-rank fusion.
-- `LLMProvider` abstraction with offline fixture and genuine OpenAI-compatible structured-inference implementations.
+- `LLMProvider` abstraction with fixture, OpenAI, and first-class OpenRouter providers.
 - Closed extraction schema with no authorisation field.
 - Deterministic consequence, reversibility, surface, concurrency, injection, ownership, and evidence-sufficiency features.
 - Validated executable YAML policy engine with a consequence × reversibility matrix.
@@ -81,10 +84,15 @@ was not executed in this environment because the Docker daemon was unavailable.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `AI_PROVIDER` | `fixture` | `fixture` for visibly simulated offline operation; `openai` for genuine structured inference. |
+| `AI_PROVIDER` | `fixture` | `fixture`, `openai`, or experimental `openrouter`; fixture remains the shipped default. |
 | `OPENAI_API_KEY` | unset | Required only in `AI_PROVIDER=openai`; never committed or logged. |
 | `OPENAI_BASE_URL` | OpenAI API | OpenAI-compatible chat-completions endpoint. |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | Model identifier used for extraction and judging. |
+| `OPENROUTER_API_KEY` | unset | Required only for experimental `AI_PROVIDER=openrouter`; synthetic data only. |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter's OpenAI-compatible API. |
+| `OPENROUTER_MODEL` | `minimax/minimax-m3:free` | Explicit experimental MiniMax M3 free endpoint capability profile. |
+| `STRUCTURED_OUTPUT_MODE` | provider/model capability | Override: `json_schema`, `json_object`, or `none`. |
+| `PROVIDER_TIMEOUT_SECONDS` | OpenAI `12`; OpenRouter `45` | Safety ceiling, not an expected-latency claim. |
 | `DATABASE_PATH` | `data/warrant.db` | Local persistent SQLite database. |
 | `WORKSPACE_ID` | `ws-demo` | Workspace used by server-rendered operator routes and as the API header default. |
 | `WEBHOOK_SECRET` | insecure demo value | HMAC key for tracker webhook verification; replace outside local demo. |
@@ -105,6 +113,7 @@ make demo-reset  # delete only data/warrant.db and create the repeatable fiction
 make dev         # local development server
 make test        # automated tests
 make eval        # 120-case policy evaluation + unsafe-allow gate
+make live-check  # three synthetic reference issues against the configured live provider
 make lint        # Ruff checks
 make typecheck   # mypy static typecheck
 make check       # lint → typecheck → unit → integration → eval → package build
@@ -137,7 +146,7 @@ The suite is organised by risk:
 - `tests/e2e/` — delegation → narrow approval → warrant → evidence → verification → export.
 - `tests/security/` — CSRF, cross-tenant 404, self-approval, scope widening, nonce replay, append-only trigger.
 
-Latest verified result on 2026-08-30: **53 passed** (21 unit and 32 wider tests).
+Latest verified result on 2026-08-31: **61 passed**.
 
 ## Evaluation
 

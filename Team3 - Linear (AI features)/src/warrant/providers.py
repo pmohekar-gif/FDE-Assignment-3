@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import ValidationError
 
@@ -40,6 +40,11 @@ class ProviderResponse:
     output_tokens: int | None
     estimated_cost_usd: float | None
     degraded: bool = False
+    reasoning_tokens: int | None = None
+    total_tokens: int | None = None
+    reported_cost_usd: float | None = None
+    serving_provider: str | None = None
+    schema_repair_count: int = 0
 
 
 class LLMProvider(ABC):
@@ -230,43 +235,108 @@ class FixtureProvider(LLMProvider):
         )
 
 
+StructuredOutputMode = Literal["json_schema", "json_object", "none"]
+
+
+def structured_output_mode_for(
+    provider: str, model: str, override: str | None = None
+) -> StructuredOutputMode:
+    """Resolve an explicit model capability; provider alone never implies support."""
+    if override:
+        if override not in {"json_schema", "json_object", "none"}:
+            raise ProviderError(f"invalid STRUCTURED_OUTPUT_MODE: {override}")
+        return cast(StructuredOutputMode, override)
+    if provider == "openai":
+        return "json_schema"
+    if provider == "openrouter" and model == "minimax/minimax-m3:free":
+        return "json_object"
+    return "none"
+
+
+def tolerant_json_loads(content: str) -> Any:
+    """Decode the first JSON value, tolerating fences and surrounding prose."""
+    cleaned = re.sub(r"^\s*```(?:json)?\s*", "", content, flags=re.I)
+    cleaned = re.sub(r"\s*```\s*$", "", cleaned)
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(cleaned):
+        if character not in "[{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(cleaned[index:])
+            return value
+        except json.JSONDecodeError:
+            continue
+    raise json.JSONDecodeError("no JSON object or array found", cleaned, 0)
+
+
 class OpenAICompatibleProvider(LLMProvider):
-    name = "openai-compatible"
 
     def __init__(self, settings: Settings):
-        if not settings.openai_api_key:
-            raise ProviderError("OPENAI_API_KEY is required when AI_PROVIDER=openai")
-        self.api_key = settings.openai_api_key
-        self.base_url = settings.openai_base_url.rstrip("/")
-        self.model = settings.openai_model
+        self.name = settings.ai_provider
+        if self.name == "openrouter":
+            if not settings.openrouter_api_key:
+                raise ProviderError("OPENROUTER_API_KEY is required when AI_PROVIDER=openrouter")
+            self.api_key = settings.openrouter_api_key
+            self.base_url = settings.openrouter_base_url.rstrip("/")
+            self.model = settings.openrouter_model
+            self.timeout_seconds = settings.provider_timeout_seconds or 45
+            self.extra_headers = {
+                "HTTP-Referer": settings.openrouter_http_referer,
+                "X-Title": settings.openrouter_x_title,
+            }
+        else:
+            if not settings.openai_api_key:
+                raise ProviderError("OPENAI_API_KEY is required when AI_PROVIDER=openai")
+            self.api_key = settings.openai_api_key
+            self.base_url = settings.openai_base_url.rstrip("/")
+            self.model = settings.openai_model
+            self.timeout_seconds = settings.provider_timeout_seconds or 12
+            self.extra_headers = {}
+        self.structured_output_mode = structured_output_mode_for(
+            self.name, self.model, settings.structured_output_mode
+        )
 
     def _call(
         self, operation: str, system: str, user: str, schema: dict[str, Any]
     ) -> ProviderResponse:
         started = time.perf_counter()
-        payload = {
+        if self.structured_output_mode == "json_object":
+            system += (
+                "\nReturn exactly one JSON object matching this required JSON Schema. "
+                "Do not add fields or prose:\n" + json.dumps(schema, separators=(",", ":"))
+            )
+        payload: dict[str, Any] = {
             "model": self.model,
             "temperature": 0,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "response_format": {
+        }
+        if self.structured_output_mode == "json_schema":
+            payload["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {"name": operation, "strict": True, "schema": schema},
-            },
-        }
+            }
+        elif self.structured_output_mode == "json_object":
+            payload["response_format"] = {"type": "json_object"}
+        if self.name == "openrouter":
+            payload["usage"] = {"include": True}
         request = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=json.dumps(payload).encode(),
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                **self.extra_headers,
+            },
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=12) as response:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
                 raw = json.loads(response.read())
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise ProviderError(f"provider call failed: {type(exc).__name__}") from exc
         try:
             content = raw["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
+            parsed = tolerant_json_loads(content)
             value = (
                 ExtractionResult.model_validate(parsed)
                 if operation == "extract"
@@ -278,15 +348,23 @@ class OpenAICompatibleProvider(LLMProvider):
             raise ProviderMalformed(
                 f"provider returned malformed structured output: {exc}"
             ) from exc
-        usage = raw.get("usage", {})
+        usage = raw.get("usage") or {}
+        details = usage.get("completion_tokens_details") or {}
+        actual_model = raw.get("model") or self.model
+        serving_provider = raw.get("provider")
+        reported_cost = usage.get("cost")
         return ProviderResponse(
             value,
             self.name,
-            self.model,
+            actual_model,
             int((time.perf_counter() - started) * 1000),
             usage.get("prompt_tokens"),
             usage.get("completion_tokens"),
             None,
+            reasoning_tokens=details.get("reasoning_tokens"),
+            total_tokens=usage.get("total_tokens"),
+            reported_cost_usd=float(reported_cost) if reported_cost is not None else None,
+            serving_provider=serving_provider,
         )
 
     def extract(
@@ -353,16 +431,23 @@ class ResilientProvider(LLMProvider):
         self.model = primary.model
 
     def _run(self, call, fallback_call):
+        started = time.perf_counter()
         repair_used = False
         transport_retries = 0
         repair_error = None
         while True:
             try:
-                return call(repair_error)
+                response = call(repair_error)
+                return replace(
+                    response,
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                    schema_repair_count=int(repair_used),
+                )
             except ProviderMalformed as exc:
                 if repair_used:
                     if self.fallback:
                         return self._degraded_fallback(fallback_call)
+                    exc.schema_repair_count = 1
                     raise
                 repair_used = True
                 repair_error = str(exc)
@@ -418,7 +503,7 @@ class ResilientProvider(LLMProvider):
 
 
 def build_provider(settings: Settings) -> LLMProvider:
-    if settings.ai_provider == "openai":
+    if settings.ai_provider in {"openai", "openrouter"}:
         primary: LLMProvider = OpenAICompatibleProvider(settings)
     else:
         primary = FixtureProvider(settings.fixture_failure)
