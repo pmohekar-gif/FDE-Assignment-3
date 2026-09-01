@@ -1,10 +1,18 @@
 {
-  "status": "MEASURED_SYNTHETIC_POLICY_AND_E2E",
-  "measured_at": "2026-08-31T08:59:46.232451+00:00",
+  "status": "MEASURED_SYNTHETIC_POLICY_E2E_AND_RETRIEVAL",
+  "measured_at": "2026-09-01T09:13:27.710213+00:00",
   "dataset": {
     "path": "evaluations/golden.json",
     "cases": 120,
-    "synthetic": true
+    "synthetic": true,
+    "retrieval_path": "evaluations/retrieval_golden.json",
+    "retrieval_cases": 4,
+    "search_path": "evaluations/search_golden.json",
+    "search_cases": 6,
+    "brief_path": "evaluations/brief_golden.json",
+    "brief_cases": 2,
+    "triage_path": "evaluations/triage_golden.json",
+    "triage_cases": 3
   },
   "provider_mode": "none (pure deterministic policy evaluation)",
   "metrics": {
@@ -22,7 +30,17 @@
     "e2e_pipeline_safe_rate": 1.0,
     "operational_adversarial_non_allow_rate": 1.0,
     "risk_class_macro_f1": "NOT_MEASURED",
-    "retrieval_recall_at_10": "NOT_MEASURED",
+    "retrieval_recall_at_10": 1.0,
+    "possible_duplicate_precision": 1.0,
+    "semantic_search_recall_at_10": 1.0,
+    "exact_key_search_success": 1.0,
+    "brief_unsupported_authority_count": 0,
+    "brief_contradiction_count": 0,
+    "brief_required_fact_coverage": 1.0,
+    "triage_team_accuracy": 1.0,
+    "triage_priority_macro_f1": 1.0,
+    "triage_label_precision": 1.0,
+    "triage_label_recall": 1.0,
     "judge_precision_satisfied": "NOT_MEASURED",
     "p95_preflight_latency_ms": "NOT_MEASURED",
     "cost_per_delegation_usd": "NOT_MEASURED"
@@ -84,8 +102,58 @@
     },
     "retrieval_recall_at_10": {
       "proposed_target": ">= 0.85",
-      "measured_value": "NOT_MEASURED",
-      "status": "NOT_MEASURED"
+      "measured_value": 1.0,
+      "status": "within_target"
+    },
+    "possible_duplicate_precision": {
+      "proposed_target": ">= 0.85",
+      "measured_value": 1.0,
+      "status": "within_target"
+    },
+    "semantic_search_recall_at_10": {
+      "proposed_target": ">= 0.85",
+      "measured_value": 1.0,
+      "status": "within_target"
+    },
+    "exact_key_search_success": {
+      "proposed_target": "1.00",
+      "measured_value": 1.0,
+      "status": "within_target"
+    },
+    "brief_unsupported_authority_count": {
+      "proposed_target": "0",
+      "measured_value": 0,
+      "status": "within_target"
+    },
+    "brief_contradiction_count": {
+      "proposed_target": "0",
+      "measured_value": 0,
+      "status": "within_target"
+    },
+    "brief_required_fact_coverage": {
+      "proposed_target": "1.00",
+      "measured_value": 1.0,
+      "status": "within_target"
+    },
+    "triage_team_accuracy": {
+      "proposed_target": ">= 0.85",
+      "measured_value": 1.0,
+      "status": "within_target"
+    },
+    "triage_priority_macro_f1": {
+      "proposed_target": ">= 0.75",
+      "measured_value": 1.0,
+      "status": "within_target"
+    },
+    "triage_label_precision": {
+      "proposed_target": ">= 0.80",
+      "measured_value": 1.0,
+      "status": "within_target"
+    },
+    "triage_label_recall": {
+      "proposed_target": ">= 0.80",
+      "measured_value": 1.0,
+      "status": "within_target"
     },
     "judge_precision_satisfied": {
       "proposed_target": ">= 0.85",
@@ -106,7 +174,11 @@
   "limitations": [
     "This run measures deterministic policy behaviour on synthetic labelled cases.",
     "The E2E slice uses deterministic fixture extraction/judging and synthetic issues.",
-    "Live-model quality, labelled retrieval quality, production latency, and cost remain NOT_MEASURED."
+    "Retrieval quality is measured only on a small synthetic labelled set; it is not evidence of production or customer-data quality.",
+    "Semantic search uses deterministic token-hash vectors, not a production embedding model; its small synthetic search set is a regression signal only.",
+    "Brief grounding is measured on fixture and deterministic fallback narratives; live-model grounding still requires separate evidence.",
+    "Triage quality is measured on three synthetic demo issues and deterministic signals; it does not establish production routing quality.",
+    "Live-model judge quality, production latency, and cost remain NOT_MEASURED."
   ],
   "e2e_slices": [
     {
@@ -150,6 +222,311 @@
       "expected": "CONFLICT_409",
       "actual": "CONFLICT_409",
       "safe": true
+    }
+  ],
+  "retrieval_cases": [
+    {
+      "source": "PAY-3000",
+      "returned": [
+        "PAY-3200",
+        "PAY-3050",
+        "PAY-3100",
+        "PAY-3150",
+        "PAY-3080",
+        "PAY-3040",
+        "PAY-3120",
+        "PAY-3155",
+        "PAY-3160",
+        "PAY-3195"
+      ],
+      "relevant_hits": [
+        "PAY-3040",
+        "PAY-3080",
+        "PAY-3120",
+        "PAY-3160",
+        "PAY-3200"
+      ],
+      "predicted_duplicates": [
+        "PAY-3200"
+      ],
+      "duplicate_hits": [
+        "PAY-3200"
+      ]
+    },
+    {
+      "source": "WEB-3001",
+      "returned": [
+        "WEB-3201",
+        "WEB-3081",
+        "WEB-3121",
+        "WEB-3051",
+        "WEB-3041",
+        "WEB-3101",
+        "WEB-3151",
+        "WEB-3161",
+        "WEB-3131",
+        "WEB-3196"
+      ],
+      "relevant_hits": [
+        "WEB-3041",
+        "WEB-3081",
+        "WEB-3121",
+        "WEB-3161",
+        "WEB-3201"
+      ],
+      "predicted_duplicates": [
+        "WEB-3201"
+      ],
+      "duplicate_hits": [
+        "WEB-3201"
+      ]
+    },
+    {
+      "source": "GROW-3003",
+      "returned": [
+        "GROW-3203",
+        "GROW-3053",
+        "GROW-3153",
+        "GROW-3103",
+        "GROW-3083",
+        "GROW-3043",
+        "GROW-3123",
+        "GROW-3163",
+        "GROW-3148",
+        "GROW-3168"
+      ],
+      "relevant_hits": [
+        "GROW-3203"
+      ],
+      "predicted_duplicates": [
+        "GROW-3203"
+      ],
+      "duplicate_hits": [
+        "GROW-3203"
+      ]
+    },
+    {
+      "source": "DATA-3004",
+      "returned": [
+        "DATA-3204",
+        "DATA-3104",
+        "DATA-3054",
+        "DATA-3154",
+        "DATA-3084",
+        "DATA-3044",
+        "DATA-3124",
+        "DATA-3099",
+        "DATA-3164",
+        "DATA-3059"
+      ],
+      "relevant_hits": [
+        "DATA-3204"
+      ],
+      "predicted_duplicates": [
+        "DATA-3204"
+      ],
+      "duplicate_hits": [
+        "DATA-3204"
+      ]
+    }
+  ],
+  "search_cases": [
+    {
+      "slice": "exact_key",
+      "query": "PAY-4471",
+      "expected": "PAY-4471",
+      "returned": [
+        "PAY-4471",
+        "SEC-4502",
+        "WEB-3196",
+        "WEB-3396",
+        "DATA-3049",
+        "DATA-3249",
+        "WEB-3001",
+        "WEB-3201",
+        "WEB-3096",
+        "WEB-3296"
+      ],
+      "rank": 1,
+      "hit": true
+    },
+    {
+      "slice": "exact_key",
+      "query": "SEC-4502",
+      "expected": "SEC-4502",
+      "returned": [
+        "SEC-4502",
+        "WEB-3061",
+        "WEB-3261",
+        "PLAT-3162",
+        "PLAT-3362",
+        "PAY-3010",
+        "PAY-3210",
+        "DATA-3114",
+        "DATA-3314",
+        "GROW-3013"
+      ],
+      "rank": 1,
+      "hit": true
+    },
+    {
+      "slice": "exact_key",
+      "query": "WEB-4519",
+      "expected": "WEB-4519",
+      "returned": [
+        "WEB-4519",
+        "DATA-3004",
+        "DATA-3009",
+        "DATA-3014",
+        "DATA-3019",
+        "DATA-3024",
+        "DATA-3029",
+        "DATA-3034",
+        "DATA-3039",
+        "DATA-3044"
+      ],
+      "rank": 1,
+      "hit": true
+    },
+    {
+      "slice": "semantic",
+      "query": "second retry must not create another charge",
+      "expected": "PAY-4471",
+      "returned": [
+        "PAY-4471",
+        "PAY-3000",
+        "PLAT-3152",
+        "PAY-3200",
+        "DATA-3104",
+        "PLAT-3352",
+        "DATA-3304",
+        "WEB-4519",
+        "WEB-3096",
+        "WEB-3296"
+      ],
+      "rank": 1,
+      "hit": true
+    },
+    {
+      "slice": "semantic",
+      "query": "create your first report retain existing link",
+      "expected": "WEB-4519",
+      "returned": [
+        "WEB-4519",
+        "PLAT-3167",
+        "DATA-3119",
+        "PAY-3015",
+        "PLAT-3367",
+        "DATA-3319",
+        "PAY-3215",
+        "WEB-3066",
+        "WEB-3266",
+        "PLAT-3067"
+      ],
+      "rank": 1,
+      "hit": true
+    },
+    {
+      "slice": "semantic",
+      "query": "signing key expired redeploy auth",
+      "expected": "SEC-4502",
+      "returned": [
+        "SEC-4502",
+        "WEB-3196",
+        "WEB-3396",
+        "DATA-3049",
+        "DATA-3249",
+        "WEB-3001",
+        "WEB-3201",
+        "WEB-3096",
+        "WEB-3296",
+        "WEB-3146"
+      ],
+      "rank": 1,
+      "hit": true
+    }
+  ],
+  "brief_cases": [
+    {
+      "mode": "model",
+      "issue": "WEB-4519",
+      "expected_verdict": "ALLOW",
+      "actual_source": "model",
+      "authority_boundary": {
+        "authorising": false,
+        "decision_source": "deterministic_policy",
+        "prose_may_change_verdict": false
+      },
+      "unsupported_authority": [],
+      "contradiction": false,
+      "required_fact_checks": {
+        "issue_key": true,
+        "evidence_sufficiency": true,
+        "policy_reasons": true
+      }
+    },
+    {
+      "mode": "structured_fallback",
+      "issue": "WEB-4519",
+      "expected_verdict": "ALLOW",
+      "actual_source": "structured_fallback",
+      "authority_boundary": {
+        "authorising": false,
+        "decision_source": "deterministic_policy",
+        "prose_may_change_verdict": false
+      },
+      "unsupported_authority": [],
+      "contradiction": false,
+      "required_fact_checks": {
+        "issue_key": true,
+        "evidence_sufficiency": true,
+        "policy_reasons": true
+      }
+    }
+  ],
+  "triage_cases": [
+    {
+      "issue": "PAY-4471",
+      "team": "Payments",
+      "priority": "high",
+      "labels": [
+        "bug",
+        "customer-impact"
+      ],
+      "actual_team": "Payments",
+      "actual_priority": "high",
+      "actual_labels": [
+        "bug",
+        "customer-impact"
+      ]
+    },
+    {
+      "issue": "SEC-4502",
+      "team": "Platform",
+      "priority": "urgent",
+      "labels": [
+        "security",
+        "urgent"
+      ],
+      "actual_team": "Platform",
+      "actual_priority": "urgent",
+      "actual_labels": [
+        "security",
+        "urgent"
+      ]
+    },
+    {
+      "issue": "WEB-4519",
+      "team": "Web",
+      "priority": "low",
+      "labels": [
+        "copy"
+      ],
+      "actual_team": "Web",
+      "actual_priority": "low",
+      "actual_labels": [
+        "copy"
+      ]
     }
   ],
   "failures": []

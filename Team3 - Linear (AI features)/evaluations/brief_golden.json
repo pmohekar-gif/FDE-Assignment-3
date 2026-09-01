@@ -1,0 +1,4 @@
+[
+  {"mode": "model", "issue": "WEB-4519", "expected_verdict": "ALLOW"},
+  {"mode": "structured_fallback", "issue": "WEB-4519", "expected_verdict": "ALLOW"}
+]

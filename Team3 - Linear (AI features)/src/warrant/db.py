@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS issues (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, external_key TEXT NOT NULL,
   title TEXT NOT NULL, body_normalised TEXT NOT NULL, team TEXT NOT NULL,
   labels_json TEXT NOT NULL DEFAULT '[]', path_hints_json TEXT NOT NULL DEFAULT '[]',
+  priority TEXT NOT NULL DEFAULT 'medium',
   revision INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL,
   demo_note TEXT NOT NULL DEFAULT '', is_demo_path INTEGER NOT NULL DEFAULT 0,
   UNIQUE(workspace_id, external_key), FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
@@ -123,11 +124,19 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL,
   subject_id TEXT, attributes_json TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS delegation_briefs (
+  delegation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, issue_revision INTEGER NOT NULL,
+  facts_hash TEXT NOT NULL, prompt_hash TEXT NOT NULL, response_json TEXT NOT NULL,
+  prose_source TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+);
 CREATE INDEX IF NOT EXISTS idx_delegations_workspace ON delegations(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_warrants_workspace ON warrants(workspace_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_events(workspace_id, seq);
 CREATE INDEX IF NOT EXISTS idx_telemetry_name ON telemetry_events(workspace_id, name);
 CREATE INDEX IF NOT EXISTS idx_extraction_cache_issue ON extraction_cache(issue_id, issue_revision);
+CREATE INDEX IF NOT EXISTS idx_briefs_workspace ON delegation_briefs(workspace_id, generated_at);
 """
 
 
@@ -161,6 +170,10 @@ class Database:
             if "is_demo_path" not in issue_columns:
                 connection.execute(
                     "ALTER TABLE issues ADD COLUMN is_demo_path INTEGER NOT NULL DEFAULT 0"
+                )
+            if "priority" not in issue_columns:
+                connection.execute(
+                    "ALTER TABLE issues ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'"
                 )
             usage_columns = {
                 row["name"]

@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import math
+from dataclasses import asdict
 from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, Query, Request
@@ -19,17 +20,23 @@ from .providers import ProviderError, build_provider
 from .retrieval import RetrievalService
 from .schemas import (
     Consequence,
+    DelegationBriefTelemetry,
     DelegationCreate,
     EvidenceSubmission,
     HumanDecision,
     PolicySimulationSource,
     PolicySource,
+    RelatedIssueTelemetry,
+    SemanticSearchTelemetry,
+    TriageApplication,
+    TriageTelemetry,
     WarrantRevocation,
     WebhookEnvelope,
 )
 from .security import verify_webhook
 from .seed import reset_and_seed
-from .service import DomainError, Forbidden, InvalidPolicy, Unauthorized, WarrantService
+from .service import DomainError, Forbidden, InvalidPolicy, NotFound, Unauthorized, WarrantService
+from .triage import TriageRecommendationService
 from .ui import REMEDIATION_BY_REASON, explain_codes, explain_rules, pipeline_trace
 
 
@@ -47,6 +54,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         not in {"embedding", "embeddings", "embedding_failure"},
     )
     service = WarrantService(db, settings, provider, retrieval)
+    triage = TriageRecommendationService(db, retrieval)
 
     app = FastAPI(
         title="Warrant",
@@ -56,6 +64,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
     app.state.settings = settings
     app.state.db = db
     app.state.service = service
+    app.state.triage = triage
     templates = Jinja2Templates(directory=str(PROJECT_ROOT / "src" / "warrant" / "templates"))
     app.mount(
         "/static",
@@ -137,28 +146,39 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             if cache_hits + cache_misses
             else "NOT_MEASURED"
         )
-        conditions = ["workspace_id=?"]
-        params: list[Any] = [workspace_id]
-        if q.strip():
-            conditions.append("(external_key LIKE ? OR title LIKE ?)")
-            term = f"%{q.strip()}%"
-            params.extend([term, term])
-        if team:
-            conditions.append("team=?")
-            params.append(team)
-        where = " AND ".join(conditions)
-        count = db.one(f"SELECT COUNT(*) AS n FROM issues WHERE {where}", params)
-        issue_count = int(count["n"]) if count else 0
-        page_count = max(1, math.ceil(issue_count / page_size))
-        page = min(page, page_count)
-        issues = db.all(
-            "SELECT external_key,title,team,path_hints_json,demo_note,is_demo_path "
-            f"FROM issues WHERE {where} "
-            "ORDER BY is_demo_path DESC, CASE external_key WHEN 'PAY-4471' THEN 0 "
-            "WHEN 'SEC-4502' THEN 1 WHEN 'WEB-4519' THEN 2 ELSE 3 END, external_key "
-            "LIMIT ? OFFSET ?",
-            [*params, page_size, (page - 1) * page_size],
-        )
+        cleaned_query = " ".join(q.split())[:300]
+        search_mode: str | None = None
+        search_completeness: float | None = None
+        if cleaned_query:
+            search_result = retrieval.search_issues(
+                workspace_id, cleaned_query, team=team or None, limit=50
+            )
+            issue_count = len(search_result.results)
+            page_count = max(1, math.ceil(issue_count / page_size))
+            page = min(page, page_count)
+            offset = (page - 1) * page_size
+            issues = search_result.results[offset : offset + page_size]
+            search_mode = search_result.mode
+            search_completeness = search_result.completeness
+        else:
+            conditions = ["workspace_id=?"]
+            params: list[Any] = [workspace_id]
+            if team:
+                conditions.append("team=?")
+                params.append(team)
+            where = " AND ".join(conditions)
+            count = db.one(f"SELECT COUNT(*) AS n FROM issues WHERE {where}", params)
+            issue_count = int(count["n"]) if count else 0
+            page_count = max(1, math.ceil(issue_count / page_size))
+            page = min(page, page_count)
+            issues = db.all(
+                "SELECT external_key,title,team,path_hints_json,demo_note,is_demo_path "
+                f"FROM issues WHERE {where} "
+                "ORDER BY is_demo_path DESC, CASE external_key WHEN 'PAY-4471' THEN 0 "
+                "WHEN 'SEC-4502' THEN 1 WHEN 'WEB-4519' THEN 2 ELSE 3 END, external_key "
+                "LIMIT ? OFFSET ?",
+                [*params, page_size, (page - 1) * page_size],
+            )
         delegations = service.list_delegations(workspace_id)
         needs_decision = [item for item in delegations if item["status"] == "awaiting_approval"]
         return templates.TemplateResponse(
@@ -171,8 +191,10 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
                 "audit_ok": service.audit.verify(workspace_id),
                 "evaluation_metrics": evaluation_metrics,
                 "evaluation_targets": evaluation_report.get("targets", {}),
-                "q": q,
+                "q": cleaned_query,
                 "team": team,
+                "search_mode": search_mode,
+                "search_completeness": search_completeness,
                 "teams": [
                     row["team"]
                     for row in db.all(
@@ -191,6 +213,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
     async def delegation_page(request: Request, delegation_id: str) -> HTMLResponse:
         workspace_id = settings.workspace_id
         detail = service.get_delegation(delegation_id, workspace_id)
+        brief = service.delegation_brief(delegation_id, workspace_id)
         policy = service._active_policy(workspace_id)
         preview_allowed: list[str] = []
         preview_denied: list[str] = []
@@ -234,6 +257,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "delegation.html",
             {
                 "delegation": detail,
+                "brief": brief,
                 "preview_allowed": preview_allowed,
                 "preview_denied": preview_denied,
                 "reason_details": reason_details,
@@ -392,6 +416,186 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         delegation_id: str, x_workspace_id: Annotated[str | None, Header()] = None
     ) -> dict:
         return service.delegation_brief(delegation_id, workspace(x_workspace_id))
+
+    @app.post("/v1/delegations/{delegation_id}/brief/refresh")
+    async def refresh_brief(
+        delegation_id: str,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        require_csrf(x_csrf_token)
+        workspace_id = workspace(x_workspace_id)
+        brief = service.delegation_brief(delegation_id, workspace_id, force_refresh=True)
+        service.telemetry(
+            workspace_id,
+            "delegation_brief_refreshed",
+            delegation_id,
+            prose_source=brief["prose_source"],
+            stale_before_refresh=True,
+        )
+        return brief
+
+    @app.post("/v1/telemetry/delegation-brief", status_code=202)
+    async def delegation_brief_telemetry(
+        body: DelegationBriefTelemetry,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, bool]:
+        require_csrf(x_csrf_token)
+        workspace_id = workspace(x_workspace_id)
+        service.get_delegation(body.delegation_id, workspace_id)
+        service.telemetry(
+            workspace_id,
+            "delegation_brief_viewed",
+            body.delegation_id,
+            prose_source=body.prose_source,
+            stale=body.stale,
+        )
+        return {"recorded": True}
+
+    @app.get("/v1/issues/{issue_ref}/related")
+    async def related_issues_endpoint(
+        issue_ref: str,
+        limit: int = Query(default=5, ge=1, le=10),
+        x_workspace_id: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        result = retrieval.suggest_related(workspace(x_workspace_id), issue_ref, top_k=limit)
+        if result is None:
+            raise NotFound("issue not found")
+        return {
+            "source": result.source,
+            "retrieval": {
+                "mode": result.mode,
+                "completeness": result.completeness,
+            },
+            "suggestions": result.suggestions,
+            "advisory_only": True,
+        }
+
+    @app.get("/v1/issues/search")
+    async def semantic_issue_search_endpoint(
+        q: str = Query(min_length=2, max_length=300),
+        team: str | None = Query(default=None, min_length=1, max_length=80),
+        limit: int = Query(default=20, ge=1, le=50),
+        x_workspace_id: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        result = retrieval.search_issues(workspace(x_workspace_id), q, team=team, limit=limit)
+        return {
+            "query": result.query,
+            "team": result.team,
+            "retrieval": {"mode": result.mode, "completeness": result.completeness},
+            "results": result.results,
+            "read_only": True,
+        }
+
+    @app.get("/v1/issues/{issue_ref}/triage-recommendation")
+    async def triage_recommendation_endpoint(
+        issue_ref: str,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        result = triage.recommend(workspace(x_workspace_id), issue_ref)
+        if result is None:
+            raise NotFound("issue not found")
+        return asdict(result)
+
+    @app.post("/v1/issues/{issue_ref}/triage")
+    async def apply_triage_endpoint(
+        issue_ref: str,
+        body: TriageApplication,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        require_csrf(x_csrf_token)
+        workspace_id = workspace(x_workspace_id)
+        recommendation = triage.recommend(workspace_id, issue_ref)
+        if recommendation is None:
+            raise NotFound("issue not found")
+        return service.apply_triage(
+            workspace_id,
+            issue_ref,
+            x_actor_id or "",
+            body,
+            asdict(recommendation),
+        )
+
+    @app.post("/v1/telemetry/triage-recommendation", status_code=202)
+    async def triage_telemetry_endpoint(
+        body: TriageTelemetry,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, bool]:
+        require_csrf(x_csrf_token)
+        workspace_id = workspace(x_workspace_id)
+        issue = db.one(
+            "SELECT id FROM issues WHERE workspace_id=? AND external_key=?",
+            (workspace_id, body.issue_ref),
+        )
+        if issue is None:
+            raise NotFound("issue not found")
+        service.telemetry(
+            workspace_id,
+            "triage_recommendation_viewed",
+            issue["id"],
+            issue_ref=body.issue_ref,
+            retrieval_mode=body.retrieval_mode,
+        )
+        return {"recorded": True}
+
+    @app.post("/v1/telemetry/semantic-search", status_code=202)
+    async def semantic_search_telemetry_endpoint(
+        body: SemanticSearchTelemetry,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, bool]:
+        require_csrf(x_csrf_token)
+        workspace_id = workspace(x_workspace_id)
+        subject_id: str | None = None
+        if body.selected_issue_ref:
+            issue = db.one(
+                "SELECT id FROM issues WHERE workspace_id=? AND external_key=?",
+                (workspace_id, body.selected_issue_ref),
+            )
+            if issue is None:
+                raise NotFound("selected issue not found")
+            subject_id = issue["id"]
+        service.telemetry(
+            workspace_id,
+            f"semantic_search_{body.event}",
+            subject_id,
+            query_length=body.query_length,
+            result_count=body.result_count,
+            team_filtered=body.team_filtered,
+            selected_issue_ref=body.selected_issue_ref,
+            rank=body.rank,
+        )
+        return {"recorded": True}
+
+    @app.post("/v1/telemetry/related-issues", status_code=202)
+    async def related_issue_telemetry_endpoint(
+        body: RelatedIssueTelemetry,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, bool]:
+        require_csrf(x_csrf_token)
+        workspace_id = workspace(x_workspace_id)
+        source = db.one(
+            "SELECT id FROM issues WHERE workspace_id=? AND external_key=?",
+            (workspace_id, body.source_issue_ref),
+        )
+        if source is None:
+            raise NotFound("source issue not found")
+        service.telemetry(
+            workspace_id,
+            f"related_issue_suggestions_{body.event}",
+            source["id"],
+            source_issue_ref=body.source_issue_ref,
+            suggested_issue_ref=body.suggested_issue_ref,
+            relation=body.relation,
+            rank=body.rank,
+            result_count=body.result_count,
+        )
+        return {"recorded": True}
 
     @app.post("/v1/policies/simulate")
     async def simulate_policy_endpoint(

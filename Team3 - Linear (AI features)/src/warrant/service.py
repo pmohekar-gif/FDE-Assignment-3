@@ -30,6 +30,7 @@ from .schemas import (
     PolicyDecision,
     Reversibility,
     RiskAssessment,
+    TriageApplication,
     Verdict,
     VerificationValue,
 )
@@ -208,6 +209,86 @@ class WarrantService:
         if not row:
             raise NotFound("resource not found")
         return row
+
+    def apply_triage(
+        self,
+        workspace_id: str,
+        issue_ref: str,
+        actor_id: str,
+        application: TriageApplication,
+        recommendation: dict[str, Any],
+    ) -> dict[str, Any]:
+        actor = self.db.one(
+            "SELECT id FROM users WHERE id=? AND workspace_id=?", (actor_id, workspace_id)
+        )
+        if actor is None:
+            raise Forbidden("a valid workspace user must apply triage")
+        issue = self.db.one(
+            "SELECT * FROM issues WHERE workspace_id=? AND external_key=?",
+            (workspace_id, issue_ref),
+        )
+        if issue is None:
+            raise NotFound("issue not found")
+        team_exists = self.db.one(
+            "SELECT 1 AS present FROM issues WHERE workspace_id=? AND team=? LIMIT 1",
+            (workspace_id, application.team),
+        )
+        if team_exists is None:
+            raise DomainError("team is not available in this workspace")
+        with self.db.transaction() as connection:
+            cursor = connection.execute(
+                "UPDATE issues SET team=?,priority=?,labels_json=?,"
+                "revision=revision+1,updated_at=? "
+                "WHERE id=? AND workspace_id=? AND revision=?",
+                (
+                    application.team,
+                    application.priority,
+                    Database.dumps(application.labels),
+                    self.now(),
+                    issue["id"],
+                    workspace_id,
+                    application.expected_revision,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise Conflict("issue revision changed; review triage again")
+        updated = self.db.one(
+            "SELECT external_key,team,priority,labels_json,revision FROM issues WHERE id=?",
+            (issue["id"],),
+        )
+        if updated is None:  # pragma: no cover - guarded by the successful revision update
+            raise NotFound("issue not found after triage update")
+        event = self.audit.append(
+            workspace_id,
+            "triage_applied",
+            "user",
+            actor_id,
+            "issue",
+            issue["id"],
+            {
+                "issue_ref": issue_ref,
+                "recommendation": recommendation,
+                "previous": {
+                    "team": issue["team"],
+                    "priority": issue["priority"],
+                    "labels": Database.loads(issue["labels_json"], []),
+                    "revision": issue["revision"],
+                },
+                "applied": {
+                    "team": application.team,
+                    "priority": application.priority,
+                    "labels": application.labels,
+                    "revision": updated["revision"],
+                },
+            },
+        )
+        labels = Database.loads(updated.pop("labels_json"), [])
+        return {
+            **updated,
+            "labels": labels,
+            "audit_event_id": event["id"],
+            "audit_seq": event["seq"],
+        }
 
     def create_delegation(
         self,
@@ -1242,7 +1323,7 @@ class WarrantService:
     def get_delegation(self, delegation_id: str, workspace_id: str) -> dict[str, Any]:
         delegation = self._workspace_resource("delegations", delegation_id, workspace_id)
         issue = self.db.one(
-            "SELECT external_key,title,team,path_hints_json,demo_note,is_demo_path "
+            "SELECT external_key,title,team,path_hints_json,demo_note,is_demo_path,revision "
             "FROM issues WHERE id=?",
             (delegation["issue_id"],),
         )
@@ -1318,10 +1399,51 @@ class WarrantService:
             result["verification"] = None
         return result
 
-    def delegation_brief(self, delegation_id: str, workspace_id: str) -> dict[str, Any]:
+    def delegation_brief(
+        self, delegation_id: str, workspace_id: str, force_refresh: bool = False
+    ) -> dict[str, Any]:
         detail = self.get_delegation(delegation_id, workspace_id)
         risk = detail.get("risk_assessment") or {}
         decision = detail.get("decision") or {}
+        facts_input = {
+            "issue_revision": detail["issue"]["revision"],
+            "status": detail["status"],
+            "extraction": detail.get("extraction"),
+            "risk": risk,
+            "decision": decision,
+            "retrieval": detail.get("retrieval"),
+            "warrant": detail.get("warrant"),
+            "verification": detail.get("verification"),
+        }
+        facts_hash = hashlib.sha256(Database.dumps(facts_input).encode()).hexdigest()
+        prompt_hash = hashlib.sha256(
+            f"delegation-brief:v1:{self.provider.name}:{self.provider.model}".encode()
+        ).hexdigest()
+        cached = self.db.one(
+            "SELECT * FROM delegation_briefs WHERE delegation_id=? AND workspace_id=?",
+            (delegation_id, workspace_id),
+        )
+        if cached and not force_refresh:
+            cached_response = Database.loads(cached["response_json"], {})
+            cached_response["lifecycle"] = {
+                "cache_hit": True,
+                "stale": cached["facts_hash"] != facts_hash
+                or cached["prompt_hash"] != prompt_hash,
+                "generated_at": cached["generated_at"],
+                "refresh_required": cached["facts_hash"] != facts_hash
+                or cached["prompt_hash"] != prompt_hash,
+            }
+            return cached_response
+
+        verdict = decision.get("verdict", "UNKNOWN")
+        next_step = {
+            "ALLOW": "Review the issued warrant boundaries before agent execution.",
+            "REQUIRE_APPROVAL": "A named approver must review the structured decision.",
+            "DENY": "Do not execute; submit a newly scoped delegation if remediation is possible.",
+        }.get(verdict, "Review the structured record before taking action.")
+        missing_information = ((detail["extraction"] or {}).get("result") or {}).get(
+            "missing_information", []
+        )
         fallback = {
             "summary": (
                 f"{detail['issue']['external_key']} has "
@@ -1331,7 +1453,7 @@ class WarrantService:
                 f"Evidence sufficiency: {risk.get('evidence_sufficiency', 'unknown')}",
                 f"Deterministic reasons: {', '.join(decision.get('reason_codes', []))}",
             ],
-            "human_next_steps": ["Review the structured record before taking action."],
+            "human_next_steps": [next_step],
         }
         response = None
         error = None
@@ -1352,18 +1474,72 @@ class WarrantService:
             narrative = fallback
             source = "structured_fallback"
         self.record_usage(workspace_id, delegation_id, "generate_brief", response, error)
-        return {
+        generated_at = self.now()
+        provider_name = response.provider if response else self.provider.name
+        model_name = response.model if response else self.provider.model
+        brief = {
+            "brief_version": "v1",
+            "delegation_id": delegation_id,
+            "issue": {
+                "external_key": detail["issue"]["external_key"],
+                "title": detail["issue"]["title"],
+                "team": detail["issue"]["team"],
+                "revision": detail["issue"]["revision"],
+            },
+            "authority_boundary": {
+                "authorising": False,
+                "decision_source": "deterministic_policy",
+                "prose_may_change_verdict": False,
+            },
+            "fact_snapshot": {
+                "verdict": verdict,
+                "reason_codes": decision.get("reason_codes", []),
+                "proposed_surfaces": risk.get("proposed_surfaces", []),
+                "evidence_sufficiency": risk.get("evidence_sufficiency"),
+                "missing_information": missing_information,
+                "warrant_status": (detail["warrant"] or {}).get("status"),
+            },
             "verdict": decision,
             "risk": risk,
             "retrieved_evidence": detail["retrieval"],
-            "missing_information": ((detail["extraction"] or {}).get("result") or {}).get(
-                "missing_information", []
-            ),
+            "missing_information": missing_information,
             "warrant": detail["warrant"],
             "degraded": bool(decision and decision.get("fail_closed")),
             "prose": narrative,
             "prose_source": source,
+            "provenance": {
+                "provider": provider_name,
+                "model": model_name,
+                "prompt_hash": prompt_hash,
+            },
         }
+        self.db.execute(
+            "INSERT INTO delegation_briefs VALUES (?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(delegation_id) DO UPDATE SET "
+            "workspace_id=excluded.workspace_id,issue_revision=excluded.issue_revision,"
+            "facts_hash=excluded.facts_hash,prompt_hash=excluded.prompt_hash,"
+            "response_json=excluded.response_json,prose_source=excluded.prose_source,"
+            "provider=excluded.provider,model=excluded.model,generated_at=excluded.generated_at",
+            (
+                delegation_id,
+                workspace_id,
+                detail["issue"]["revision"],
+                facts_hash,
+                prompt_hash,
+                Database.dumps(brief),
+                source,
+                provider_name,
+                model_name,
+                generated_at,
+            ),
+        )
+        brief["lifecycle"] = {
+            "cache_hit": False,
+            "stale": False,
+            "generated_at": generated_at,
+            "refresh_required": False,
+        }
+        return brief
 
     def _warrant_view(self, row: dict[str, Any]) -> dict[str, Any]:
         status = (

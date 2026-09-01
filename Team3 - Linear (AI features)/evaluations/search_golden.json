@@ -1,0 +1,8 @@
+[
+  {"slice": "exact_key", "query": "PAY-4471", "expected": "PAY-4471"},
+  {"slice": "exact_key", "query": "SEC-4502", "expected": "SEC-4502"},
+  {"slice": "exact_key", "query": "WEB-4519", "expected": "WEB-4519"},
+  {"slice": "semantic", "query": "second retry must not create another charge", "expected": "PAY-4471"},
+  {"slice": "semantic", "query": "create your first report retain existing link", "expected": "WEB-4519"},
+  {"slice": "semantic", "query": "signing key expired redeploy auth", "expected": "SEC-4502"}
+]

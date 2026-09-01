@@ -21,6 +21,23 @@ class RetrievalResult:
     overlaps: list[dict[str, Any]]
 
 
+@dataclass(frozen=True)
+class RelatedIssueSuggestions:
+    source: dict[str, str]
+    mode: str
+    completeness: float
+    suggestions: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class IssueSearchResults:
+    query: str
+    team: str | None
+    mode: str
+    completeness: float
+    results: list[dict[str, Any]]
+
+
 def reciprocal_rank_fusion(rankings: list[list[str]], k: int = 60) -> dict[str, float]:
     scores: dict[str, float] = {}
     for ranking in rankings:
@@ -38,6 +55,15 @@ def titles_are_near_duplicates(left: str, right: str, threshold: float = 0.8) ->
     return len(left_tokens & right_tokens) / len(left_tokens | right_tokens) >= threshold
 
 
+def title_similarity(left: str, right: str) -> float:
+    """Return a deterministic, bounded token-overlap score for operator-facing labels."""
+    left_tokens = set(re.findall(r"[a-z0-9]+", left.lower()))
+    right_tokens = set(re.findall(r"[a-z0-9]+", right.lower()))
+    if not left_tokens or not right_tokens:
+        return float(left.strip().lower() == right.strip().lower())
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
 class RetrievalService:
     def __init__(self, db: Database, embeddings_available: bool = True):
         self.db = db
@@ -52,6 +78,167 @@ class RetrievalService:
             self.embedding_failures.popleft()
         if len(self.embedding_failures) >= 3:
             self.embedding_circuit_open_until = now + 60
+
+    def search_issues(
+        self,
+        workspace_id: str,
+        query: str,
+        team: str | None = None,
+        limit: int = 20,
+    ) -> IssueSearchResults:
+        """Search issue content without creating delegation evidence or authority."""
+        cleaned_query = " ".join(query.split())
+        bounded_limit = max(1, min(limit, 50))
+        if not cleaned_query:
+            return IssueSearchResults(cleaned_query, team, "EMPTY_QUERY", 1.0, [])
+
+        team_clause = " AND i.team=?" if team else ""
+        base_params: list[Any] = [workspace_id]
+        if team:
+            base_params.append(team)
+        issues = self.db.all(
+            "SELECT i.id,i.external_key,i.title,i.body_normalised,i.team,i.demo_note,"
+            "i.is_demo_path "
+            "FROM issues i WHERE i.workspace_id=?" + team_clause,
+            base_params,
+        )
+        by_id = {issue["id"]: issue for issue in issues}
+
+        normalised_key = cleaned_query.upper()
+        exact_ids = [
+            issue["id"] for issue in issues if issue["external_key"].upper() == normalised_key
+        ]
+        lexical_ids: list[str] = []
+        terms = re.findall(r"[a-z0-9]{2,}", cleaned_query.lower())[:12]
+        if terms:
+            match = " OR ".join(f'"{term}"' for term in terms)
+            try:
+                lexical_params: list[Any] = [workspace_id]
+                if team:
+                    lexical_params.append(team)
+                lexical_params.append(match)
+                rows = self.db.all(
+                    "SELECT f.issue_id,bm25(issues_fts) AS score FROM issues_fts f "
+                    "JOIN issues i ON i.id=f.issue_id WHERE f.workspace_id=?"
+                    + team_clause
+                    + " AND issues_fts MATCH ? ORDER BY score LIMIT 100",
+                    lexical_params,
+                )
+                lexical_ids = [row["issue_id"] for row in rows]
+            except Exception:
+                lexical_ids = []
+
+        semantic_ids: list[str] = []
+        semantic_scores: dict[str, float] = {}
+        mode, completeness = "HYBRID", 1.0
+        if self.embeddings_available and not self.embedding_circuit_open:
+            try:
+                query_vector = stable_vector(cleaned_query)
+                semantic_ranked = sorted(
+                    issues,
+                    key=lambda issue: cosine(
+                        query_vector,
+                        stable_vector(f"{issue['title']} {issue['body_normalised']}"),
+                    ),
+                    reverse=True,
+                )
+                semantic_ids = [issue["id"] for issue in semantic_ranked[:100]]
+                semantic_scores = {
+                    issue["id"]: cosine(
+                        query_vector,
+                        stable_vector(f"{issue['title']} {issue['body_normalised']}"),
+                    )
+                    for issue in semantic_ranked[:100]
+                }
+                self.embedding_failures.clear()
+            except Exception:
+                self._record_embedding_failure()
+                mode, completeness = "LEXICAL_ONLY", 0.5
+        else:
+            mode, completeness = "LEXICAL_ONLY", 0.5
+
+        fused = reciprocal_rank_fusion([exact_ids, lexical_ids, semantic_ids])
+        ranked_ids = sorted(
+            fused,
+            key=lambda issue_id: (
+                issue_id in exact_ids,
+                fused[issue_id],
+                semantic_scores.get(issue_id, -1.0),
+            ),
+            reverse=True,
+        )
+        results: list[dict[str, Any]] = []
+        for issue_id in ranked_ids[:bounded_limit]:
+            issue = by_id.get(issue_id)
+            if issue is None:
+                continue
+            matched_by = [
+                name
+                for name, ranking in (
+                    ("exact_key", exact_ids),
+                    ("lexical", lexical_ids),
+                    ("semantic", semantic_ids),
+                )
+                if issue_id in ranking
+            ]
+            results.append(
+                {
+                    "issue_id": issue_id,
+                    "external_key": issue["external_key"],
+                    "title": issue["title"],
+                    "team": issue["team"],
+                    "demo_note": issue["demo_note"],
+                    "is_demo_path": issue["is_demo_path"],
+                    "matched_by": matched_by,
+                    "rrf_score": round(fused[issue_id], 5),
+                    "semantic_score": round(semantic_scores.get(issue_id, 0.0), 3),
+                }
+            )
+        return IssueSearchResults(cleaned_query, team, mode, completeness, results)
+
+    def suggest_related(
+        self, workspace_id: str, issue_ref: str, top_k: int = 5
+    ) -> RelatedIssueSuggestions | None:
+        """Build advisory issue suggestions without creating a delegation or authority."""
+        issue = self.db.one(
+            "SELECT * FROM issues WHERE workspace_id=? AND external_key=?",
+            (workspace_id, issue_ref),
+        )
+        if issue is None:
+            return None
+
+        bounded_top_k = max(1, min(top_k, 10))
+        result = self.retrieve(workspace_id, issue, top_k=bounded_top_k)
+        suggestions: list[dict[str, Any]] = []
+        for candidate in result.candidates[:bounded_top_k]:
+            overlap = title_similarity(issue["title"], candidate["title"])
+            semantic = float(candidate.get("semantic_score", 0))
+            relation = "possible_duplicate" if overlap >= 0.6 else "related"
+            confidence = overlap if relation == "possible_duplicate" else max(overlap, semantic)
+            suggestions.append(
+                {
+                    **candidate,
+                    "relation": relation,
+                    "confidence": round(max(0.0, min(confidence, 1.0)), 3),
+                    "why": (
+                        "high title overlap; review before creating or delegating duplicate work"
+                        if relation == "possible_duplicate"
+                        else candidate["why"]
+                    ),
+                }
+            )
+
+        return RelatedIssueSuggestions(
+            source={
+                "issue_id": issue["id"],
+                "external_key": issue["external_key"],
+                "title": issue["title"],
+                "team": issue["team"],
+            },
+            mode=result.mode,
+            completeness=result.completeness,
+            suggestions=suggestions,
+        )
 
     @property
     def embedding_circuit_open(self) -> bool:

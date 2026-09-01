@@ -1,0 +1,20 @@
+[
+  {
+    "issue": "PAY-4471",
+    "team": "Payments",
+    "priority": "high",
+    "labels": ["bug", "customer-impact"]
+  },
+  {
+    "issue": "SEC-4502",
+    "team": "Platform",
+    "priority": "urgent",
+    "labels": ["security", "urgent"]
+  },
+  {
+    "issue": "WEB-4519",
+    "team": "Web",
+    "priority": "low",
+    "labels": ["copy"]
+  }
+]

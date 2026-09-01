@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Verdict(str, Enum):
@@ -41,6 +41,61 @@ class DelegationCreate(BaseModel):
     requester_id: str = Field(min_length=2, max_length=80)
     target_agent_id: str = Field(min_length=2, max_length=80)
     idempotency_key: str = Field(min_length=4, max_length=120)
+
+
+class RelatedIssueTelemetry(BaseModel):
+    event: Literal["viewed", "selected"]
+    source_issue_ref: str = Field(min_length=2, max_length=80)
+    suggested_issue_ref: str | None = Field(default=None, min_length=2, max_length=80)
+    relation: Literal["possible_duplicate", "related"] | None = None
+    rank: int | None = Field(default=None, ge=1, le=10)
+    result_count: int | None = Field(default=None, ge=0, le=10)
+
+    @model_validator(mode="after")
+    def selection_has_suggestion(self) -> "RelatedIssueTelemetry":
+        if self.event == "selected" and not self.suggested_issue_ref:
+            raise ValueError("selected events require suggested_issue_ref")
+        return self
+
+
+class SemanticSearchTelemetry(BaseModel):
+    event: Literal["viewed", "selected"]
+    query_length: int = Field(ge=2, le=300)
+    result_count: int = Field(ge=0, le=50)
+    team_filtered: bool
+    selected_issue_ref: str | None = Field(default=None, min_length=2, max_length=80)
+    rank: int | None = Field(default=None, ge=1, le=50)
+
+    @model_validator(mode="after")
+    def selection_has_issue_and_rank(self) -> "SemanticSearchTelemetry":
+        if self.event == "selected" and (not self.selected_issue_ref or self.rank is None):
+            raise ValueError("selected events require selected_issue_ref and rank")
+        return self
+
+
+class DelegationBriefTelemetry(BaseModel):
+    event: Literal["viewed"] = "viewed"
+    delegation_id: str = Field(min_length=4, max_length=80)
+    prose_source: Literal["model", "structured_fallback"]
+    stale: bool
+
+
+class TriageApplication(BaseModel):
+    expected_revision: int = Field(ge=1)
+    team: str = Field(min_length=1, max_length=80)
+    priority: Literal["urgent", "high", "medium", "low"]
+    labels: list[str] = Field(max_length=12)
+
+    @field_validator("labels")
+    @classmethod
+    def clean_labels(cls, values: list[str]) -> list[str]:
+        cleaned = [value.strip().lower()[:40] for value in values if value.strip()]
+        return list(dict.fromkeys(cleaned))
+
+
+class TriageTelemetry(BaseModel):
+    issue_ref: str = Field(min_length=2, max_length=80)
+    retrieval_mode: Literal["HYBRID", "LEXICAL_ONLY"]
 
 
 class ExtractionResult(BaseModel):

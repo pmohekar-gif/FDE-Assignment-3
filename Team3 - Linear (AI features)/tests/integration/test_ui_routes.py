@@ -19,13 +19,35 @@ def test_dashboard_filters_paginates_and_exposes_identity_controls(client):
     assert "Requester" in page.text
     assert "Target agent" in page.text
     assert "lead-web" in page.text
-    assert "Not yet measured (5)" in page.text
+    assert "Not yet measured (4)" in page.text
+    assert "Find related" in page.text
+    assert "Review AI triage" in page.text
+    assert 'aria-expanded="false"' in page.text
+    assert "Advisory only" in page.text
     assert "outside_target" in page.text
 
     second_page = client.get("/?page=2")
     assert second_page.status_code == 200
     assert "page 2 of" in second_page.text
     assert client.get("/static/favicon.svg").status_code == 200
+
+
+def test_dashboard_uses_hybrid_semantic_search_and_preserves_team_boundary(client):
+    page = client.get(
+        "/",
+        params={
+            "q": "second retry must not create another charge",
+            "team": "Payments",
+        },
+    )
+
+    assert page.status_code == 200
+    assert "PAY-4471" in page.text
+    assert "HYBRID" in page.text
+    assert "100% retrieval completeness" in page.text
+    assert "Matched by" in page.text
+    assert "PLAT-" not in page.text
+    assert "Key, title, or describe the problem" in page.text
 
 
 def test_delegation_page_shows_full_preapproval_contract_and_pipeline(client, headers):
@@ -42,6 +64,10 @@ def test_delegation_page_shows_full_preapproval_contract_and_pipeline(client, he
     assert "intake" in page.text and "record" in page.text
     assert "/policy#rule-" in page.text
     assert "existing single-charge path and add a regression test for double-submit." in page.text
+    assert "Delegation brief" in page.text
+    assert "Non-authorising explanation" in page.text
+    assert "Generated prose cannot approve" in page.text
+    assert "deterministic-fixture-v1" in page.text
     candidates = delegation["retrieval"]["candidates"][:4]
     titles = [item["title"] for item in candidates]
     assert len(titles) == len(set(titles))
@@ -80,6 +106,8 @@ def test_policy_and_evaluation_pages_render_operator_views(client):
     assert "overflow-x:auto" in css
     assert "@media(max-width:1100px)" in css
     assert ".empty,.empty.inline" in css
+    assert ".related-result" in css
+    assert ".triage-form" in css
     assert "font-size:13px" in css
 
     evaluation = client.get("/evaluation")
