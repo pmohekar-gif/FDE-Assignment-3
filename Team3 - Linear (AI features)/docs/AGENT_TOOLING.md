@@ -40,7 +40,7 @@ Emits a non-blocking `systemMessage` restating the project's verification standa
 
 - Run tests as `pytest -o addopts=`. `pyproject.toml` sets `addopts = "-q"`, which hides
   the summary line, so a bare `pytest` shows dots and no counts.
-- Baseline is **261 passed, 1 skipped**. Any other numbers are a regression to explain,
+- Baseline is **268 passed, 1 skipped**. Any other numbers are a regression to explain,
   not to wave through.
 - Full gate is `make check`.
 
@@ -74,25 +74,32 @@ make verify-agent-cli
 
 ### Interpreting the result
 
-A run on a machine with Claude Code 2.1.258 installed and no `codex` reported:
+The read-only probe on this machine on 2026-09-04 reported:
 
 ```
 claude
-  path      : /usr/local/bin/claude
-  version   : 2.1.258 (Claude Code)
+  path      : /Users/pmohekar/.local/bin/claude
+  version   : 2.1.259 (Claude Code)
   SubprocessCodingAgentRunner builds NO argv for `claude`: unsupported real
   coding-agent executable
 
 codex
-  not installed: `codex` is not on PATH -- nothing to verify
+  path      : /opt/homebrew/bin/codex
+  version   : codex-cli 0.153.0
+  PASS  --sandbox
+  PASS  --ask-for-approval
+  PASS  exec
+  PASS  --cd
+  PASS  --ephemeral
 
-CLIs found    : claude
-flags checked : 0
+CLIs found    : claude, codex
+flags checked : 5
+RESULT: all 5 checked flags are recognised by their CLI.
 ```
 
-That is a finding, not a pass. The runner only knows how to drive `codex`; `claude` being
-installed does not help it. **Zero flags have been verified against a real CLI.** To
-close the gap properly, run this on a machine with `codex` installed and authenticated,
-then reconcile any FAIL against the real help output.
+The runner still does not support Claude Code, but its generated Codex argv now matches
+the installed CLI. This proves installation and flag compatibility only. The probe does
+not authenticate, contact the network, or execute a coding task, so a successful real
+Codex session remains a separate end-to-end check.
 
 See `docs/LIMITATIONS.md` for the standing caveat on unverified external-agent execution.

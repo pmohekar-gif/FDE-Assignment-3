@@ -11,6 +11,6 @@
 
 cat <<'JSON'
 {
-  "systemMessage": "Warrant verification standard: run tests as `pytest -o addopts=` -- pyproject sets addopts=\"-q\", which hides the summary line, so a bare `pytest` cannot show you the counts. Baseline is 261 passed, 1 skipped; any other numbers are a regression to explain, not to wave through. Full gate: `make check` (lint, typecheck, unit, integration, eval, build). Agent CLI argv check: `make verify-agent-cli`."
+  "systemMessage": "Warrant verification standard: run tests as `pytest -o addopts=` -- pyproject sets addopts=\"-q\", which hides the summary line, so a bare `pytest` cannot show you the counts. Baseline is 268 passed, 1 skipped; any other numbers are a regression to explain, not to wave through. Full gate: `make check` (lint, typecheck, unit, integration, eval, build). Agent CLI argv check: `make verify-agent-cli`."
 }
 JSON

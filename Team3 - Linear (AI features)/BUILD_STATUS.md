@@ -76,9 +76,9 @@
   gateway's OpenAI-compatible `/v1/chat/completions` adapter, a separate virtual-key
   credential, and dynamic model resolution via `GET /v1/models` cached by key
   fingerprint. Never contacted during this build; see "Not Implemented".
-- Development-time lifecycle hooks for both Claude Code and Codex (`.claude/`, `.codex/`)
-  that lint after Python edits and restate the test standard on stop, plus
-  `make verify-agent-cli`. See `docs/AGENT_TOOLING.md`.
+- Development-time lifecycle hooks for Codex (`.codex/`) that lint after Python edits
+  and restate the test standard on stop, plus `make verify-agent-cli`. See
+  `docs/AGENT_TOOLING.md`.
 - Optional draft PR publication through `gh`, gated on feature flag, auth, compatible
   origin, completed verification, reviewable diff, warrant tool scope, and admin action.
 - Slack Events URL verification/app mentions with HMAC freshness, deduplication, thread
@@ -103,11 +103,9 @@
 - Live Linear adapter. 
 - A successful real Codex run in this environment. The implementation exists and
   is opt-in; the attempted Codex smoke was sandbox-blocked and an unsandboxed retry was
-  not authorised. `make verify-agent-cli` now exists to check the runner's argv against a
-  real CLI's `--help`, but on the verifying machine it reported **0 flags checked**: only
-  `claude` was installed, and `SubprocessCodingAgentRunner` builds no argv for `claude`.
-  The argv the runner constructs for `codex` therefore remains unverified against the
-  real tool.
+  not authorised. `make verify-agent-cli` now confirms that all five generated flags are
+  recognised by the installed Codex CLI 0.153.0. Authentication, network access, and a
+  completed coding task remain separate end-to-end checks.
 - Any live Bifrost gateway call. The provider is implemented and unit-tested entirely
   against fakes; the gateway was never contacted, no credential was used, and the
   endpoint is VPN-gated. Latency, cost, token use, and output quality are `NOT_MEASURED`
@@ -133,8 +131,7 @@
 - Compose syntax validates, but the image could not be executed because the local Docker
   daemon was not running.
 - `gh` is installed but not authenticated, so draft PR publication is locally unavailable.
-- Pstack was requested as a development-time aid but no Pstack executable or skill was
-  installed; its review discipline was applied manually and it is not a runtime dependency.
+- Pstack is installed as a Codex development-time plugin. It is not a runtime dependency.
 
 ## Next Highest-Risk Task
 
@@ -157,13 +154,11 @@
 
 ## Latest Verification — 2026-09-04
 
-- Ruff passed. **261 tests passed and 1 opt-in real-Codex test skipped** (unit 129,
-  integration 118, security 13, e2e 1). mypy was NOT re-run: the verifying environment
-  had no mypy installed, so the typecheck result is stale as of 2026-08-30.
-- Counts were confirmed file-by-file rather than in one run. The sandbox used for
-  verification timed out on whole-directory runs, so `tests/unit` and `tests/integration`
-  were executed in named batches and the per-file summaries added up. Every file was
-  observed passing; no count below was inferred.
+- Ruff and mypy passed. A complete directory run reported **268 tests passed and 1
+  opt-in real-Codex test skipped**, with one existing Starlette TestClient deprecation
+  warning.
+- `make verify-agent-cli` found Claude Code 2.1.259 and Codex CLI 0.153.0. The runner does
+  not support Claude, while all five flags in its generated Codex argv were recognised.
 - Closed this round: the execution contract now records a real approval snapshot
   (including an explicit `absent` marker for auto-allow, instead of an ambiguous null),
   `restricted_paths` is derived from the surface map and actually enforced, the warrant
