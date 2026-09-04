@@ -207,7 +207,7 @@ or as silently satisfying the `< $0.06` production target.
 - Audit rows reject update/delete and are hash-chained. This detects ordinary in-database mutation but is not an external trust anchor.
 - JSON and CSV audit API exports require a synthetic admin/owner identity and return
   403 to non-admin actors.
-- The application stores no real customer data, repository credentials, code, or attachments.
+- By default, all seeded demo/evaluation data is fictional and synthetic. If `LINEAR_MODE=live` is enabled, the optional live Linear import can store authorized Linear issue title/description after normalization/redaction in local SQLite for the accountability workflow. No Linear API keys are stored, raw descriptions are not stored in adapter metadata/audit/telemetry, and real Linear-imported data must not be sent to OpenRouter. The application stores no repository credentials, code, or attachments.
 
 ## Limitations
 
@@ -218,14 +218,14 @@ The most important limitations are intentional and visible:
 - Fixture mode is a development/demo fallback, not real AI evidence.
 - The 400-issue seed is synthetic and does not establish production retrieval quality.
 - Authentication is a synthetic workspace context, not production OAuth/SSO.
-- No live Linear adapter or external agent execution is included. CI is defined, but
-  hosted execution is not claimed from this local session.
+- A thin optional read-only Linear issue import exists, but OAuth/writeback/webhooks/projects/cycles are still not implemented. Real Linear data must not go to OpenRouter.
+- External agent execution is not included. CI is defined, but hosted execution is not claimed from this local session.
 
 See the complete [limitations register](docs/LIMITATIONS.md).
 
 ## Roadmap
 
-Only after customer validation: PostgreSQL/pgvector deployment, live Linear adapter,
+Only after customer validation: PostgreSQL/pgvector deployment,
 bypass detection, GitHub adapter, CODEOWNERS discovery, SSO, and external audit anchoring.
 
 ## Project documents

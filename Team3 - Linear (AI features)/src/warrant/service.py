@@ -6,7 +6,10 @@ import json
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+
+# TYPE_CHECKING guard avoids circular imports at runtime; LinearIssueDTO is used
+# only in the type annotation for import_linear_issue().
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from .audit import AuditLedger
@@ -35,6 +38,9 @@ from .schemas import (
     VerificationValue,
 )
 from .security import normalise_untrusted
+
+if TYPE_CHECKING:
+    from .adapters.linear_dto import LinearIssueDTO
 
 
 def intersect_declared_scope(proposed: list[str], declared: list[str]) -> list[str]:
@@ -311,6 +317,21 @@ class WarrantService:
         )
         if not issue:
             raise NotFound("issue not found")
+
+        # OpenRouter delegation guard — Linear-imported issues must never be
+        # delegated via the openrouter provider (real or stub) to protect
+        # potentially sensitive customer data (MY_TASK_PRIORITY_PLAN.md §privacy).
+        if self.settings.ai_provider == "openrouter":
+            link = self.db.one(
+                "SELECT source FROM linear_issue_links WHERE issue_id=?",
+                (issue["id"],),
+            )
+            if link is not None:
+                raise Forbidden(
+                    "Delegation of Linear-imported issues is blocked when "
+                    "AI_PROVIDER=openrouter. Use AI_PROVIDER=openai or fixture."
+                )
+
         requester = self._workspace_resource("users", request.requester_id, workspace_id)
         agent = self._workspace_resource("agents", request.target_agent_id, workspace_id)
         if agent["status"] != "active":
@@ -1662,3 +1683,285 @@ class WarrantService:
             if len(filtered) >= limit:
                 break
         return filtered
+
+    # ------------------------------------------------------------------
+    # Linear adapter import
+    # ------------------------------------------------------------------
+
+    def import_linear_issue(
+        self,
+        workspace_id: str,
+        actor_id: str,
+        dto: "LinearIssueDTO",
+        is_stub: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Idempotent upsert of a Linear issue into Warrant's issues table.
+
+        Outcomes:
+          - "created"   : first import; audit event written; revision=1
+          - "updated"   : mapped fields changed; revision bumped by 1; audit event written
+          - "unchanged" : re-import with identical payload; no DB writes beyond telemetry
+
+        Raw description text is NEVER stored in audit payloads or adapter metadata.
+        Only the SHA-256 fingerprint of the description is persisted.
+        """
+        from .adapters.linear_dto import LinearIssueDTO as _LinearIssueDTO  # noqa: F401 (runtime)
+
+        now = self.now()
+        source_label = "linear-stub" if is_stub else "linear"
+
+        # 1. Normalise+redact title+description through the existing pipeline.
+        normed = normalise_untrusted(dto.title, dto.description or "")
+        body_normalised = normed.text
+
+        # 2. Build mapped issues-table fields and compute title fingerprint.
+        warrant_fields = dto.to_warrant_fields(body_normalised)
+        title_sha256 = hashlib.sha256(dto.title.encode()).hexdigest()
+        meta = dto.to_adapter_metadata()
+
+        # Enforce uniqueness of external_id for Linear issues
+        existing_by_id = self.db.one(
+            "SELECT issue_id, external_key FROM linear_issue_links "
+            "WHERE workspace_id=? AND external_id=?",
+            (workspace_id, meta["external_id"]),
+        )
+        if existing_by_id and existing_by_id["external_key"] != dto.identifier:
+            raise Conflict(
+                f"Linear issue ID {meta['external_id']} is already linked "
+                f"to a different key {existing_by_id['external_key']}."
+            )
+
+        # 3. Check for an existing issue.
+        existing_issue = self.db.one(
+            "SELECT * FROM issues WHERE workspace_id=? AND external_key=?",
+            (workspace_id, dto.identifier),
+        )
+
+        if existing_issue is None:
+            # ── First import ──────────────────────────────────────────────
+            issue_id = self.new_id("issue")
+            with self.db.transaction() as conn:
+                conn.execute(
+                    "INSERT INTO issues "
+                    "(id,workspace_id,external_key,title,body_normalised,team,"
+                    "labels_json,path_hints_json,priority,revision,updated_at,"
+                    "demo_note,is_demo_path) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        issue_id,
+                        workspace_id,
+                        warrant_fields["external_key"],
+                        warrant_fields["title"],
+                        warrant_fields["body_normalised"],
+                        warrant_fields["team"],
+                        Database.dumps(warrant_fields["labels"]),
+                        Database.dumps(warrant_fields["path_hints"]),
+                        warrant_fields["priority"],
+                        1,
+                        warrant_fields["updated_at"],
+                        "",
+                        0,
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO issues_fts(issue_id,workspace_id,title,body) "
+                    "VALUES (?,?,?,?)",
+                    (issue_id, workspace_id, dto.title, body_normalised),
+                )
+                conn.execute(
+                    "INSERT INTO linear_issue_links "
+                    "(issue_id,workspace_id,external_id,external_key,source,url,"
+                    "external_created_at,description_sha256,state,assignee,team_key,imported_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        issue_id,
+                        workspace_id,
+                        meta["external_id"],
+                        dto.identifier,
+                        source_label,
+                        meta["url"],
+                        meta["external_created_at"],
+                        meta["description_sha256"],
+                        meta["state"],
+                        meta["assignee"],
+                        meta["team_key"],
+                        now,
+                    ),
+                )
+            audit_event = self.audit.append(
+                workspace_id,
+                "linear_issue_imported",
+                "user",
+                actor_id,
+                "issue",
+                issue_id,
+                {
+                    "external_key": dto.identifier,
+                    "source": source_label,
+                    "title_sha256": title_sha256,
+                    "priority": dto.priority_label,
+                    "team": dto.team.name,
+                    # No raw description — only fingerprint for dedup/audit
+                    "description_sha256": meta["description_sha256"],
+                    "redactions": normed.redactions,
+                    "injection_score": normed.injection_score,
+                },
+            )
+            self.telemetry(
+                workspace_id,
+                "linear_import_succeeded",
+                issue_id,
+                outcome="created",
+                external_key=dto.identifier,
+                source=source_label,
+            )
+            return {
+                "outcome": "created",
+                "issue_ref": dto.identifier,
+                "issue_id": issue_id,
+                "revision": 1,
+                "audit_event_id": audit_event["id"],
+                "is_stub": is_stub,
+                "source": source_label,
+            }
+
+        # ── Existing issue ─────────────────────────────────────────────
+        existing_link = self.db.one(
+            "SELECT external_id FROM linear_issue_links WHERE issue_id=?",
+            (existing_issue["id"],),
+        )
+        if existing_link is None:
+            raise Conflict(
+                f"Issue {dto.identifier} already exists and is not a Linear import."
+            )
+        if existing_link["external_id"] != meta["external_id"]:
+            raise Conflict(
+                f"Issue {dto.identifier} is linked to a different Linear issue ID."
+            )
+
+        title_changed = existing_issue["title"] != dto.title
+
+        # We check the full issues-table fields for any mapping change.
+        existing_warrant = {
+            "external_key": existing_issue["external_key"],
+            "title": existing_issue["title"],
+            "body_normalised": existing_issue["body_normalised"],
+            "team": existing_issue["team"],
+            "labels": Database.loads(existing_issue["labels_json"], []),
+            "priority": existing_issue["priority"],
+            "path_hints": Database.loads(existing_issue["path_hints_json"], []),
+        }
+        new_warrant_comparable = {
+            k: warrant_fields[k] for k in existing_warrant
+        }
+        changed = existing_warrant != new_warrant_comparable
+
+        if not changed:
+            # ── Re-import, no changes ────────────────────────────────────
+            self.telemetry(
+                workspace_id,
+                "linear_import_unchanged",
+                existing_issue["id"],
+                external_key=dto.identifier,
+                source=source_label,
+            )
+            return {
+                "outcome": "unchanged",
+                "issue_ref": dto.identifier,
+                "issue_id": existing_issue["id"],
+                "revision": existing_issue["revision"],
+                "audit_event_id": None,
+                "is_stub": is_stub,
+                "source": source_label,
+            }
+
+        # ── Re-import, mapped fields changed → bump revision ─────────────
+        new_revision = existing_issue["revision"] + 1
+        with self.db.transaction() as conn:
+            conn.execute(
+                "UPDATE issues SET title=?,body_normalised=?,team=?,"
+                "labels_json=?,path_hints_json=?,priority=?,"
+                "revision=?,updated_at=? "
+                "WHERE id=? AND workspace_id=?",
+                (
+                    warrant_fields["title"],
+                    warrant_fields["body_normalised"],
+                    warrant_fields["team"],
+                    Database.dumps(warrant_fields["labels"]),
+                    Database.dumps(warrant_fields["path_hints"]),
+                    warrant_fields["priority"],
+                    new_revision,
+                    warrant_fields["updated_at"],
+                    existing_issue["id"],
+                    workspace_id,
+                ),
+            )
+            # Sync FTS: delete old row, insert fresh
+            conn.execute(
+                "DELETE FROM issues_fts WHERE issue_id=?",
+                (existing_issue["id"],),
+            )
+            conn.execute(
+                "INSERT INTO issues_fts(issue_id,workspace_id,title,body) "
+                "VALUES (?,?,?,?)",
+                (existing_issue["id"], workspace_id, dto.title, body_normalised),
+            )
+            # Update adapter metadata link
+            conn.execute(
+                "UPDATE linear_issue_links SET "
+                "source=?,url=?,external_created_at=?,description_sha256=?,"
+                "state=?,assignee=?,team_key=?,imported_at=? "
+                "WHERE issue_id=?",
+                (
+                    source_label,
+                    meta["url"],
+                    meta["external_created_at"],
+                    meta["description_sha256"],
+                    meta["state"],
+                    meta["assignee"],
+                    meta["team_key"],
+                    now,
+                    existing_issue["id"],
+                ),
+            )
+        audit_event = self.audit.append(
+            workspace_id,
+            "linear_issue_updated",
+            "user",
+            actor_id,
+            "issue",
+            existing_issue["id"],
+            {
+                "external_key": dto.identifier,
+                "source": source_label,
+                "new_revision": new_revision,
+                "previous_revision": existing_issue["revision"],
+                "title_sha256": title_sha256,
+                "title_changed": title_changed,
+                "priority": dto.priority_label,
+                "team": dto.team.name,
+                # No raw description — only fingerprint
+                "description_sha256": meta["description_sha256"],
+                "redactions": normed.redactions,
+                "injection_score": normed.injection_score,
+            },
+        )
+        self.telemetry(
+            workspace_id,
+            "linear_import_succeeded",
+            existing_issue["id"],
+            outcome="updated",
+            external_key=dto.identifier,
+            source=source_label,
+            new_revision=new_revision,
+        )
+        return {
+            "outcome": "updated",
+            "issue_ref": dto.identifier,
+            "issue_id": existing_issue["id"],
+            "revision": new_revision,
+            "audit_event_id": audit_event["id"],
+            "is_stub": is_stub,
+            "source": source_label,
+        }

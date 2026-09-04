@@ -220,6 +220,16 @@ class PolicySimulationSource(PolicySource):
     n: int = Field(default=50, ge=1, le=500)
 
 
+class LinearImportRequest(BaseModel):
+    """Request body for POST /v1/adapters/linear/import-issue."""
+
+    ref: str = Field(
+        min_length=1,
+        max_length=200,
+        description="Linear issue identifier (e.g. 'ENG-123') or internal UUID.",
+    )
+
+
 class WarrantRevocation(BaseModel):
     actor_id: str = Field(min_length=2, max_length=80)
     reason: str = Field(min_length=3, max_length=1000)

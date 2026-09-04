@@ -39,6 +39,10 @@ class Settings:
     openrouter_reasoning: str | None = None
     structured_output_mode: str = "auto"
     provider_timeout_seconds: float | None = None
+    # Linear read-only import adapter (optional)
+    linear_mode: str = "off"  # "off" | "stub" | "live"
+    linear_api_key: str | None = None
+    linear_api_base_url: str = "https://api.linear.app/graphql"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -72,11 +76,20 @@ class Settings:
                 if "PROVIDER_TIMEOUT_SECONDS" in os.environ
                 else None
             ),
+            linear_mode=os.getenv("LINEAR_MODE", "off").lower(),
+            linear_api_key=os.getenv("LINEAR_API_KEY") or None,
+            linear_api_base_url=os.getenv(
+                "LINEAR_API_BASE_URL", "https://api.linear.app/graphql"
+            ),
         )
 
     @property
     def fixture_mode(self) -> bool:
         return self.ai_provider in {"fixture", "mock"}
+
+    @property
+    def linear_stub_mode(self) -> bool:
+        return self.linear_mode == "stub"
 
     @property
     def live_model(self) -> str:

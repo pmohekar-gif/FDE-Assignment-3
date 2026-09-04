@@ -5,11 +5,11 @@
 - Warrant controls only work routed through it. It cannot physically prevent a human or another integration from delegating directly to an agent.
 - It does not execute agents, clone repositories, run tests, merge pull requests, deploy, migrate, rotate secrets, or delete data.
 - It is not an issue tracker and does not expose triage, duplicate detection, or semantic search as products.
-- There is no live Linear adapter. Manual/API intake and a tracker-shaped signed webhook prove the internal contract only.
+- A thin optional read-only Linear issue import exists, but OAuth, writeback, webhooks, projects, and cycles are not implemented. Real Linear data must not go to OpenRouter.
 
 ## Data and scale
 
-- All data is fictional and synthetic. No customer issues, code, credentials, interviews, or telemetry were used.
+- By default, all seeded demo/evaluation data is fictional and synthetic. If `LINEAR_MODE=live` is enabled, the optional live Linear import can store authorized Linear issue title/description after normalization/redaction in local SQLite for the accountability workflow. No Linear API keys are stored, raw descriptions are not stored in adapter metadata/audit/telemetry, and real Linear-imported data must not be sent to OpenRouter. No customer code, repository credentials, interviews, or telemetry were used.
 - The seed has 400 issues and 12 users, but all are synthetic; scale parity does not
   establish retrieval quality or user value.
 - Evaluation labels are synthetic policy labels. They do not constitute user or customer evidence.

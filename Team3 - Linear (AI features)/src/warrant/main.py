@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
+from .adapters.linear import AdapterConfigError, LinearAdapter
 from .config import PROJECT_ROOT, Settings
 from .db import Database
 from .policy import PolicyValidationError, granted_tools, load_policy
@@ -24,6 +25,7 @@ from .schemas import (
     DelegationCreate,
     EvidenceSubmission,
     HumanDecision,
+    LinearImportRequest,
     PolicySimulationSource,
     PolicySource,
     RelatedIssueTelemetry,
@@ -541,6 +543,70 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             retrieval_mode=body.retrieval_mode,
         )
         return {"recorded": True}
+
+    @app.post("/v1/adapters/linear/import-issue", status_code=201)
+    async def linear_import_endpoint(
+        body: LinearImportRequest,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> Any:
+        """Admin-only endpoint to import a single Linear issue into Warrant.
+
+        LINEAR_MODE must be 'stub' or 'live'. The endpoint is idempotent:
+        re-importing an unchanged issue returns 200 with outcome='unchanged'.
+        Real network calls only occur when LINEAR_MODE=live.
+        """
+        require_csrf(x_csrf_token)
+        workspace_id = workspace(x_workspace_id)
+        actor_id = x_actor_id or ""
+        service.require_admin(workspace_id, actor_id)
+
+        # Telemetry: fire before the adapter call so failures are counted
+        service.telemetry(
+            workspace_id,
+            "linear_import_attempted",
+            None,
+            ref=body.ref,
+            linear_mode=settings.linear_mode,
+        )
+
+        try:
+            adapter = LinearAdapter(settings)
+            dto = adapter.fetch_issue(body.ref)
+        except AdapterConfigError:
+            service.telemetry(
+                workspace_id, "linear_import_failed", None,
+                ref=body.ref, reason="adapter_config_error",
+            )
+            raise
+        except Exception:
+            service.telemetry(
+                workspace_id, "linear_import_failed", None,
+                ref=body.ref, reason="fetch_error",
+            )
+            raise
+
+        result = service.import_linear_issue(
+            workspace_id,
+            actor_id,
+            dto,
+            is_stub=settings.linear_stub_mode,
+        )
+        # Return 200 for re-imports (unchanged or updated), 201 only for fresh create
+        if result["outcome"] != "created":
+            from fastapi.responses import JSONResponse as _JSONResponse
+            return _JSONResponse(content=result, status_code=200)
+        return result
+
+    @app.exception_handler(AdapterConfigError)
+    async def handle_adapter_config_error(
+        _: Request, exc: AdapterConfigError
+    ) -> JSONResponse:
+        return JSONResponse(
+            {"error": str(exc), "type": "AdapterConfigError"},
+            status_code=exc.status_code,
+        )
 
     @app.post("/v1/telemetry/semantic-search", status_code=202)
     async def semantic_search_telemetry_endpoint(

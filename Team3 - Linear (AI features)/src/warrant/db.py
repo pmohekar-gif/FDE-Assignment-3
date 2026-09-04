@@ -137,6 +137,25 @@ CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_events(workspace_id, seq
 CREATE INDEX IF NOT EXISTS idx_telemetry_name ON telemetry_events(workspace_id, name);
 CREATE INDEX IF NOT EXISTS idx_extraction_cache_issue ON extraction_cache(issue_id, issue_revision);
 CREATE INDEX IF NOT EXISTS idx_briefs_workspace ON delegation_briefs(workspace_id, generated_at);
+CREATE TABLE IF NOT EXISTS linear_issue_links (
+  issue_id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  external_key TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'linear',
+  url TEXT NOT NULL,
+  external_created_at TEXT NOT NULL,
+  description_sha256 TEXT NOT NULL,
+  state TEXT NOT NULL,
+  assignee TEXT,
+  team_key TEXT NOT NULL,
+  imported_at TEXT NOT NULL,
+  FOREIGN KEY(issue_id) REFERENCES issues(id)
+);
+CREATE INDEX IF NOT EXISTS idx_linear_links_workspace
+  ON linear_issue_links(workspace_id, external_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_linear_links_unique_external
+  ON linear_issue_links(workspace_id, external_id);
 """
 
 
@@ -190,6 +209,7 @@ class Database:
             for name, definition in usage_additions.items():
                 if name not in usage_columns:
                     connection.execute(f"ALTER TABLE model_usage ADD COLUMN {name} {definition}")
+            # linear_issue_links is created via SCHEMA above; no ALTER needed
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

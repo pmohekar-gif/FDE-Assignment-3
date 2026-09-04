@@ -109,7 +109,7 @@ No controlled benchmark was run. Performance and latency are `NOT_MEASURED`.
 ## Known limitations
 
 SQLite/local vectors instead of PostgreSQL/pgvector, a wholly synthetic 400-issue seed,
-fixture provider by default, no live Linear adapter, synthetic local identities,
+fixture provider by default, a thin optional read-only Linear issue import (no OAuth/writeback/webhooks/projects/cycles), synthetic local identities,
 synchronous processing, and no external audit anchor. See `docs/LIMITATIONS.md`.
 
 ## What should be built next
@@ -119,7 +119,7 @@ Only after validating the problem with relevant users:
 1. Migrate persistence/retrieval to PostgreSQL 16 + pgvector and add concurrency constraints/RLS.
 2. Run and label a live-model extraction/judging evaluation.
 3. Implement async signed webhook ACK plus worker/lease/DLQ behaviour.
-4. Implement the Linear tracker adapter and delivery of approval elicitation.
+4. Expand the Linear adapter (add writeback/webhooks/OAuth) and delivery of approval elicitation.
 5. Add bypass detection and external audit hash anchoring.
 
 ## Biggest remaining risk
