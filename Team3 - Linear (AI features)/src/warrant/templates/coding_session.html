@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% set s = session %}{% set contract = s.contract %}{% set flow = ['QUEUED','PREPARING','RUNNING','VERIFYING','AWAITING_REVIEW'] %}
+{% set terminals = ['COMPLETED','FAILED','CANCELLED'] %}
+{% set reached = flow.index(s.state) if s.state in flow else flow|length %}
+{% block title %}{{ s.id }} · Coding session{% endblock %}
+{% block view_title %}<a href="/coding-sessions">Coding sessions</a> / {{ contract.issue.external_key }}{% endblock %}
+{% block view_count %}{{ s.id }}{% endblock %}
+{% block head_tools %}
+<span class="chip"><span class="provider-kind {{ s.provider_kind }}">{{ s.provider_kind|upper }}</span> {{ s.provider }}</span>
+<span class="chip">{{ s.state }}</span>
+{% if s.state not in terminals %}<button class="chip" type="button" id="cancel-session">Cancel session</button>{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="doc">
+    <p class="crumb"><a href="/">Triage</a> <span>/</span> <a href="/delegations/{{ s.delegation_id }}">{{ contract.issue.external_key }}</a> <span>/</span> {{ s.id }}</p>
+    <h1>{{ contract.issue.title }}</h1>
+    <p class="doc-sub">
+      Runner <strong>{{ s.provider }}</strong> · <span class="provider-kind {{ s.provider_kind }}">{{ s.provider_kind|upper }}</span>
+      {{ 'real external CLI execution in an isolated Git worktree' if s.provider_kind == 'real' else 'visibly simulated execution — this run wrote no real agent output' }}
+      · created <span class="relative-time" data-time="{{ s.created_at }}">{{ s.created_at }}</span>
+      {% if s.started_at %}· started <span class="relative-time" data-time="{{ s.started_at }}">{{ s.started_at }}</span>{% endif %}
+      {% if s.finished_at %}· finished <span class="relative-time" data-time="{{ s.finished_at }}">{{ s.finished_at }}</span>{% endif %}
+      · warrant <code>{{ s.warrant_id }}</code>
+    </p>
+
+    {% if s.provider_kind == 'mock' %}
+    <p class="advisory warn">provider_kind = mock · nothing in this session was produced by a real coding agent. Do not read the diff below as real agent work.</p>
+    {% endif %}
+
+    <div class="stepper" role="list" aria-label="Session progress" style="margin-top:14px">
+      {% for state in flow %}
+      <span class="step {{ 'done' if loop.index0 < reached else ('now' if loop.index0 == reached else '') }}" role="listitem"><span class="dot" aria-hidden="true"></span>{{ state }}</span>
+      {% endfor %}
+      <span class="step {{ 'now' if s.state == 'COMPLETED' else ('bad' if s.state in ['FAILED','CANCELLED'] else '') }}" role="listitem"><span class="dot" aria-hidden="true"></span>{{ s.state if s.state in terminals else 'COMPLETED' }}</span>
+    </div>
+
+    {% if s.error %}
+    <article class="card">
+      <h2>Typed failure <span class="aside">state {{ s.state }}</span></h2>
+      <p style="color:var(--deny)">{{ s.error }}</p>
+      <p class="note">The session failed closed. No diff was accepted and no warrant authority was extended.</p>
+    </article>
+    {% endif %}
+
+    <article class="card">
+      <h2>Session timeline <span class="aside">{{ s.events|length }} persisted events</span></h2>
+      <div class="tl">
+        {% for event in s.events %}
+        <div class="tl-row">
+          <span class="pip {{ 'bad' if 'failed' in event.event_type or 'cancel' in event.event_type else ('ok' if 'completed' in event.event_type or 'passed' in event.event_type or 'created' in event.event_type else 'info') }}" aria-hidden="true"></span>
+          <code>{{ event.event_type }}</code>
+          <span class="what">
+            {%- if event.payload.error %}{{ event.payload.error }}
+            {%- elif event.event_type == 'verification_discovered' %}{{ event.payload.source }} · {{ event.payload.checks|length }} checks: {% for check in event.payload.checks %}{{ check.command|join(' ') }}{{ ', ' if not loop.last }}{% endfor %}{% if event.payload.skipped %} · skipped {{ event.payload.skipped|length }}{% endif %}
+            {%- elif event.event_type == 'verification_check_completed' %}{{ event.payload.name }} · exit {{ event.payload.exit_code }} · {{ event.payload.duration_ms }} ms · {{ 'passed' if event.payload.passed else 'FAILED' }}
+            {%- elif event.event_type == 'agent_activity' %}exit {{ event.payload.exit_code }} · {{ event.payload.duration_ms }} ms{% if event.payload.output_truncated %} · output truncated{% endif %}
+            {%- elif event.event_type == 'diff_generated' %}{{ event.payload.changed_files|default([])|length }} files · +{{ event.payload.additions|default(0) }} −{{ event.payload.deletions|default(0) }}
+            {%- elif event.event_type == 'worktree_created' %}{{ event.payload.branch|default('') }}
+            {%- elif event.event_type == 'session_created' %}{{ event.payload.provider }} · {{ event.payload.provider_kind }} · base {{ event.payload.base_revision[:12] }}
+            {%- else %}state {{ event.payload.state|default('—') }}{% endif -%}
+          </span>
+          <span class="when relative-time" data-short data-time="{{ event.created_at }}">{{ event.created_at }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="card">
+      <h2>Verification <span class="aside">{{ s.verification_checks|length }} discovered checks · source {{ contract.verification_source }}</span></h2>
+      {% if s.verification_checks %}
+      {% for check in s.verification_checks %}
+      <div class="check {{ 'pass' if check.passed else 'fail' }}">
+        <div class="check-top">
+          <span class="check-name">{{ check.name }}</span>
+          <code>{{ check.command|join(' ') }}</code>
+          <span class="check-meta"><span>{{ 'required' if check.required else 'optional' }}</span><span>exit {{ check.exit_code }}</span><span>{{ check.duration_ms }} ms</span><span>{{ 'passed' if check.passed else 'FAILED' }}</span></span>
+        </div>
+        <div class="check-body">
+          <dl class="verify {{ '' if check.passed else 'fail' }}">
+            <dt>Discovered from</dt><dd>{{ check.source }}</dd>
+            <dt>Summary</dt><dd>{{ check.summary }}</dd>
+          </dl>
+          <details class="disclosure"><summary>Check output</summary><div class="inner"><pre>{{ check.output }}</pre></div></details>
+        </div>
+      </div>
+      {% endfor %}
+      {% if s.result and s.result.verification %}
+      <p class="note">Aggregate: {{ s.result.verification.summary }} · total {{ s.result.verification.duration_ms }} ms · passed = {{ s.result.verification.passed|lower }}.</p>
+      {% endif %}
+      {% elif contract.verification_checks %}
+      <p>Verification has not run yet. Discovered from <code>{{ contract.verification_source }}</code>: {% for check in contract.verification_checks %}<code>{{ check.command|join(' ') }}</code>{{ ', ' if not loop.last }}{% endfor %}.</p>
+      {% else %}
+      <p>No verification checks were discovered for this repository.</p>
+      {% endif %}
+      {% if contract.verification_skipped %}
+      <details class="disclosure"><summary>Skipped checks ({{ contract.verification_skipped|length }})</summary><div class="inner"><ul class="plain">{% for skipped in contract.verification_skipped %}<li><code>{{ skipped.command }}</code> — {{ skipped.reason }} <span class="dim">({{ skipped.source }})</span></li>{% endfor %}</ul></div></details>
+      {% endif %}
+      <p class="note">A session reaches COMPLETED only when the runner exits cleanly, a diff exists, every changed path is inside the warrant scope, and every required check passes. An exit code alone is not success.</p>
+    </article>
+
+    {% if s.result and s.result.runner %}
+    <article class="card">
+      <h2>Agent activity <span class="aside">structured runner summary</span></h2>
+      <dl class="verify {{ '' if s.result.runner.exit_code == 0 else 'fail' }}">
+        <dt>Exit code</dt><dd>{{ s.result.runner.exit_code }}</dd>
+        <dt>Duration</dt><dd>{{ s.result.runner.duration_ms }} ms</dd>
+        <dt>Cancelled</dt><dd>{{ s.result.runner.cancelled|lower }}</dd>
+        <dt>Timed out</dt><dd>{{ s.result.runner.timed_out|lower }}</dd>
+        <dt>Output truncated</dt><dd>{{ s.result.runner.truncated|lower }}</dd>
+        {% if s.diff %}<dt>Files changed</dt><dd>{{ s.diff.changed_files|length }} · +{{ s.diff.additions }} −{{ s.diff.deletions }}</dd>{% endif %}
+      </dl>
+      <details class="disclosure"><summary>Runner output</summary><div class="inner"><pre>{{ s.result.runner.output }}</pre></div></details>
+    </article>
+    {% endif %}
+
+    {% if s.diff %}
+    <article class="card">
+      <h2>Reviewable diff <span class="aside">{{ s.diff.changed_files|length }} file{{ '' if s.diff.changed_files|length == 1 else 's' }} · +{{ s.diff.additions }} −{{ s.diff.deletions }}</span></h2>
+      <dl class="verify">
+        <dt>Base revision</dt><dd>{{ s.diff.base_revision }}</dd>
+        <dt>Head revision</dt><dd>{{ s.diff.head_revision or 'uncommitted worktree state' }}</dd>
+        <dt>Generated</dt><dd><span class="relative-time" data-time="{{ s.diff.created_at }}">{{ s.diff.created_at }}</span></dd>
+      </dl>
+      <div id="diff-files" style="margin-top:11px"></div>
+      <p class="note">Diff is taken from the base revision to the session worktree. Every changed path was checked against the warrant scope before this diff was accepted.</p>
+    </article>
+    {% endif %}
+
+    {{ ui.ask_agent('coding_session_id', s.id, agent_chat_enabled, 'What did the agent change, and was any of it outside scope?') }}
+
+    <article class="card" id="code-card">
+      <h2>Code intelligence <span class="aside">path:line cited · authoritative = false</span></h2>
+      {% if code_intelligence_enabled %}
+      <form class="agent-in" id="code-form">
+        <label class="sr-only" for="code-query">Ask about the codebase</label>
+        <input id="code-query" type="text" maxlength="1000" placeholder="What does the code at the changed path do?" required>
+        <button class="btn pri center" type="submit">Ask</button>
+      </form>
+      <div class="agent-out" id="code-answer" aria-live="polite"></div>
+      <div class="inline-error" id="code-error" hidden></div>
+      {% else %}
+      <p>Code Intelligence is disabled for this workspace.</p>
+      {% endif %}
+    </article>
+  </div>
+
+  <aside class="rail" aria-label="Session properties">
+    <div class="rail-sec">
+      <p class="rail-h">Provider truth</p>
+      <dl class="kv">
+        <dt>Runner</dt><dd>{{ s.provider }}</dd>
+        <dt>Kind</dt><dd class="{{ 'ok' if s.provider_kind == 'real' else 'warn' }}">{{ s.provider_kind }}</dd>
+        <dt>Isolation</dt><dd>git worktree</dd>
+        <dt>Worktree</dt><dd class="{{ 'ok' if s.worktree_available else 'none' }}">{{ 'present' if s.worktree_available else 'removed' }}</dd>
+        <dt>Orphaned</dt><dd>{{ s.orphaned|lower }}</dd>
+        <dt>Host pid</dt><dd>{{ s.host_pid or '—' }}</dd>
+      </dl>
+      {% if s.provider_kind == 'mock' %}<p class="note"><strong>Mock run.</strong> The output is generated by the built-in simulated runner and must never be read as real agent work.</p>{% endif %}
+    </div>
+
+    <div class="rail-sec">
+      <p class="rail-h">Immutable execution contract</p>
+      <dl class="kv">
+        <dt>Delegation</dt><dd><a href="/delegations/{{ s.delegation_id }}" style="color:var(--accent)">{{ s.delegation_id }}</a></dd>
+        <dt>Warrant</dt><dd>{{ contract.warrant.id }} · {{ contract.warrant.status }}</dd>
+        <dt>Base revision</dt><dd>{{ contract.base_revision }}</dd>
+        <dt>Branch</dt><dd>{{ s.branch_name or '—' }}</dd>
+        <dt>Repository</dt><dd>{{ contract.repository_id }}</dd>
+        <dt>Expiry</dt><dd><span class="relative-time" data-time="{{ contract.expiry }}">{{ contract.expiry }}</span></dd>
+        <dt>Approval</dt><dd>{% if contract.approval %}{{ contract.approval.approver_id }} · {{ contract.approval.action }}{% else %}automatic · {{ contract.policy_decision.verdict }}{% endif %}</dd>
+        <dt>Outcome</dt><dd>{{ contract.requested_outcome }}</dd>
+      </dl>
+      <p class="rail-h tight">Allowed scope</p>
+      <div class="tools">{% for path in contract.allowed_paths %}<span class="tool">{{ path }}</span>{% endfor %}</div>
+      <p class="rail-h tight">Restricted paths</p>
+      <div class="tools">{% for path in contract.restricted_paths %}<span class="tool no">{{ path }}</span>{% endfor %}</div>
+      <p class="rail-h tight">Allowed tools</p>
+      <div class="tools">{% for tool in contract.allowed_tools %}<span class="tool">{{ tool }}</span>{% endfor %}</div>
+      <p class="rail-h tight">Denied tools</p>
+      <div class="tools">{% for tool in contract.warrant.denied_tools %}<span class="tool no">{{ tool }}</span>{% endfor %}</div>
+      <p class="note">This contract was frozen when the session was created. Nothing in the running session can widen it.</p>
+    </div>
+
+    <div class="rail-sec">
+      <p class="rail-h">Draft pull request</p>
+      {% if s.pull_request %}
+      <dl class="kv">
+        <dt>Provider</dt><dd>{{ s.pull_request.provider }}</dd>
+        <dt>State</dt><dd>{{ s.pull_request.state }}</dd>
+        <dt>Number</dt><dd>{{ s.pull_request.number or '—' }}</dd>
+      </dl>
+      <div class="rail-actions"><a class="btn pri" href="{{ s.pull_request.url }}">Open draft PR <span aria-hidden="true">&rarr;</span></a></div>
+      {% elif not pr_publishing_enabled %}
+      <p class="note tight"><strong>Publishing disabled.</strong> <code>PR_PUBLISHING_ENABLED=false</code> in this workspace, so no pull request can be created. The diff above is fully reviewable without one.</p>
+      {% elif s.state == 'COMPLETED' %}
+      <p class="note tight">Verification passed and a diff exists, so a draft PR may be created by an admin.</p>
+      <div class="rail-actions"><button class="btn" type="button" id="publish-pr">Create draft PR</button></div>
+      {% else %}
+      <p class="note tight">A draft PR needs a COMPLETED session with a reviewable diff. Current state is {{ s.state }}.</p>
+      {% endif %}
+    </div>
+
+    <div class="rail-sec">
+      <p class="rail-h">Session control</p>
+      <div class="rail-actions">
+        {% if s.state not in terminals %}
+        <button class="btn danger" type="button" id="cancel-session-rail">Cancel session</button>
+        {% else %}
+        <a class="btn" href="/delegations/{{ s.delegation_id }}">Back to delegation</a>
+        {% endif %}
+      </div>
+      <div class="inline-error" id="session-error" hidden></div>
+      {% if s.state not in terminals %}<p class="note">This page refreshes while the session is not terminal.</p>{% endif %}
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+const sessionId={{ s.id|tojson }},delegationId={{ s.delegation_id|tojson }},terminal={{ (s.state in terminals)|tojson }};
+const unifiedDiff={{ (s.diff.unified_diff if s.diff else '')|tojson }};
+const changedFiles={{ (s.diff.changed_files if s.diff else [])|tojson }};
+if(!terminal)setTimeout(()=>location.reload(),2200);
+
+function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined&&text!==null)node.textContent=text;if(className)node.className=className;return node;}
+
+/* ---------- per-file diff sections, split from the single unified diff artifact ---------- */
+(function(){
+  const host=document.getElementById('diff-files');
+  if(!host||!unifiedDiff)return;
+  const counts={};changedFiles.forEach(file=>{counts[file.path]={additions:file.additions,deletions:file.deletions};});
+  const chunks=unifiedDiff.split(/\n(?=diff --git )/).filter(Boolean);
+  chunks.forEach((chunk,index)=>{
+    const header=chunk.split('\n')[0]||'',match=header.match(/^diff --git a\/(.+?) b\/(.+)$/);
+    const path=match?match[2]:(changedFiles[index]||{}).path||`file ${index+1}`;
+    const stats=counts[path]||{additions:0,deletions:0};
+    const details=document.createElement('details');details.className='file';if(index===0)details.open=true;
+    const summary=document.createElement('summary');summary.append(document.createTextNode(path));
+    const stat=el('span','','stat');
+    stat.append(el('span',`+${stats.additions}`,'add'),el('span',`−${stats.deletions}`,'del'));
+    summary.append(stat);details.append(summary);
+    const pre=el('pre','','diff');
+    chunk.split('\n').forEach(line=>{
+      let cls='c';
+      if(line.startsWith('@@'))cls='h';
+      else if(line.startsWith('+++')||line.startsWith('---')||line.startsWith('diff --git')||line.startsWith('index '))cls='m';
+      else if(line.startsWith('+'))cls='a';
+      else if(line.startsWith('-'))cls='d';
+      pre.append(el('span',line||' ',cls));
+    });
+    details.append(pre);host.append(details);
+  });
+})();
+
+/* ---------- cancel / publish ---------- */
+async function cancelSession(){
+  const errorNode=document.getElementById('session-error');errorNode.hidden=true;
+  if(!confirm('Cancel this coding session?'))return;
+  try{await api(`/v1/coding-sessions/${sessionId}/cancel`,{method:'POST',body:JSON.stringify({actor_id:window.WARRANT.actor})});location.reload();}
+  catch(error){renderError(errorNode,error,'session cancellation');}
+}
+document.getElementById('cancel-session')?.addEventListener('click',cancelSession);
+document.getElementById('cancel-session-rail')?.addEventListener('click',cancelSession);
+document.getElementById('publish-pr')?.addEventListener('click',async event=>{
+  const errorNode=document.getElementById('session-error');errorNode.hidden=true;event.currentTarget.disabled=true;
+  try{await api(`/v1/coding-sessions/${sessionId}/pull-request`,{method:'POST',body:JSON.stringify({actor_id:window.WARRANT.actor})});location.reload();}
+  catch(error){renderError(errorNode,error,'draft PR creation');event.currentTarget.disabled=false;}
+});
+
+/* ---------- Ask Agent ---------- */
+let conversationId=null;
+document.getElementById('agent-form')?.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const input=document.getElementById('agent-query'),answer=document.getElementById('agent-answer'),errorNode=document.getElementById('agent-error');
+  const query=input.value.trim();if(!query)return;
+  answer.replaceChildren(el('p','Gathering scoped evidence…','loading'));errorNode.hidden=true;
+  try{
+    const body=await api('/v1/agent/query',{method:'POST',body:JSON.stringify({query,conversation_id:conversationId,scope:{coding_session_id:sessionId,repository_id:'local'}})});
+    conversationId=body.conversation_id;answer.replaceChildren(el('p',body.answer));
+    const sources=el('div','','src');
+    body.sources.forEach(source=>{const chip=el('span',source.label);chip.title=`${source.type}${source.reason?' · '+source.reason:''}`;sources.append(chip);});
+    answer.append(sources);
+    answer.append(el('span',`intent = ${body.intent} · degraded = ${body.degraded} · authoritative = ${body.authoritative} · authorising = ${body.authorising}`,'advisory'+(body.degraded?' warn':'')));
+  }catch(error){answer.replaceChildren();renderError(errorNode,error,'Agent query');}
+});
+
+/* ---------- Code intelligence ---------- */
+document.getElementById('code-form')?.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const input=document.getElementById('code-query'),answer=document.getElementById('code-answer'),errorNode=document.getElementById('code-error');
+  const query=input.value.trim();if(!query)return;
+  answer.replaceChildren(el('p','Searching the configured repository…','loading'));errorNode.hidden=true;
+  try{
+    const body=await api('/v1/code/query',{method:'POST',body:JSON.stringify({query,repository_id:'local',limit:5})});
+    answer.replaceChildren(el('p',body.answer));
+    body.sources.forEach(source=>{
+      const citation=el('div','','citation'),top=el('div','','citation-top');
+      top.append(el('b',`${source.path}:${source.start_line}-${source.end_line}`),el('span',source.module||'','aside'));
+      const pre=document.createElement('pre');pre.textContent=source.snippet;
+      citation.append(top,pre);answer.append(citation);
+    });
+    answer.append(el('span',`revision = ${body.revision} · cached_index = ${body.cached_index} · ignore_source = ${body.ignore_source} · dependency_resolved = ${body.dependency_resolved} · authoritative = ${body.authoritative}`,'advisory'));
+  }catch(error){answer.replaceChildren();renderError(errorNode,error,'code query');}
+});
+
+registerShortcut('a',()=>document.getElementById('agent-query')?.focus());
+registerCommand({group:'Execution',label:'Cancel this running session',hint:['⌫'],run:()=>{const button=document.getElementById('cancel-session-rail');if(button)button.click();else toast('This session is already terminal');}});
+registerCommand({group:'Execution',label:'Create a draft pull request',run:()=>{const button=document.getElementById('publish-pr');if(button)button.click();else toast('Draft PR is unavailable in this state');}});
+registerCommand({group:'Agent',label:'Ask about this coding session…',note:'advisory',run:()=>document.getElementById('agent-query')?.focus()});
+registerCommand({group:'Go to',label:'Back to the delegation',run:()=>{location.href='/delegations/'+delegationId;}});
+</script>{% endblock %}

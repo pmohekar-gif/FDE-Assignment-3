@@ -1,71 +1,76 @@
-# Limitations
+# Limitations register
 
-## Product boundaries
+Last reviewed: 2026-09-04.
 
-- Warrant controls only work routed through it. It cannot physically prevent a human or another integration from delegating directly to an agent.
-- It does not execute agents, clone repositories, run tests, merge pull requests, deploy, migrate, rotate secrets, or delete data.
-- It is not an issue tracker and does not expose triage, duplicate detection, or semantic search as products.
-- There is no live Linear adapter. Manual/API intake and a tracker-shaped signed webhook prove the internal contract only.
+This register records boundaries, gaps, and defects that affect what Warrant can safely claim. It does not record transient tool availability or command output. See [BUILD_STATUS.md](../BUILD_STATUS.md) for dated verification results.
 
-## Data and scale
+Each entry has a stable identifier and an exit condition. Product boundaries use a revisit condition because they are intentional rather than unfinished work.
 
-- All data is fictional and synthetic. No customer issues, code, credentials, interviews, or telemetry were used.
-- The seed has 400 issues and 12 users, but all are synthetic; scale parity does not
-  establish retrieval quality or user value.
-- Evaluation labels are synthetic policy labels. They do not constitute user or customer evidence.
-- `verdict_accuracy` on the standard, boundary, adversarial, and degraded slices is a
-  policy-interpreter conformance check, not a product-quality measure: the cases are
-  authored in the same feature vocabulary consumed by the interpreter. The synthetic
-  fixture-backed E2E pipeline slice is the only end-to-end signal in the current run.
-- Standard-slice approval burden is 0.4364 against the §24 target of at most 0.35 and
-  exceeds K3's 0.40 kill threshold. The current policy trades approval burden for
-  fail-closed strictness. Resolving that trade requires user evidence about whether the
-  burden is acceptable; it must not be hidden by a unilateral policy relaxation.
-- No production-scale concurrency, load, latency, or cost measurement has run.
+## Stable product boundaries
 
-## AI and retrieval
+| ID | Current limit and impact | Evidence | Revisit condition |
+| --- | --- | --- | --- |
+| `PB-001` | Warrant governs only delegations routed through its API or integrations. A human or another integration can bypass it and contact an agent directly. | The application exposes governed entry points in [`main.py`](../src/warrant/main.py). | Revisit if Warrant becomes a mandatory agent gateway or an organisation-wide enforcement point. |
+| `PB-002` | Coding sessions operate on an existing local Git checkout. Warrant does not clone repositories, merge pull requests, deploy, migrate data, rotate secrets, or delete production data. Optional publication creates a draft pull request only. | [`coding.py`](../src/warrant/coding.py) implements local worktrees, verification, diffs, and draft publication. [`default.v1.yaml`](../policies/default.v1.yaml) never grants high-risk operational tools. | Revisit only when a named product requirement adds one of these operations with a separate authority and verification design. |
+| `PB-003` | Warrant is not the system of record for issues. It does provide related-issue suggestions, duplicate signals, semantic search, and human-reviewed triage changes. | The issue APIs live in [`main.py`](../src/warrant/main.py). | Revisit if Warrant takes ownership of issue storage and synchronization. |
+| `PB-004` | AI output cannot approve work, widen scope, or start a coding session. Deterministic policy and a named human retain authority. | [`service.py`](../src/warrant/service.py), [`policy.py`](../src/warrant/policy.py), and [`ARCHITECTURE.md`](ARCHITECTURE.md) define this boundary. | Revisit only through a recorded policy and threat-model decision. |
 
-- Fixture mode is deterministic simulation. It is useful for workflow, safety, and demo testing, not for measuring language-model quality.
-- The real provider path has not been called because no credential was provided. Live
-  extraction F1, judge precision, token use, cost, and latency are `NOT_MEASURED`.
-- Local semantic retrieval uses stable hashed token vectors, not a hosted embedding
-  model. Retrieval Recall@K and MRR are `NOT_MEASURED`.
-- The fixture evidence judge uses token overlap and is intentionally labelled simulated.
-- Provider retry, one structured repair, opt-in fixture fallback, and an in-process
-  embedding circuit breaker are implemented. Fallback extraction requires human
-  approval; fallback judging cannot return an unqualified pass. Circuit state is not
-  shared across replicas.
+## Current implementation constraints
 
-## Persistence and security
+| ID | Current limit and impact | Evidence | Exit condition |
+| --- | --- | --- | --- |
+| `IC-001` | The local MVP uses SQLite, FTS5, and deterministic hashed vectors. It has no PostgreSQL RLS, pgvector, HNSW, `SKIP LOCKED`, advisory locks, or partial unique indexes. Migration is cross-cutting because raw SQL appears throughout the application. | [`db.py`](../src/warrant/db.py), [`retrieval.py`](../src/warrant/retrieval.py), and [`DECISIONS.md`](DECISIONS.md) document the current storage design. | Run the application and its isolation, retrieval, concurrency, and failure tests against PostgreSQL and pgvector. |
+| `IC-002` | Code Intelligence reads one configured local checkout. Its symbol and import analysis uses lexical heuristics rather than a compiler-grade semantic graph. It has no GitHub or GitLab repository adapter. | [`repository.py`](../src/warrant/repository.py) implements the local provider and index. | Add and verify the required remote provider or compiler-backed index. |
+| `IC-003` | Coding worktrees and active agent processes belong to one host. Session and event state persist in SQLite, restart reconciliation marks orphaned sessions failed, and retention removes old worktrees. The system cannot reattach to a process after restart and has no distributed lock or distributed cancellation. | [`coding.py`](../src/warrant/coding.py) implements persistence, orphan reconciliation, cancellation, and worktree retention. | Prove restart recovery and cancellation across multiple workers and hosts. |
+| `IC-004` | Delegation, tracker-webhook, and Slack processing run before the HTTP response returns. Coding work runs in process-local threads. There is no durable queue, dead-letter queue, or worker lease. | The endpoints live in [`main.py`](../src/warrant/main.py). Coding threads live in [`coding.py`](../src/warrant/coding.py). | Acknowledge intake after durable enqueue, then verify retries, idempotency, leases, and dead-letter handling. |
+| `IC-005` | The embedding circuit breaker and the Bifrost model cache live in process memory. Replicas do not share their state. Bifrost model discovery has no TTL and does not observe a gateway model change until restart. | [`retrieval.py`](../src/warrant/retrieval.py) and [`providers.py`](../src/warrant/providers.py) own this state. | Move the required state to a shared store or prove that independent replica state meets the operating contract. |
+| `IC-006` | No live Linear adapter exists. The manual API and signed tracker webhook prove the internal contract only. | The generic tracker endpoint lives in [`main.py`](../src/warrant/main.py). | Complete and exercise Linear authentication, inbound synchronization, idempotency, and error handling against an authorized test workspace. |
 
-- SQLite replaces the proposed PostgreSQL/pgvector deployment for the current local MVP. PostgreSQL RLS, HNSW, `SKIP LOCKED`, advisory locks, and partial unique constraints are not implemented or claimed.
-- Workspace isolation is enforced in repository queries and tests, not by database RLS.
-- Local authentication uses synthetic identity headers/context and a demo CSRF token, not OAuth, SSO, MFA, or production sessions.
-- The default webhook/CSRF values are intentionally insecure local defaults; deployment must replace them.
-- Fixture mode stores a plaintext demo nonce so the browser can simulate agent evidence. Live-provider mode does not store it. Production would deliver the nonce once to an authenticated agent and never expose it in a human UI.
-- Hash chaining plus mutation-blocking triggers detect normal in-database edits but do not protect against a fully privileged operator replacing the database and recomputing every hash. No external hash anchor exists.
-- Rate limiting, encryption at rest, TLS termination, dependency scanning in CI, and a formal retention/purge job are not implemented.
+## Known defects
 
-## Reliability and observability
+| ID | Current defect and impact | Evidence | Exit condition |
+| --- | --- | --- | --- |
+| `KD-001` | Standard-slice approval burden is `0.4364`. It exceeds the target of `0.35` and the `0.40` kill threshold. The current policy may interrupt users too often. | [`results.json`](../evaluations/results.json) and [`results.md`](../evaluations/results.md) contain the measurement. | Re-scope the governed work or change policy from user evidence, then rerun the evaluation without weakening the unsafe-allow requirement. |
+| `KD-002` | The three-call OpenRouter run changed WEB-4519 from `ALLOW` to `REQUIRE_APPROVAL`. No unsafe allow occurred, but the live extractor increased approval burden. Its measured p50 latency was 50,578 ms, which is unsuitable for synchronous preflight. | [`live-run-2026-08-31.json`](../evaluations/live-run-2026-08-31.json) contains the calls and timing. | Meet the latency target and validate decision quality on a statistically useful live slice. |
+| `KD-003` | `make live-check` can call Bifrost, but the report selects the wrong base URL and always emits an OpenRouter routing caveat. The command's setup error also mentions only OpenRouter. | [`live_check.py`](../src/warrant/live_check.py) calls `build_provider()` but formats provider-specific metadata incorrectly. | Add Bifrost live-check tests and emit correct metadata for each provider. |
+| `KD-004` | Optional sign-in authenticates the operator, but delegation creation still accepts an operator-selected `requester_id`. The audit records that requester as the human actor instead of recording the authenticated initiator separately. | `create_delegation_endpoint()` in [`main.py`](../src/warrant/main.py) does not pass the session actor. `create_delegation()` in [`service.py`](../src/warrant/service.py) audits the supplied requester. | Persist both the authenticated initiator and the represented requester, then enforce the intended impersonation rule. |
+| `KD-005` | The GitHub Actions workflow is stored at `workflows/ci.yml`. GitHub does not discover workflows outside `.github/workflows`, so the claimed CI does not run as configured. | [`workflows/ci.yml`](../workflows/ci.yml) contains the intended job. | Move the workflow to `.github/workflows/ci.yml` and observe a complete GitHub Actions run. |
+| `KD-006` | The Slack adapter has known gaps in intent handling, status phrasing, thread routing, feature-flag parity, workspace-scoped deduplication, fast acknowledgement, deep links, error fidelity, outbound tests, and setup documentation. | [BUILD_STATUS.md](../BUILD_STATUS.md) tracks the deferred Slack work. | Close the listed gaps and pass local plus live-workspace acceptance tests. |
 
-- Failure tests cover provider 5xx, malformed output, embeddings, unloadable policy,
-  duplicate delivery, expired evidence, replay, judge outage, audit-write failure, and
-  stale surface maps. They are local adapter simulations, not production chaos tests.
-- Telemetry is persisted and `/metrics` exposes counters, but OpenTelemetry traces, dashboards, alerts, circuit-breaker timing, a dead-letter queue, and worker leases are not implemented.
-- The application is a synchronous single process. The signed webhook performs processing before returning rather than acknowledging and queueing within a dedicated worker.
-- UI routes and core interactions were HTTP-render tested. Screenshot-level visual verification was attempted but the available in-app browser could not initialise; no visual screenshot claim is made.
+## Unverified external paths
 
-## Testing and packaging
+| ID | Unverified claim | Evidence available | Exit condition |
+| --- | --- | --- | --- |
+| `UV-001` | A real Codex coding session has not completed in the verifying environment. | `make verify-agent-cli` recognizes all five generated Codex flags. The opt-in test in [`test_real_codex_session.py`](../tests/e2e/test_real_codex_session.py) remains the end-to-end check. | Complete the opt-in test with an authenticated Codex CLI and the configured sandbox. |
+| `UV-002` | Draft pull-request publication has not completed against a real GitHub repository. | The publisher and test double live in [`coding.py`](../src/warrant/coding.py). | Publish a draft from a governed session with an authenticated `gh` CLI and a compatible origin. |
+| `UV-003` | Bifrost has not received a live request. Its latency, cost, token use, model discovery, output quality, and error behavior remain unverified against the gateway. | Offline coverage lives in [`test_bifrost_provider.py`](../tests/unit/test_bifrost_provider.py). | Run the synthetic live check through Bifrost from an authorized network and retain the report. |
+| `UV-004` | Slack signing and event behavior have local coverage, but no real app installation, channel, thread, or bot delivery has been exercised. | [`slack.py`](../src/warrant/slack.py) and [`test_slack_adapter.py`](../tests/integration/test_slack_adapter.py) cover the local adapter. | Pass the Slack acceptance flow in an authorized test workspace. |
+| `UV-005` | Compose syntax validates, but the image build and container runtime have not completed because the verifying machine cannot reach a Docker daemon. | [`Dockerfile`](../Dockerfile) and [`docker-compose.yml`](../docker-compose.yml) define the deployment. | Build the image, start Compose, run health checks, and execute the verification suite in the container. |
+| `UV-006` | Claude and Codex hook files are valid and their scripts run locally. Full CLI discovery, trust, event matching, and firing have not been observed. | [`AGENT_TOOLING.md`](AGENT_TOOLING.md) describes the hooks. | Observe each hook fire from its intended CLI event and record the result in `BUILD_STATUS.md`. |
+| `UV-007` | HTTP rendering and template tests pass, but no independent browser screenshot review has completed in the verifying environment. | UI coverage lives in [`test_ui_routes.py`](../tests/integration/test_ui_routes.py) and [`test_ui_regressions.py`](../tests/unit/test_ui_regressions.py). | Complete desktop and narrow-screen browser inspection with retained screenshots. |
 
-- Latest test result: 53 passed with one Starlette/FastAPI TestClient deprecation warning
-  about the current `httpx` compatibility layer.
-- Tests run against a real SQLite file, not PostgreSQL.
-- Compose configuration validates. `docker build` and `docker compose up --build` were
-  each attempted once, but both stopped because the local Docker daemon was not running.
-  Image build and container runtime are `NOT_MEASURED`; hosted deployment is not claimed.
+## Evidence gaps
 
-## Commercial and research evidence
+| ID | Current evidence gap and impact | Evidence | Exit condition |
+| --- | --- | --- | --- |
+| `EG-001` | All issues, users, labels, code samples, and evaluation cases are synthetic. The current results do not establish customer value or production quality. | [`seed.py`](../src/warrant/seed.py) and the files under [`evaluations`](../evaluations/) contain the synthetic data. | Validate the intended workflows with authorized users and an approved data-handling plan. |
+| `EG-002` | The only credentialled live-model evaluation contains three delegations. Live extraction F1, judge precision, statistically meaningful p95 latency, and production-comparable cost remain unmeasured. | [`live-run-2026-08-31.json`](../evaluations/live-run-2026-08-31.json) is the current live artifact. | Run a preregistered live evaluation large enough to report these metrics. |
+| `EG-003` | Synthetic retrieval Recall@10, duplicate precision, semantic-search Recall@10, and exact-key success are measured at `1.0`. The retrieval set has only four queries, and MRR is not measured. | [`results.json`](../evaluations/results.json) and [`retrieval_golden.json`](../evaluations/retrieval_golden.json) contain the results and cases. | Expand the dataset, add MRR, and evaluate against representative authorized queries. |
+| `EG-004` | No production-scale concurrency, load, latency, recovery, or cost test has run. | [BUILD_STATUS.md](../BUILD_STATUS.md) records the latest verification scope. | Pass an agreed load and failure test against the intended deployment architecture. |
+| `EG-005` | No user interviews, customer trials, willingness-to-pay evidence, or customer feedback support the product hypothesis. Pricing, market size, and positioning remain hypotheses. | [`ENGINEERING_REPORT.md`](ENGINEERING_REPORT.md) separates implementation evidence from research evidence. | Complete authorized product research with the target users. |
+| `EG-006` | The MVP does not claim compliance with SOC 2, ISO 27001, GDPR, HIPAA, or another standard. | No audit or certification artifact exists in this project. | Define the required standards and complete the corresponding legal, security, and audit work. |
 
-- No user interviews, willingness-to-pay evidence, customer trials, or customer feedback were created by this implementation work.
-- Pricing, market size, and positioning remain hypotheses in the R&D document.
-- No claim is made that this MVP meets SOC 2, ISO 27001, GDPR, HIPAA, or another compliance standard.
+## Production control gaps
+
+| ID | Missing control and impact | Evidence | Exit condition |
+| --- | --- | --- | --- |
+| `PC-001` | Sign-in is an optional demo gate with one published shared password. It now issues revocable HS256 JWTs for browser and bearer use, but has no OAuth, SSO, MFA, registration, password reset, rate limit, refresh-token flow, or account lockout. The default configuration leaves authentication disabled. | [`auth.py`](../src/warrant/auth.py), [`config.py`](../src/warrant/config.py), and the auth tests define and verify the demo gate. | Replace the demo credential exchange and shared signing key with production identity, key management, and session controls, then complete an authentication threat review. |
+| `PC-002` | Workspace isolation depends on repository queries and service checks. The database does not enforce row-level security. | [`db.py`](../src/warrant/db.py) defines the schema. Cross-workspace tests live in [`test_boundaries.py`](../tests/security/test_boundaries.py). | Enforce tenant isolation in the production database and test bypass attempts through every data path. |
+| `PC-003` | Local defaults for webhook signing, CSRF, and session signing are public and unsafe for deployment. The application also lacks general rate limiting, encryption at rest, TLS termination, dependency scanning in CI, and a formal retention and purge job. | Defaults live in [`config.py`](../src/warrant/config.py). | Reject unsafe deployment configuration and verify the missing controls in the target environment. |
+| `PC-004` | Hash chaining and mutation-blocking triggers detect normal database edits. A privileged operator can replace the database and recompute the chain because no external hash anchor exists. | [`audit.py`](../src/warrant/audit.py) and [`db.py`](../src/warrant/db.py) implement the local ledger. | Anchor audit hashes in an independently controlled system and verify tamper detection across restores. |
+| `PC-005` | The OpenRouter path does not enforce provider allowlists, `data_collection: "deny"`, or ZDR routing. The synthetic-only rule is documentation rather than a runtime provenance guard. | The request payload is built in [`providers.py`](../src/warrant/providers.py). The data rule is stated in [`README.md`](../README.md). | Enforce approved routing and data provenance before any non-synthetic request. |
+| `PC-006` | Slack identity mapping uses configuration rather than OAuth or SCIM. An unmapped Slack member cannot delegate unless the Slack ID already matches a Warrant user ID. | [`slack.py`](../src/warrant/slack.py) implements identity mapping. | Add an administered identity link with lifecycle, revocation, and workspace-isolation tests. |
+
+## Verification records
+
+Keep command receipts, tool versions, test counts, live-run dates, and environment failures in [BUILD_STATUS.md](../BUILD_STATUS.md). Those facts change without changing the product's limitations. Keep provider details and implementation rationale in [ARCHITECTURE.md](ARCHITECTURE.md) and [DECISIONS.md](DECISIONS.md).

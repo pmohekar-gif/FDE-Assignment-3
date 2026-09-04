@@ -6,7 +6,9 @@
 - Signed/timestamped tracker webhook validation and delivery-id idempotency.
 - Redaction and deterministic prompt-injection scoring before provider inference.
 - Hybrid SQLite FTS5 + local-vector retrieval with reciprocal-rank fusion.
-- Provider abstraction with labelled fixture and genuine OpenAI-compatible structured inference.
+- Provider abstraction with labelled fixture, OpenAI JSON-Schema inference, and
+  experimental OpenRouter MiniMax M3 JSON-object inference with client-side schema
+  enforcement.
 - Validated YAML policy interpreter: ordered/terminal/fail-closed rules, complete
   consequence × reversibility matrix, and consequence-derived tool grants.
 - Immutable admin-only policy activation with line-aware 422 validation, simulation,
@@ -24,7 +26,11 @@
 - Append-only, hash-chained audit ledger with integrity check and CSV/JSON export.
 - Admin/owner authorization on JSON and CSV audit API exports, with non-admin access
   rejected at the service boundary.
-- Persisted product/model telemetry and Prometheus-format metrics endpoint.
+- Optional HS256 JWT authentication for browser cookies and API bearer clients, with one
+  shared demo password across seeded users, distinct database roles, required issuer,
+  audience, identity, workspace, and time claims, plus immediate database-backed revocation.
+- Persisted product/model telemetry, provider-reported usage/cost/routing metadata,
+  schema-repair events, and Prometheus-format metrics endpoint.
 - Responsive UI with explicit simulated/live provider labelling and core workflow states.
 - Policy workbench containment: the authority matrix owns its horizontal scroller, the
   editor and matrix columns cannot overlap, and the layout switches to one column at
@@ -50,6 +56,33 @@
 - Runtime telemetry and the product dashboard report extraction cache hit rate, using
   `NOT_MEASURED` before any lookup has occurred.
 - Non-authorising brief prose with a deterministic structured fallback.
+- Contextual, conversation-persisting Agent answers grounded in issue/delegation/policy,
+  repository, and coding-session records; responses are always advisory/non-authorising.
+- Revision-aware local repository indexing and code Q&A with real file/line/snippet
+  citations plus traversal, symlink, ignore, generated-file, binary, size, and secret controls.
+- An external Codex runner adapter, a visible mock runner, isolated Git worktrees,
+  explicit state/event history, cancellation, path-scope enforcement, verification, and
+  mandatory unified-diff artifacts.
+- An immutable execution contract that records the authorising approval (or an explicit
+  `absent` marker when the warrant auto-allowed), derives restricted paths from the
+  surface map, enforces them against runner writes, and is protected from mutation by a
+  database trigger. The warrant is re-verified live immediately before the runner starts
+  and again immediately before any pull-request publish; a revoked or expired warrant
+  aborts with a typed `WarrantNoLongerValid` error recorded in the session timeline.
+- A `PullRequestPublisher` abstraction (`GhPullRequestPublisher` plus a test double), so
+  the outbound publish path is testable without `gh` installed, and `gh` output that
+  cannot be parsed raises a typed error rather than a bare `IndexError`.
+- An optional Grid Dynamics Bifrost gateway provider (`AI_PROVIDER=bifrost`) using the
+  gateway's OpenAI-compatible `/v1/chat/completions` adapter, a separate virtual-key
+  credential, and dynamic model resolution via `GET /v1/models` cached by key
+  fingerprint. Never contacted during this build; see "Not Implemented".
+- Development-time lifecycle hooks for both Claude Code and Codex (`.claude/`, `.codex/`)
+  that lint after Python edits and restate the test standard on stop, plus
+  `make verify-agent-cli`. See `docs/AGENT_TOOLING.md`.
+- Optional draft PR publication through `gh`, gated on feature flag, auth, compatible
+  origin, completed verification, reviewable diff, warrant tool scope, and admin action.
+- Slack Events URL verification/app mentions with HMAC freshness, deduplication, thread
+  context, Warrant identity mapping, shared Agent answers, governed start, and deep links.
 - Repeatable 400-issue/12-user synthetic demo reset.
 - Sentence-level fixture acceptance criteria, visibly marked residual UI truncation,
   diversified synthetic issues, and near-duplicate retrieval filtering.
@@ -58,6 +91,7 @@
 - Ordered CI, mypy typecheck, package build, Dockerfile, and seed/app Compose path.
 - Pinned `uv.lock` and verified Makefile commands.
 - Required implementation, architecture, decision, limitation, demo, AI disclosure, README, and engineering-report documentation.
+- The Slack adapter is implemented. Slack is a conversational front door to the same governed delegation engine — nothing it does skips the deterministic policy checks; it either answers from evidence or routes through the same approval path as everything else."
 
 ## In Progress
 
@@ -66,8 +100,28 @@
 ## Not Implemented
 
 - PostgreSQL/pgvector deployment, RLS, HNSW, worker queue, and production concurrency constraints.
-- Live Linear adapter and external coding-agent execution.
-- Live-model evaluation; no API credential was provided or used.
+- Live Linear adapter. 
+- A successful real Codex run in this environment. The implementation exists and
+  is opt-in; the attempted Codex smoke was sandbox-blocked and an unsandboxed retry was
+  not authorised. `make verify-agent-cli` now exists to check the runner's argv against a
+  real CLI's `--help`, but on the verifying machine it reported **0 flags checked**: only
+  `claude` was installed, and `SubprocessCodingAgentRunner` builds no argv for `claude`.
+  The argv the runner constructs for `codex` therefore remains unverified against the
+  real tool.
+- Any live Bifrost gateway call. The provider is implemented and unit-tested entirely
+  against fakes; the gateway was never contacted, no credential was used, and the
+  endpoint is VPN-gated. Latency, cost, token use, and output quality are `NOT_MEASURED`
+  for this path.
+- Slack correctness work. The known Slack defects (investigate intent, status phrasing,
+  thread misrouting, feature-flag parity, workspace-scoped deduplication, fast-ack
+  decoupling, diff/PR deep links, error-code fidelity, outbound-path test coverage, and
+  setup documentation) are all still open and were deliberately deferred this round.
+- Broad live-model evaluation. A real credentialled OpenRouter run WAS performed on
+  2026-08-31 and is recorded in `evaluations/live-run-2026-08-31.json`: 3 delegations
+  against `minimax/minimax-m3:free`, served by GMICloud. It found real problems, so it is
+  reported here rather than in the delivered list. See "Live-model findings" below. What
+  remains not implemented is a statistically meaningful live evaluation across the full
+  120-case slice.
 - Production OAuth/SSO, rate limiting, OpenTelemetry traces/alerts, hosted deployment, or external audit-chain anchoring.
 - Real customer interviews, user feedback, and willingness-to-pay evidence; these require authorised human research and were not fabricated.
 
@@ -78,16 +132,62 @@
 - Synthetic local vectors and issues do not support a production retrieval-quality claim.
 - Compose syntax validates, but the image could not be executed because the local Docker
   daemon was not running.
+- `gh` is installed but not authenticated, so draft PR publication is locally unavailable.
+- Pstack was requested as a development-time aid but no Pstack executable or skill was
+  installed; its review discipline was applied manually and it is not a runtime dependency.
 
 ## Next Highest-Risk Task
 
 - Validate the product premise with five relevant, consent-respecting platform/security users. If validation holds, the next engineering risk is migrating to PostgreSQL/pgvector and implementing the asynchronous Linear adapter without weakening the deterministic authority boundary.
 
-## Latest Verification — 2026-08-30
+## Live-model findings — 2026-08-31 (`evaluations/live-run-2026-08-31.json`)
 
-- Required sequence: Ruff passed; mypy passed; 21 unit and 32
-  integration/security/E2E tests passed; evaluation passed. The isolated package build
-  then passed with approved package-index access; sdist and wheel are present.
+- **Verdict drift.** WEB-4519 expected `ALLOW`; the live run produced `REQUIRE_APPROVAL`.
+  The drift is in the fail-closed direction, so no unsafe allow occurred and the
+  deterministic policy still held — but live extraction raises approval burden above what
+  the fixture slice measures.
+- **Latency.** p50 preflight 50,578 ms across three calls (49.1s / 50.6s / 70.4s). That
+  disqualifies this free endpoint from an interactive gate. p95 is `NOT_MEASURED`; three
+  calls cannot support one.
+- **Cost.** $0 measured, explicitly `NOT_COMPARABLE_TO_PRODUCTION_TARGET` — free-endpoint
+  promotional economics, not unit economics.
+- **Routing.** OpenRouter and the serving provider (GMICloud) are separate processing
+  layers; serving-provider retention behaviour must be verified before any non-synthetic
+  data is sent.
+
+## Latest Verification — 2026-09-04
+
+- Ruff passed. **261 tests passed and 1 opt-in real-Codex test skipped** (unit 129,
+  integration 118, security 13, e2e 1). mypy was NOT re-run: the verifying environment
+  had no mypy installed, so the typecheck result is stale as of 2026-08-30.
+- Counts were confirmed file-by-file rather than in one run. The sandbox used for
+  verification timed out on whole-directory runs, so `tests/unit` and `tests/integration`
+  were executed in named batches and the per-file summaries added up. Every file was
+  observed passing; no count below was inferred.
+- Closed this round: the execution contract now records a real approval snapshot
+  (including an explicit `absent` marker for auto-allow, instead of an ambiguous null),
+  `restricted_paths` is derived from the surface map and actually enforced, the warrant
+  is re-checked live before the runner starts and again before any PR publish,
+  `contract_json` is protected by an update-rejecting trigger, `head_revision` is
+  persisted whenever a diff is captured rather than only on publish, and `gh` output
+  parsing raises a typed `PullRequestPublishError` instead of a bare `IndexError`.
+- One existing UI test was changed deliberately:
+  `test_coding_session_page_renders_stepper_multi_check_verification_and_diff` asserted
+  the template's `"uncommitted worktree state"` fallback, which only rendered because
+  `head_revision` was always NULL. That bug is fixed, so the assertion was inverted to
+  require the fallback is now unreachable. The test was not weakened.
+
+## Latest Verification — 2026-09-03
+
+- Ruff and mypy passed; **223 tests passed and 1 opt-in real-Codex test skipped** (unit 100,
+  integration 109, security 13, e2e 1). mypy was NOT re-run in this session: the
+  verifying environment had no mypy installed, so the typecheck result is stale.
+- The worktree-retention test exposed a terminal-state visibility race: `COMPLETED`
+  became observable immediately before retention cleanup. Cleanup now reserves the new
+  terminal slot before publishing the state, and selection/removal is serialized. The
+  focused lifecycle checks and subsequent full suite pass.
+- Evaluation and package verification below are from the 2026-08-30 run and were not
+  re-executed.
 - `make eval`: 120 policy cases, 0 unsafe allows, 100% fail-closed correctness,
   100% E2E safe rate, and 100% operational-adversarial non-allow rate.
 - Standard-slice approval burden is 0.4364: outside the ≤0.35 target and above K3's

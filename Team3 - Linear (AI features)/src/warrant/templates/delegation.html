@@ -1,43 +1,448 @@
 {% extends "base.html" %}
-{% block title %}{{ delegation.issue.external_key }} · Warrant{% endblock %}
-{% block content %}
-{% set d=delegation %}{% set decision=d.decision %}{% set risk=d.risk_assessment %}
-<section class="shell detail-head"><a class="back" href="/">← Operator inbox</a><div class="detail-title"><div><p class="eyebrow">{{ d.issue.team }} · {{ d.issue.external_key }}</p><h1>{{ d.issue.title }}</h1><p class="identity-line">Requested by <strong>{{ d.requester.display_name }}</strong> · target <strong>{{ d.agent.name }}</strong></p></div><span class="status-pill {{ decision.verdict|lower }}">{{ decision.verdict|replace('_',' ') }}</span></div>{% if decision.fail_closed %}<div class="degraded-banner">Evidence was degraded or incomplete. Policy failed closed and increased human involvement.</div>{% endif %}</section>
-
-<section class="shell pipeline-panel" aria-label="Delegation pipeline"><div class="pipeline-trace">{% for stage in pipeline %}<div class="stage {{ stage.state }}"><span>{{ loop.index }}</span><strong>{{ stage.name }}</strong><small>{{ stage.detail }}</small></div>{% endfor %}</div></section>
-
-<section class="shell decision-grid"><div class="decision-main">
-  <article class="panel hero-decision {{ decision.verdict|lower }}"><p class="eyebrow">Deterministic policy verdict</p><h2>{{ decision.verdict|replace('_',' ') }}</h2><p>The model described the work. Policy <strong>{{ decision.policy_version }}</strong> made the authority decision.</p><div class="reason-list">{% for reason in reason_details %}<div><code>{{ reason.code }}</code><span>{{ reason.explanation }}</span></div>{% endfor %}{% for rule in rule_details %}<div><a href="/policy#rule-{{ rule.id }}"><code>{{ rule.id }}</code></a><span>{{ rule.explanation }}</span></div>{% endfor %}</div><div class="rules">Policy SHA <code>{{ decision.policy_sha[:10] }}</code></div></article>
-
-  <article class="panel"><div class="panel-title"><div><p class="eyebrow">Case assembled</p><h2>Evidence brief</h2></div><span class="score">{{ (risk.evidence_sufficiency*100)|int }}%</span></div><div class="sufficiency"><div class="meter" role="meter" aria-label="Evidence sufficiency" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ (risk.evidence_sufficiency*100)|int }}"><span style="width:{{ (risk.evidence_sufficiency*100)|int }}%"></span><i style="left:70%"></i></div><div><span>0</span><strong>ALLOW threshold 0.70</strong><span>1.0</span></div></div>
-    <div class="feature-grid"><div><small>Consequence</small><strong>{{ risk.consequence|replace('_',' ') }}</strong></div><div><small>Reversibility</small><strong>{{ risk.reversibility|replace('_',' ') }}</strong></div><div><small>Risk</small><strong>{{ risk.composite_risk }}</strong></div><div><small>Retrieval</small><strong>{{ risk.retrieval_mode|replace('_',' ') }}</strong></div></div>
-    <h3>Authoritative proposed surfaces</h3><ul class="scope-list">{% for path in risk.proposed_surfaces %}<li><code>{{ path }}</code></li>{% else %}<li>No surface is currently grantable.</li>{% endfor %}</ul>
-    <h3>Acceptance criteria</h3><ol class="criteria">{% for item in d.extraction.result.acceptance_criteria %}<li{% if item|length > 180 %} class="truncated" title="{{ item }}"{% endif %}>{{ item|truncate(180, false, '…', 0) }}</li>{% endfor %}</ol>
-    {% if d.extraction.result.missing_information %}<h3>Missing information reducing sufficiency</h3><ul class="missing">{% for item in d.extraction.result.missing_information %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
-  </article>
-
-  <article class="panel"><div class="panel-title"><div><p class="eyebrow">Retrieval evidence</p><h2>Related work</h2></div><span>{{ d.retrieval.mode|replace('_',' ') }}</span></div>{% for candidate in d.retrieval.candidates[:4] %}<div class="candidate"><code>{{ candidate.external_key }}</code><div><strong>{{ candidate.title }}</strong><small>{{ candidate.why }} · semantic {{ candidate.semantic_score }}</small></div></div>{% else %}<div class="empty small">No relevant precedent found.</div>{% endfor %}</article>
-
-  {% if decision.verdict == 'DENY' %}<article class="panel remediation"><p class="eyebrow">Boundary explanation</p><h2>What would have to change</h2><p>{{ remediation }}</p><strong>This is guidance for a newly evaluated request, not an override.</strong></article>{% endif %}
-
-  {% if d.verification %}<article class="panel verification {{ d.verification.verdict|lower }}"><p class="eyebrow">Returned evidence</p><h2>{{ d.verification.verdict|replace('_',' ') }}</h2><div class="checks">{% for name,ok in d.verification.gate1.items() if name != 'outside_scope_files' %}<div><span>{{ '✓' if ok else '×' }}</span>{{ name|replace('_',' ') }}</div>{% endfor %}</div>{% if d.verification.human_check_list %}<h3>Human must check</h3><ul class="missing">{% for item in d.verification.human_check_list %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}</article>{% endif %}
-  <div id="operation-result" aria-live="polite"></div>
-</div>
-
-<aside class="decision-aside">
-  {% if d.status == 'awaiting_approval' %}<article class="panel action-card"><p class="eyebrow">Human gate</p><h2>Review complete authority</h2><p>You may narrow the proposed set. The server refuses widening and empty warrants.</p>
-    <h3>Tools that would be granted</h3><div class="chips good">{% for tool in preview_allowed %}<span>{{ tool }}</span>{% endfor %}</div><h3>Never grantable</h3><div class="chips denied">{% for tool in preview_denied %}<span>{{ tool }}</span>{% endfor %}</div>
-    <form id="decision-form"> <fieldset><legend>Warrant scope</legend>{% for path in risk.proposed_surfaces %}<label class="scope-choice"><input type="checkbox" name="surface" value="{{ path }}" checked><code>{{ path }}</code></label>{% else %}<p>No selectable surface remains.</p>{% endfor %}</fieldset><label>Optional rationale<textarea id="rationale" maxlength="1000" placeholder="Why this decision is appropriate"></textarea></label><div id="self-approval-note" class="prohibition" hidden><strong>Self-approval is prohibited by CODE_OWNER_REQUIRED.</strong><p>The server will still evaluate the attempt so the 403 boundary is observable.</p></div><div class="decision-actions"><button type="button" data-action="approve" class="primary">Approve</button><button type="button" data-action="narrow">Narrow</button><button type="button" data-action="defer">Defer</button><button type="button" data-action="deny" class="danger">Deny</button></div></form><div id="decision-error" class="inline-error" hidden></div><small>Every decision and rationale is audited.</small>
-  </article>
-  {% elif d.warrant %}<article class="panel warrant-card"><p class="eyebrow">Scoped authority</p><h2>{{ d.warrant.id }}</h2><span class="status-pill {{ d.warrant.status }}">{{ d.warrant.status }}</span><h3>Allowed tools</h3><div class="chips good">{% for tool in d.warrant.allowed_tools %}<span>{{ tool }}</span>{% endfor %}</div><h3>Explicitly denied</h3><div class="chips denied">{% for tool in d.warrant.denied_tools %}<span>{{ tool }}</span>{% endfor %}</div><small>Expires <time class="relative-time" data-time="{{ d.warrant.expires_at }}">{{ d.warrant.expires_at }}</time></small>{% if d.warrant.status == 'active' %}<details class="evidence-return"><summary>Return synthetic evidence</summary><label>Files, one per line<textarea id="evidence-files">{{ d.warrant.scope_surfaces|join('\n') }}</textarea></label><label>Test output<textarea id="test-output">SIMULATED: 14 passed, 0 failed. Regression test verifies requested behaviour and existing behaviour remains stable.</textarea></label><button id="evidence" class="primary">Submit evidence bundle</button></details><div id="evidence-error" class="inline-error" hidden></div>{% endif %}</article>
-  {% else %}<article class="panel boundary-card"><p class="eyebrow">Boundary enforced</p><h2>No warrant issued</h2><p>Policy denied this request without offering a force or override path.</p><a href="/audit">Inspect the audit story →</a></article>{% endif %}
-  <article class="panel boundary-note"><strong>Honest boundary</strong><p>Warrant governs work routed through it. It cannot physically prevent invocation through another channel.</p></article>
-</aside></section>
+{% import "_macros.html" as ui %}
+{% set d = delegation %}{% set decision = d.decision %}{% set risk = d.risk_assessment %}{% set verdict_tone = ui.tone(decision.verdict) %}
+{% block title %}{{ d.issue.external_key }} · Warrant{% endblock %}
+{% block view_title %}<a href="/">Triage</a> / {{ d.issue.external_key }}{% endblock %}
+{% block view_count %}{{ d.id }}{% endblock %}
+{% block head_tools %}
+<span class="chip">{{ ui.ring(risk.evidence_sufficiency, decision.verdict, allow_threshold) }} <span class="k">{{ '%.2f'|format(risk.evidence_sufficiency) }}</span></span>
+<span class="chip">{{ decision.verdict }}</span>
+<a class="chip" href="/coding-sessions">Coding sessions <span class="k">{{ coding_sessions|length }}</span></a>
 {% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="doc">
+    <p class="crumb"><a href="/">Triage</a> <span>/</span> {{ d.issue.team }} <span>/</span> {{ d.issue.external_key }} <span>/</span> {{ d.status }}</p>
+    <h1>{{ d.issue.title }}</h1>
+    <p class="doc-sub">Requested by <strong>{{ d.requester.display_name }}</strong> ({{ d.requester.role }}) for agent <strong>{{ d.agent.name }}</strong> · <span class="relative-time" data-time="{{ d.created_at }}">{{ d.created_at }}</span> · source <code>{{ d.source }}</code>{% if d.untrusted_origin %} · <code>untrusted origin</code>{% endif %}</p>
+
+    <div class="stepper" role="list" aria-label="Delegation pipeline">
+      {% for stage in pipeline %}<span class="step {{ 'done' if stage.state == 'complete' else '' }}" role="listitem" title="{{ stage.detail }}"><span class="dot" aria-hidden="true"></span>{{ stage.name|upper }}</span>{% endfor %}
+    </div>
+
+    <article class="card verdict-card">
+      <div class="verdict-top {{ verdict_tone }}">
+        <span class="verdict-word">{{ decision.verdict }}</span>
+        <span class="verdict-src">Deterministic policy {{ decision.policy_version }}<br>Model output cannot set this verdict</span>
+      </div>
+      <div class="verdict-body">
+        <p>The model described the work and assembled evidence. Policy <code>{{ decision.policy_version }}</code> at SHA <code>{{ decision.policy_sha[:12] }}</code> made the authority decision from deterministic features only.</p>
+        {% if decision.fail_closed %}<p class="advisory warn">fail_closed = true · evidence was degraded or incomplete, so policy increased human involvement rather than guessing</p>{% endif %}
+        <h3>Reason codes and matched rules</h3>
+        <div class="reason-rows">
+          {% for reason in reason_details %}<div><code>{{ reason.code }}</code><span>{{ reason.explanation }}</span></div>{% endfor %}
+          {% for rule in rule_details %}<div><a href="/policy#rule-{{ rule.id }}"><code>{{ rule.id }}</code></a><span>{{ rule.explanation }}</span></div>{% endfor %}
+        </div>
+        <p class="note">Named approvers for this verdict: {% for approver in decision.approver_ids %}<code>{{ approver }}</code>{{ ', ' if not loop.last }}{% endfor %}{% if not decision.approver_ids %}none — no human can widen this decision{% endif %}.</p>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2>Risk features and evidence sufficiency <span class="aside">deterministic inputs</span></h2>
+      {{ ui.sufficiency_meter(risk.evidence_sufficiency, allow_threshold, decision.verdict) }}
+      <div class="feat" style="margin-top:12px">
+        <div><small>Consequence</small><b>{{ risk.consequence }}</b></div>
+        <div><small>Reversibility</small><b>{{ risk.reversibility }}</b></div>
+        <div><small>Composite risk</small><b>{{ risk.composite_risk }}</b></div>
+        <div><small>Retrieval mode</small><b>{{ risk.retrieval_mode }} {{ '%.2f'|format(risk.retrieval_completeness) }}</b></div>
+        {% for key in ['protected_surface','security_sensitive','irreversible','sensitive_data','external_side_effect','destructive','rollback_available','untrusted_origin','surface_map_stale','provider_fallback_used','extraction_unavailable','requester_is_code_owner'] %}
+        <div><small>{{ key }}</small><b class="{{ 'on' if risk.features.get(key) else 'off' }}">{{ risk.features.get(key)|lower }}</b></div>
+        {% endfor %}
+        <div><small>injection_signal</small><b class="{{ 'on' if risk.features.injection_signal else 'off' }}">{{ risk.features.injection_signal }}</b></div>
+        <div><small>concurrency_conflict</small><b class="{{ 'on' if risk.features.concurrency_conflict else 'off' }}">{{ risk.features.concurrency_conflict|lower }}</b></div>
+      </div>
+
+      <h3>Authoritative proposed surfaces</h3>
+      <div class="tools">{% for path in risk.proposed_surfaces %}<span class="tool neutral">{{ path }}</span>{% else %}<span class="tool no">no surface is currently grantable</span>{% endfor %}</div>
+      {% if d.extraction and d.extraction.result %}
+      <h3>Model-proposed surfaces (advisory)</h3>
+      <div class="tools">{% for path in d.extraction.result.affected_surfaces %}<span class="tool neutral">{{ path }}</span>{% endfor %}</div>
+      {% if risk.features.surfaces_outside_declared_scope %}
+      <p class="advisory warn">Excluded from authority — extraction proposed surfaces the issue never declared: {{ risk.features.surfaces_outside_declared_scope|join(', ') }}</p>
+      {% endif %}
+
+      <h3>Acceptance criteria</h3>
+      <ol>{% for item in d.extraction.result.acceptance_criteria %}<li{% if item|length > 180 %} class="truncated" title="{{ item }}"{% endif %}>{{ item|truncate(180, false, '…', 0) }}</li>{% endfor %}</ol>
+
+      {% if d.extraction.result.missing_information %}
+      <h3>Missing information reducing sufficiency</h3>
+      <ul class="missing">{% for item in d.extraction.result.missing_information %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% else %}
+      <p class="note">Extraction reported no missing information. Confidence {{ d.extraction.result.confidence }} · scope {{ d.extraction.result.scope_estimate }} · reproduction present {{ d.extraction.result.reproduction_present|lower }}.</p>
+      {% endif %}
+      {% endif %}
+    </article>
+
+    <article class="card {% if brief.lifecycle.stale %}brief-stale{% endif %}" id="delegation-brief">
+      <h2>Delegation brief <span class="aside">prose_source = {{ brief.prose_source }} · brief {{ brief.brief_version }}</span></h2>
+      {% if brief.lifecycle.stale %}
+      <div class="inline-error error-409" style="margin-top:0">
+        <strong>Stale brief</strong>
+        <p>Deterministic facts changed after this prose was generated. The policy verdict above remains authoritative.</p>
+        <button class="btn center" type="button" id="refresh-brief" style="margin-top:8px">Refresh brief from current facts</button>
+      </div>
+      {% endif %}
+      <p class="advisory warn">authorising = {{ brief.authority_boundary.authorising|lower }} · decision_source = {{ brief.authority_boundary.decision_source }} · prose_may_change_verdict = {{ brief.authority_boundary.prose_may_change_verdict|lower }}</p>
+      <p>{{ brief.prose.summary }}</p>
+      <h3>Evidence notes</h3>
+      <ul>{% for note in brief.prose.evidence_notes %}<li>{{ note }}</li>{% endfor %}</ul>
+      <h3>Human next steps</h3>
+      <ul>{% for step in brief.prose.human_next_steps %}<li>{{ step }}</li>{% endfor %}</ul>
+      {% if brief.missing_information %}
+      <h3>Missing information</h3>
+      <ul class="missing">{% for item in brief.missing_information %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% endif %}
+      <p class="note">{{ brief.provenance.provider }} · {{ brief.provenance.model }} · generated <span class="relative-time" data-time="{{ brief.lifecycle.generated_at }}">{{ brief.lifecycle.generated_at }}</span> · {{ 'cached' if brief.lifecycle.cache_hit else 'fresh' }}. Generated prose cannot approve, deny, grant tools or change the verdict.</p>
+      <div class="inline-error" id="brief-error" hidden></div>
+    </article>
+
+    {{ ui.ask_agent('delegation_id', d.id, agent_chat_enabled, 'Why does this require approval, and where is that enforced?') }}
+
+    <article class="card" id="code-card">
+      <h2>Code intelligence <span class="aside">path:line cited · authoritative = false</span></h2>
+      {% if code_intelligence_enabled %}
+      <form class="agent-in" id="code-form">
+        <label class="sr-only" for="code-query">Ask about the codebase</label>
+        <input id="code-query" type="text" maxlength="1000" placeholder="Where is the warrant re-checked before a runner starts?" required>
+        <button class="btn pri center" type="submit">Ask</button>
+      </form>
+      <p class="note tight">Answers cite <code>path:start-end</code> from the configured repository. Uncited code locations are never inferred. <a href="/code" style="color:var(--accent)">Full code intelligence view &rarr;</a></p>
+      <div class="agent-out" id="code-answer" aria-live="polite"></div>
+      <div class="inline-error" id="code-error" hidden></div>
+      {% else %}
+      <p>Code Intelligence is disabled for this workspace (<code>CODE_INTELLIGENCE_ENABLED=false</code>).</p>
+      {% endif %}
+    </article>
+
+    <article class="card">
+      <h2>Retrieval evidence and related work <span class="aside">{{ d.retrieval.mode }} · {{ '%.2f'|format(d.retrieval.completeness) }} complete</span></h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Issue</th><th>Kind</th><th>Team</th><th>Semantic</th><th>RRF</th><th>Why</th></tr></thead>
+          <tbody>
+            {% for candidate in d.retrieval.candidates[:6] %}
+            <tr><th><code>{{ candidate.external_key }}</code></th><td>{{ candidate.kind|replace('_',' ') }}</td><td>{{ candidate.team }}</td><td><code>{{ candidate.semantic_score }}</code></td><td><code>{{ candidate.rrf_score }}</code></td><td>{{ candidate.why }}</td></tr>
+            {% else %}
+            <tr><td colspan="6">No relevant precedent found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if d.retrieval.overlaps %}<p class="note">Overlapping active warrants: {% for overlap in d.retrieval.overlaps %}<code>{{ overlap }}</code>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+      <p class="advisory">Retrieval is advisory evidence · it never changes a verdict</p>
+    </article>
+
+    {% if decision.verdict == 'DENY' %}
+    <article class="card">
+      <h2>Boundary explanation <span class="aside">no warrant was issued</span></h2>
+      <p>Policy denied this request and offers no force or override path. There is no UI affordance that can widen a terminal deny.</p>
+      <h3>What would have to change</h3>
+      <p>{{ remediation }}</p>
+      <p class="advisory warn">Guidance for a newly evaluated request · not an override</p>
+    </article>
+    {% endif %}
+
+    {% if d.verification %}
+    <article class="card">
+      <h2>Returned-evidence verification <span class="aside">{{ d.verification.verdict }}</span></h2>
+      <dl class="verify {{ 'fail' if d.verification.verdict != 'ACCEPTED' else '' }}">
+        {% for name, ok in d.verification.gate1.items() if name != 'outside_scope_files' %}
+        <dt>{{ name|replace('_',' ') }}</dt><dd>{{ 'pass' if ok else 'FAIL' }}</dd>
+        {% endfor %}
+        <dt>outside scope files</dt><dd>{{ d.verification.gate1.outside_scope_files|join(', ') or 'none' }}</dd>
+      </dl>
+      {% if d.verification.human_check_list %}
+      <h3>Human must still check</h3>
+      <ul class="missing">{% for item in d.verification.human_check_list %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% endif %}
+      <p class="note">Gate 1 is mechanical. Passing it does not mean the change is correct; it means the returned bundle is inside the warrant and structurally complete.</p>
+    </article>
+    {% endif %}
+
+    <article class="card" id="sessions-card">
+      <h2>Coding sessions <span class="aside">{{ coding_sessions|length }} for this delegation</span></h2>
+      {% if coding_sessions %}
+      <div class="tl">
+        {% for session in coding_sessions %}
+        <div class="tl-row">
+          <span class="pip {{ 'ok' if session.state == 'COMPLETED' else ('bad' if session.state in ['FAILED','CANCELLED'] else 'info') }}" aria-hidden="true"></span>
+          <code><a href="/coding-sessions/{{ session.id }}">{{ session.id }}</a></code>
+          <span class="what">{{ session.state }} · {{ session.provider }} · <span class="provider-kind {{ session.provider_kind }}">{{ session.provider_kind|upper }}</span>{% if session.diff %} · +{{ session.diff.additions }} −{{ session.diff.deletions }}{% endif %}</span>
+          <span class="when relative-time" data-short data-time="{{ session.created_at }}">{{ session.created_at }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p>No coding session has been started against this delegation.</p>
+      {% endif %}
+      {% if d.warrant and d.warrant.status == 'active' and 'write_files' in d.warrant.allowed_tools %}
+      <h3>Launch a governed session</h3>
+      <form class="inline-form" id="coding-form">
+        <label class="field"><span>Runner</span><select id="coding-provider"></select></label>
+        <button class="btn pri center" type="submit">Start governed coding <span class="kbd inv">C</span></button>
+      </form>
+      <div id="capability-note"><p class="loading">Reading runner capabilities…</p></div>
+      <div class="inline-error" id="coding-error" hidden></div>
+      {% elif d.warrant %}
+      <p class="note">This warrant does not grant <code>write_files</code>, so no coding session can start against it.</p>
+      {% else %}
+      <p class="note">Execution requires an active warrant. Policy has not issued one.</p>
+      {% endif %}
+    </article>
+  </div>
+
+  <aside class="rail" aria-label="Delegation properties">
+    <div class="rail-sec">
+      <p class="rail-h">Status</p>
+      <dl class="kv">
+        <dt>Delegation</dt><dd>{{ d.status }}</dd>
+        <dt>Verdict</dt><dd class="{{ 'ok' if decision.verdict == 'ALLOW' else ('bad' if decision.verdict == 'DENY' else 'warn') }}">{{ decision.verdict }}</dd>
+        <dt>Policy</dt><dd>{{ decision.policy_version }}</dd>
+        <dt>Policy SHA</dt><dd>{{ decision.policy_sha[:16] }}…</dd>
+        <dt>Sufficiency</dt><dd>{{ '%.2f'|format(risk.evidence_sufficiency) }} / {{ '%.2f'|format(allow_threshold) }}</dd>
+        <dt>Warrant</dt><dd class="{{ 'none' if not d.warrant }}">{{ d.warrant.id if d.warrant else 'not issued' }}</dd>
+      </dl>
+    </div>
+
+    {% if d.warrant %}
+    <div class="rail-sec">
+      <p class="rail-h">Warrant</p>
+      <dl class="kv">
+        <dt>Id</dt><dd>{{ d.warrant.id }}</dd>
+        <dt>Status</dt><dd class="{{ 'ok' if d.warrant.status == 'active' else 'warn' }}">{{ d.warrant.status }}</dd>
+        <dt>Authority</dt><dd>{{ d.warrant.authority_user_id }}</dd>
+        <dt>Issued</dt><dd><span class="relative-time" data-time="{{ d.warrant.issued_at }}">{{ d.warrant.issued_at }}</span></dd>
+        <dt>Expires</dt><dd><span class="relative-time" data-time="{{ d.warrant.expires_at }}">{{ d.warrant.expires_at }}</span></dd>
+      </dl>
+      <p class="rail-h tight">Scope surfaces</p>
+      <div class="tools">{% for path in d.warrant.scope_surfaces %}<span class="tool neutral">{{ path }}</span>{% endfor %}</div>
+      <p class="rail-h tight">Allowed tools</p>
+      <div class="tools">{% for tool in d.warrant.allowed_tools %}<span class="tool">{{ tool }}</span>{% endfor %}</div>
+      <p class="rail-h tight">Explicitly denied</p>
+      <div class="tools">{% for tool in d.warrant.denied_tools %}<span class="tool no">{{ tool }}</span>{% endfor %}</div>
+      <p class="rail-h tight">Never grantable by any policy</p>
+      <div class="tools">{% for tool in never_grantable_tools %}<span class="tool no">{{ tool }}</span>{% endfor %}</div>
+      <p class="note">Evidence contract: {% for item in d.warrant.evidence_contract %}{{ item }}{{ '; ' if not loop.last }}{% endfor %}</p>
+    </div>
+    {% else %}
+    <div class="rail-sec">
+      <p class="rail-h">No warrant issued</p>
+      <p class="note tight">{% if decision.verdict == 'DENY' %}Policy denied this request. Nothing in this interface can force issuance.{% else %}A named human must approve before any authority exists.{% endif %}</p>
+      <p class="rail-h tight">Tools that would be granted</p>
+      <div class="tools">{% for tool in preview_allowed %}<span class="tool">{{ tool }}</span>{% else %}<span class="tool no">none</span>{% endfor %}</div>
+      <p class="rail-h tight">Never grantable</p>
+      <div class="tools">{% for tool in preview_denied %}<span class="tool no">{{ tool }}</span>{% endfor %}</div>
+    </div>
+    {% endif %}
+
+    {% if d.status == 'awaiting_approval' %}
+    <div class="rail-sec">
+      <p class="rail-h">Human gate</p>
+      <p class="note tight">A named approver must act. You may narrow the proposed scope; the server refuses widening and empty warrants.</p>
+      <form id="decision-form" class="form-grid" style="margin-top:10px">
+        <fieldset>
+          <legend>Warrant scope</legend>
+          {% for path in risk.proposed_surfaces %}
+          <label class="scope-choice"><input type="checkbox" name="surface" value="{{ path }}" checked>{{ path }}</label>
+          {% else %}
+          <p class="note tight">No selectable surface remains.</p>
+          {% endfor %}
+        </fieldset>
+        <label><span>Optional rationale</span><textarea id="rationale" maxlength="1000" placeholder="Why this decision is appropriate"></textarea></label>
+      </form>
+      <div id="self-approval-note" class="inline-error error-403" hidden>
+        <strong>Self-approval prohibited</strong>
+        <p><code>CODE_OWNER_REQUIRED</code> means the requester cannot approve their own delegation. The server still evaluates the attempt so the 403 boundary is observable.</p>
+      </div>
+      <div class="rail-actions">
+        <button class="btn pri" type="button" data-action="approve">Approve as named authority <span class="kbd inv">1</span></button>
+        <button class="btn" type="button" data-action="narrow">Issue only the selected scope</button>
+        <button class="btn" type="button" data-action="defer">Hold (defer) <span class="kbd">H</span></button>
+        <button class="btn danger" type="button" data-action="deny">Deny <span class="kbd">3</span></button>
+      </div>
+      <div class="inline-error" id="decision-error" hidden></div>
+      <p class="note">Every decision, rationale and identity is appended to the hash-chained audit ledger. Warrant TTL is {{ warrant_ttl_minutes }} minutes.</p>
+    </div>
+    {% endif %}
+
+    {% if d.warrant and d.warrant.status == 'active' %}
+    <div class="rail-sec">
+      <p class="rail-h">Return evidence</p>
+      <details class="disclosure">
+        <summary>Submit a synthetic evidence bundle</summary>
+        <div class="inner">
+          <div class="form-grid">
+            <label><span>Files, one per line</span><textarea id="evidence-files">{{ d.warrant.scope_surfaces|join('\n') }}</textarea></label>
+            <label><span>Test output</span><textarea id="test-output">SIMULATED: 14 passed, 0 failed. Regression test verifies requested behaviour and existing behaviour remains stable.</textarea></label>
+            <button class="btn pri center" type="button" id="evidence">Submit evidence bundle</button>
+          </div>
+          <p class="note">The single-use nonce is consumed only when Gate 1 passes.</p>
+        </div>
+      </details>
+      <div class="inline-error" id="evidence-error" hidden></div>
+      <div id="operation-result" aria-live="polite"></div>
+    </div>
+    {% endif %}
+
+    <div class="rail-sec">
+      <p class="rail-h">Audit chain</p>
+      <dl class="kv">
+        <dt>Verified</dt><dd class="{{ 'ok' if audit_ok else 'bad' }}">{{ 'chain intact' if audit_ok else 'BROKEN' }}</dd>
+        <dt>Events</dt><dd>{{ nav.audit_events }}</dd>
+      </dl>
+      <div class="rail-actions"><a class="btn" href="{{ '/audit' if auth_enabled else '/audit?actor_id=admin-demo' }}">Inspect the audit story <span aria-hidden="true">&rarr;</span></a></div>
+    </div>
+
+    <div class="rail-sec">
+      <p class="rail-h">Honest boundary</p>
+      <p class="note tight">Warrant governs work routed through it. It cannot physically prevent an agent being invoked through another channel, and it does not claim to.</p>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
 {% block scripts %}<script>
-const delegationId={{ delegation.id|tojson }},requesterId={{ delegation.requester.id|tojson }},requesterOwns={{ delegation.risk_assessment.features.requester_is_code_owner|default(false)|tojson }};
-const proposed=new Set({{ delegation.risk_assessment.proposed_surfaces|tojson }}),decisionError=document.getElementById('decision-error'),resultRegion=document.getElementById('operation-result');
-function updateSelfApproval(){const node=document.getElementById('self-approval-note');if(node)node.hidden=!(window.WARRANT.actor===requesterId&&!requesterOwns);}updateSelfApproval();window.addEventListener('warrant:actor',updateSelfApproval);
-document.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',async()=>{const action=button.dataset.action,selected=[...document.querySelectorAll('input[name=surface]:checked')].map(node=>node.value);if(selected.some(path=>!proposed.has(path))){renderError(decisionError,new ApiError(422,{error:'Selected scope is outside the policy proposal'}),'decision');return;}if((action==='narrow'||action==='deny')&&!confirm(`${action==='deny'?'Deny this delegation':'Issue only the selected narrower scope'}?`))return;button.disabled=true;try{const body={action,approver_id:window.WARRANT.actor,rationale:document.getElementById('rationale').value};if(action==='narrow')body.narrowed_surfaces=selected;await api(`/v1/delegations/${delegationId}/decision`,{method:'POST',body:JSON.stringify(body)});toast(`Decision recorded: ${action}`);setTimeout(()=>location.reload(),450);}catch(error){renderError(decisionError,error,error.status===403?'CODE_OWNER_REQUIRED':'decision');button.disabled=false;}}));
-document.getElementById('evidence')?.addEventListener('click',async()=>{const warrant={{ (delegation.warrant or {})|tojson }},errorNode=document.getElementById('evidence-error');try{const files=document.getElementById('evidence-files').value.split('\n').map(value=>value.trim()).filter(Boolean);const response=await api(`/v1/warrants/${warrant.id}/evidence`,{method:'POST',body:JSON.stringify({nonce:warrant.demo_nonce,files,artifacts:[{type:'test',ref:'ci://northstar/simulated-run'}],test_output:document.getElementById('test-output').value,claimed_criteria:{{ (delegation.extraction.result.acceptance_criteria if delegation.extraction and delegation.extraction.result else [])|tojson }},notes:'Synthetic evidence from UI.'})});resultRegion.innerHTML=`<div class="success-panel"><strong>Evidence ${response.verdict}</strong><p>The nonce is now consumed.</p></div>`;setTimeout(()=>location.reload(),700);}catch(error){if(error.status===422&&error.body.details?.gate1){const gate=error.body.details.gate1,rows=Object.entries(gate).filter(([key])=>key!=='outside_scope_files').map(([key,value])=>`<li class="${value?'pass':'fail'}">${value?'✓':'×'} ${key.replaceAll('_',' ')}</li>`).join('');errorNode.hidden=false;errorNode.className='gate-panel';errorNode.innerHTML=`<strong>Evidence bundle blocked; nonce remains unconsumed</strong><ul>${rows}</ul><p>Out-of-scope files: ${(gate.outside_scope_files||[]).join(', ')||'none'}</p><button type="button" onclick="document.getElementById('evidence-files').focus()">Resubmit corrected evidence</button>`;}else renderError(errorNode,error,'evidence');}});
+const delegationId={{ d.id|tojson }},requesterId={{ d.requester.id|tojson }};
+const requesterOwns={{ risk.features.requester_is_code_owner|default(false)|tojson }};
+const proposed=new Set({{ risk.proposed_surfaces|tojson }});
+const warrant={{ (d.warrant or {})|tojson }};
+const claimedCriteria={{ (d.extraction.result.acceptance_criteria if d.extraction and d.extraction.result else [])|tojson }};
+const decisionError=document.getElementById('decision-error');
+
+function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined&&text!==null)node.textContent=text;if(className)node.className=className;return node;}
+
+/* ---------- delegation-brief telemetry (unchanged product event) ---------- */
+api('/v1/telemetry/delegation-brief',{method:'POST',body:JSON.stringify({event:'viewed',delegation_id:delegationId,prose_source:{{ brief.prose_source|tojson }},stale:{{ brief.lifecycle.stale|tojson }}})}).catch(()=>{});
+document.getElementById('refresh-brief')?.addEventListener('click',async event=>{
+  const button=event.currentTarget;button.disabled=true;
+  try{await api(`/v1/delegations/${delegationId}/brief/refresh`,{method:'POST'});toast('Brief refreshed from current structured facts');setTimeout(()=>location.reload(),450);}
+  catch(error){renderError(document.getElementById('brief-error'),error,'brief refresh');button.disabled=false;}
+});
+
+/* ---------- Ask Agent ---------- */
+let conversationId=null;
+document.getElementById('agent-form')?.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const input=document.getElementById('agent-query'),answer=document.getElementById('agent-answer'),errorNode=document.getElementById('agent-error');
+  const query=input.value.trim();if(!query)return;
+  answer.replaceChildren(el('p','Gathering scoped evidence…','loading'));errorNode.hidden=true;
+  try{
+    const body=await api('/v1/agent/query',{method:'POST',body:JSON.stringify({query,conversation_id:conversationId,scope:{delegation_id:delegationId,repository_id:'local'}})});
+    conversationId=body.conversation_id;answer.replaceChildren(el('p',body.answer));
+    const sources=el('div','','src');
+    body.sources.forEach(source=>{const chip=el('span',source.label);chip.title=`${source.type}${source.reason?' · '+source.reason:''}`;sources.append(chip);});
+    answer.append(sources);
+    answer.append(el('span',`intent = ${body.intent} · degraded = ${body.degraded} · authoritative = ${body.authoritative} · authorising = ${body.authorising}`,'advisory'+(body.degraded?' warn':'')));
+  }catch(error){answer.replaceChildren();renderError(errorNode,error,'Agent query');}
+});
+
+/* ---------- Code intelligence ---------- */
+document.getElementById('code-form')?.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const input=document.getElementById('code-query'),answer=document.getElementById('code-answer'),errorNode=document.getElementById('code-error');
+  const query=input.value.trim();if(!query)return;
+  answer.replaceChildren(el('p','Searching the configured repository…','loading'));errorNode.hidden=true;
+  try{
+    const body=await api('/v1/code/query',{method:'POST',body:JSON.stringify({query,repository_id:'local',limit:5})});
+    answer.replaceChildren(el('p',body.answer));
+    body.sources.forEach(source=>{
+      const citation=el('div','','citation'),top=el('div','','citation-top');
+      top.append(el('b',`${source.path}:${source.start_line}-${source.end_line}`),el('span',source.module||'','aside'));
+      const pre=document.createElement('pre');pre.textContent=source.snippet;
+      citation.append(top,pre);answer.append(citation);
+    });
+    answer.append(el('span',`revision = ${body.revision} · cached_index = ${body.cached_index} · ignore_source = ${body.ignore_source} · dependency_resolved = ${body.dependency_resolved} · authoritative = ${body.authoritative} · authorising = ${body.authorising}`,'advisory'));
+  }catch(error){answer.replaceChildren();renderError(errorNode,error,'code query');}
+});
+
+/* ---------- human gate ---------- */
+function updateSelfApproval(){const node=document.getElementById('self-approval-note');if(node)node.hidden=!(window.WARRANT.actor===requesterId&&!requesterOwns);}
+updateSelfApproval();window.addEventListener('warrant:actor',updateSelfApproval);
+async function decide(action){
+  const selectedSurfaces=[...document.querySelectorAll('input[name=surface]:checked')].map(node=>node.value);
+  if(selectedSurfaces.some(path=>!proposed.has(path))){renderError(decisionError,new ApiError(422,{error:'Selected scope is outside the policy proposal'}),'decision');return;}
+  if((action==='narrow'||action==='deny')&&!confirm(action==='deny'?'Deny this delegation?':'Issue only the selected narrower scope?'))return;
+  const buttons=[...document.querySelectorAll('[data-action]')];buttons.forEach(button=>button.disabled=true);
+  try{
+    const body={action,approver_id:window.WARRANT.actor,rationale:document.getElementById('rationale')?.value||null};
+    if(action==='narrow')body.narrowed_surfaces=selectedSurfaces;
+    await api(`/v1/delegations/${delegationId}/decision`,{method:'POST',body:JSON.stringify(body)});
+    toast(`Decision recorded: ${action}`);setTimeout(()=>location.reload(),450);
+  }catch(error){renderError(decisionError,error,error.status===403?'CODE_OWNER_REQUIRED boundary':'decision');buttons.forEach(button=>button.disabled=false);}
+}
+document.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',()=>decide(button.dataset.action)));
+
+/* ---------- returned evidence ---------- */
+document.getElementById('evidence')?.addEventListener('click',async()=>{
+  const errorNode=document.getElementById('evidence-error'),resultRegion=document.getElementById('operation-result');
+  errorNode.hidden=true;
+  try{
+    const files=document.getElementById('evidence-files').value.split('\n').map(value=>value.trim()).filter(Boolean);
+    const response=await api(`/v1/warrants/${warrant.id}/evidence`,{method:'POST',body:JSON.stringify({
+      nonce:warrant.demo_nonce,files,artifacts:[{type:'test',ref:'ci://northstar/simulated-run'}],
+      test_output:document.getElementById('test-output').value,claimed_criteria:claimedCriteria,notes:'Synthetic evidence from UI.'})});
+    resultRegion.innerHTML=`<div class="success-panel"><strong>Evidence ${response.verdict}</strong><p>The single-use nonce is now consumed.</p></div>`;
+    setTimeout(()=>location.reload(),700);
+  }catch(error){
+    if(error.status===422&&error.body.details?.gate1){
+      const gate=error.body.details.gate1;
+      const rows=Object.entries(gate).filter(([key])=>key!=='outside_scope_files')
+        .map(([key,value])=>`<li class="${value?'pass':'fail'}">${value?'pass':'FAIL'} · ${key.replaceAll('_',' ')}</li>`).join('');
+      errorNode.hidden=false;errorNode.className='gate-panel';
+      errorNode.innerHTML=`<strong>Evidence bundle blocked; nonce remains unconsumed</strong><ul>${rows}</ul><p>Out-of-scope files: ${(gate.outside_scope_files||[]).join(', ')||'none'}</p>`;
+    }else renderError(errorNode,error,'evidence');
+  }
+});
+
+/* ---------- coding session launcher: provider truth is never blurred ---------- */
+const providerSelect=document.getElementById('coding-provider');
+async function loadCapabilities(){
+  const note=document.getElementById('capability-note');
+  if(!providerSelect||!note)return;
+  try{
+    const caps=await api('/v1/coding-sessions/capabilities');
+    providerSelect.replaceChildren();
+    Object.entries(caps.runners).forEach(([name,runner])=>{
+      const option=new Option(`${name} · ${runner.real?'REAL execution':'MOCK · visibly simulated'}${runner.available?'':' · unavailable'}`,name);
+      option.disabled=!runner.available;providerSelect.add(option);
+    });
+    const preferred=Object.entries(caps.runners).find(([,runner])=>runner.available&&runner.real)||Object.entries(caps.runners).find(([,runner])=>runner.available);
+    if(preferred)providerSelect.value=preferred[0];
+    note.replaceChildren();
+    Object.entries(caps.runners).forEach(([name,runner])=>{
+      const row=el('div','','runner'+(runner.available?'':' unavailable'));
+      row.append(el('code',name),el('span',runner.real?'REAL':'MOCK','provider-kind '+(runner.real?'real':'mock')),
+        el('span',`${runner.available?'available':'unavailable'} · ${runner.reason}`,'why'));
+      note.append(row);
+    });
+    if(!caps.git_checkout.available)note.append(el('p',caps.git_checkout.reason,'note'));
+    note.append(el('p',`external_execution_enabled = ${caps.external_execution_enabled} · verification discovered from ${caps.verification.source}: ${caps.verification.checks.map(check=>check.command.join(' ')).join(', ')||'none'} · PR publishing ${caps.pr_publishing.enabled?'enabled':'disabled'}`,'note'));
+  }catch(error){note.replaceChildren();const failure=el('div','','inline-error');note.append(failure);renderError(failure,error,'capability read');}
+}
+loadCapabilities();
+async function startCoding(){
+  const errorNode=document.getElementById('coding-error');
+  if(!providerSelect){toast('No active warrant grants write_files');return;}
+  errorNode.hidden=true;
+  try{
+    const session=await api('/v1/coding-sessions',{method:'POST',body:JSON.stringify({delegation_id:delegationId,provider:providerSelect.value,source:'ui'})});
+    location.href=`/coding-sessions/${session.id}`;
+  }catch(error){renderError(errorNode,error,'coding session');}
+}
+document.getElementById('coding-form')?.addEventListener('submit',event=>{event.preventDefault();startCoding();});
+
+/* ---------- shortcuts and palette ---------- */
+registerShortcut('1',()=>document.querySelector('[data-action=approve]')?.click());
+registerShortcut('3',()=>document.querySelector('[data-action=deny]')?.click());
+registerShortcut('h',()=>document.querySelector('[data-action=defer]')?.click());
+registerShortcut('c',startCoding);
+registerShortcut('a',()=>document.getElementById('agent-query')?.focus());
+registerCommand({group:'Delegation',label:'Approve this delegation',hint:['1'],run:()=>document.querySelector('[data-action=approve]')?.click()});
+registerCommand({group:'Delegation',label:'Deny this delegation',hint:['3'],run:()=>document.querySelector('[data-action=deny]')?.click()});
+registerCommand({group:'Delegation',label:'Hold (defer) this delegation',hint:['H'],run:()=>document.querySelector('[data-action=defer]')?.click()});
+registerCommand({group:'Agent',label:'Ask about this delegation…',note:'advisory',run:()=>document.getElementById('agent-query')?.focus()});
+registerCommand({group:'Agent',label:'Ask about the code behind it…',note:'path:line cited',run:()=>document.getElementById('code-query')?.focus()});
+registerCommand({group:'Execution',label:'Start a governed coding session',hint:['C'],run:startCoding});
+registerCommand({group:'Delegation',label:'Refresh the delegation brief',run:()=>document.getElementById('refresh-brief')?.click()});
 </script>{% endblock %}

@@ -1,9 +1,24 @@
-.PHONY: setup doctor dev seed demo-reset lint typecheck unit integration test eval build check demo package clean
+.PHONY: setup doctor dev seed demo-reset demo-repo demo-repo-clean worktree-prune lint typecheck \
+        unit integration test eval live-check build check demo package clean verify-agent-cli
 
 UV_CACHE_DIR ?= .uv-cache
 RUN = UV_CACHE_DIR=$(UV_CACHE_DIR) uv run
 VENV_STAMP = .venv/.warrant-path
 ZIP ?= ../warrant-submission.zip
+
+# Coding sessions require a Git checkout, and the delivered project folder has no `.git`.
+# `demo-repo` materialises one under a gitignored path whose files match the seeded issues'
+# path_hints and the policy surface globs, and which carries its own fast checks.
+RUNTIME_DIR ?= .runtime
+DEMO_REPO ?= $(CURDIR)/$(RUNTIME_DIR)/demo-repo
+# Demo environment: point the repository capabilities at the demo checkout, keep execution
+# simulated, and keep the fallback verification command fast. Verification discovery reads
+# the demo repository itself, so it normally supersedes VERIFICATION_COMMAND.
+DEMO_ENV = REPOSITORY_ROOT="$(DEMO_REPO)" \
+           DEMO_REPOSITORY_ROOT="$(DEMO_REPO)" \
+           CODING_SESSION_ROOT="$(CURDIR)/$(RUNTIME_DIR)/coding-sessions" \
+           CODING_AGENT_PROVIDER=mock \
+           VERIFICATION_COMMAND='git diff --check'
 
 # A virtualenv is not relocatable: console-script shebangs hard-code an absolute path.
 # Moving or unzipping the project elsewhere breaks them, so every target invokes tools
@@ -28,13 +43,25 @@ doctor:
 seed demo-reset:
 	$(RUN) python -m warrant.seed
 
+# Idempotent: creates the checkout on first run, refreshes and re-commits only real changes.
+demo-repo:
+	$(RUN) python -m warrant.demo_repo --root "$(DEMO_REPO)"
+
+demo-repo-clean:
+	rm -rf "$(DEMO_REPO)"
+
+# Reclaim any coding-session worktrees left behind by an interrupted process.
+worktree-prune:
+	@if [ -d "$(DEMO_REPO)/.git" ]; then git -C "$(DEMO_REPO)" worktree prune -v; fi
+	rm -rf "$(RUNTIME_DIR)/coding-sessions"
+
 dev:
 	@test -f data/warrant.db || $(MAKE) seed
 	$(RUN) python -m uvicorn warrant.main:app --reload --host 127.0.0.1 --port 8000
 
-demo:
+demo: demo-repo
 	$(MAKE) demo-reset
-	$(RUN) python -m uvicorn warrant.main:app --host 127.0.0.1 --port 8000
+	$(DEMO_ENV) $(RUN) python -m uvicorn warrant.main:app --host 127.0.0.1 --port 8000
 
 test:
 	$(RUN) python -m pytest
@@ -47,6 +74,16 @@ integration:
 
 eval:
 	$(RUN) python -m warrant.evaluation
+
+live-check:
+	$(RUN) python -m warrant.live_check
+
+# Compares the argv `SubprocessCodingAgentRunner` builds against the real agent CLIs'
+# own `--help`. Read-only: runs no coding task, writes nothing, opens no connection.
+# Exits non-zero only when an installed CLI rejects a flag; "no CLI installed" is a
+# clean pass, so this stays safe to run anywhere.
+verify-agent-cli:
+	$(RUN) python scripts/verify_agent_cli.py
 
 lint:
 	$(RUN) python -m ruff check src tests

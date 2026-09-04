@@ -1,29 +1,477 @@
 {% extends "base.html" %}
-{% block title %}Operator inbox · Warrant{% endblock %}
-{% block content %}
-<section class="shell compact-hero">
-  <div><p class="eyebrow">Delegation control plane</p><h1>Operator inbox</h1><p>AI assembles evidence. Deterministic policy decides what may proceed.</p></div>
-  <aside class="integrity-card"><div class="integrity-icon">{{ '✓' if audit_ok else '×' }}</div><div><strong>Audit chain {{ 'verified' if audit_ok else 'broken' }}</strong><small>Northstar · synthetic data only</small></div></aside>
-</section>
-<section class="shell notice"><strong>SIMULATED workspace.</strong> Every issue, identity, agent and fixture judgement is fictional; no result represents live-model or customer evidence.</section>
-<section class="shell operator-section">
-  <div class="section-head"><div><p class="eyebrow">Priority queue</p><h2>Needs your decision</h2></div><span>{{ needs_decision|length }} waiting</span></div>
-  {% if needs_decision %}<div class="decision-queue">{% for item in needs_decision %}<a class="queue-row" href="/delegations/{{ item.id }}"><span class="verdict-dot require_approval"></span><code>{{ item.external_key }}</code><strong>{{ item.verdict|replace('_',' ') }}</strong><span>{{ (item.reason_codes or ['HUMAN_REVIEW'])[0]|replace('_',' ') }}</span><time class="relative-time" data-time="{{ item.created_at }}">{{ item.created_at }}</time><b>Review →</b></a>{% endfor %}</div>{% else %}<div class="empty inline"><strong>Nothing is waiting.</strong><span>Delegations that require named approval appear here.</span></div>{% endif %}
-</section>
-<section class="shell operator-section">
-  <div class="section-head"><div><p class="eyebrow">Start a governed run</p><h2>Delegation inbox</h2></div><span>{{ issue_count }} matching · page {{ page }} of {{ page_count }}</span></div>
-  <form class="filter-bar" method="get" action="/"><label>Find issue<input name="q" type="search" value="{{ q }}" placeholder="Key or title"></label><label>Team<select name="team"><option value="">All teams</option>{% for value in teams %}<option value="{{ value }}" {% if team == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label><button type="submit">Filter</button><a href="/">Clear</a></form>
-  <div class="delegation-controls panel compact-panel"><label>Requester<select id="requester-select">{% for user in users %}<option value="{{ user.id }}">{{ user.display_name }} · {{ user.role }} · owns {{ user.code_owner_paths|join(', ') if user.code_owner_paths else 'no declared paths' }}</option>{% endfor %}</select></label><label>Target agent<select id="agent-select">{% for agent in agents %}<option value="{{ agent.id }}">{{ agent.name }} · {{ agent.vendor }} · {{ (agent.verified_pass_rate * 100)|round|int }}% verified</option>{% endfor %}</select></label><p>These identities become deterministic ownership and warrant inputs.</p></div>
-  <div class="issue-grid inbox-grid">{% for issue in issues %}<article class="issue-card {% if issue.external_key == 'SEC-4502' %}adversarial{% endif %}"><div class="issue-top"><span class="team">{{ issue.team }}</span><code>{{ issue.external_key }}</code></div>{% if issue.is_demo_path %}<span class="demo-badge">DEMO PATH</span>{% endif %}<h3>{{ issue.title }}</h3><p>{{ issue.demo_note }}</p><button class="delegate" data-issue="{{ issue.external_key }}"><span>Run governed delegation</span><b>→</b></button><div class="pipeline-loading" hidden aria-live="polite"><span></span>Running intake → retrieval → extraction → policy…</div><div class="inline-error" hidden></div></article>{% else %}<div class="empty"><strong>No matching issues</strong><p>Change the text or team filter.</p></div>{% endfor %}</div>
-  <nav class="pagination" aria-label="Issue pages">{% if page > 1 %}<a href="/?q={{ q|urlencode }}&team={{ team|urlencode }}&page={{ page - 1 }}">← Previous</a>{% endif %}<span>Showing {{ issues|length }} of {{ issue_count }} synthetic issues</span>{% if page < page_count %}<a href="/?q={{ q|urlencode }}&team={{ team|urlencode }}&page={{ page + 1 }}">Next →</a>{% endif %}</nav>
-</section>
-<section class="shell operator-section evaluation-summary">
-  <div class="section-head"><div><p class="eyebrow">Evaluation integrity</p><h2>Measured safety gates</h2></div><a href="/evaluation">Open evaluation report →</a></div>
-  <div class="metric-strip">{% for key in ['unsafe_allow_count','fail_closed_correctness','e2e_pipeline_safe_rate','operational_adversarial_non_allow_rate'] %}<div><small>{{ key|replace('_',' ') }}</small><strong>{{ evaluation_metrics.get(key,'NOT_MEASURED') }}</strong></div>{% endfor %}{% set burden=evaluation_targets.get('approval_burden_standard_slice',{}) %}<div class="metric-alert"><small>approval burden · target {{ burden.get('proposed_target','≤ 0.35') }}</small><strong>{{ burden.get('measured_value','NOT_MEASURED') }}</strong><span>{{ burden.get('status','NOT_MEASURED') }}</span></div></div>
-  <details class="measurement-disclosure"><summary>Not yet measured (5)</summary><p>Live-model quality, labelled retrieval quality, production latency, and cost need evidence this synthetic run does not have.</p><ul>{% for key in ['risk_class_macro_f1','retrieval_recall_at_10','judge_precision_satisfied','p95_preflight_latency_ms','cost_per_delegation_usd'] %}<li><code>{{ key|replace('_',' ') }}</code>: {{ evaluation_metrics.get(key,'NOT_MEASURED') }}</li>{% endfor %}</ul></details>
-</section>
+{% import "_macros.html" as ui %}
+{% block title %}Triage · Warrant{% endblock %}
+{% block view_title %}Triage{% endblock %}
+{% block view_count %}{{ needs_decision|length }} awaiting · {{ queue|length }} delegations · {{ issue_count }} issues{% endblock %}
+{% block head_tools %}
+<form class="head-form" method="get" action="/" role="search">
+  <label class="chip"><span class="k">find</span><input name="q" type="search" value="{{ q }}" maxlength="300" placeholder="Key, title, or describe the problem" aria-label="Search issues"></label>
+  <label class="chip"><span class="k">team</span>
+    <select name="team" aria-label="Team filter">
+      <option value="">all</option>
+      {% for value in teams %}<option value="{{ value }}" {% if team == value %}selected{% endif %}>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="chip" type="submit">Search</button>
+  {% if q or team %}<a class="chip" href="/">Clear</a>{% endif %}
+</form>
+<button class="chip" type="button" data-verdict-filter="" aria-pressed="true">Verdict <span class="k">any</span></button>
+<button class="chip" type="button" data-verdict-filter="REQUIRE_APPROVAL" aria-pressed="false">Hold</button>
+<button class="chip" type="button" data-verdict-filter="ALLOW" aria-pressed="false">Allow</button>
+<button class="chip" type="button" data-verdict-filter="DENY" aria-pressed="false">Deny</button>
 {% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="list" id="queue-list">
+
+    {% for bucket in queue_groups %}
+    <div class="group {{ ui.tone(bucket.verdict) }}" data-group="{{ bucket.verdict }}">
+      <span class="group-name">{{ bucket.label }}</span><span class="group-ct">{{ bucket.rows|length }}</span>
+      <span class="group-note">{{ bucket.note }}</span>
+    </div>
+    {% for item in bucket.rows %}{{ ui.queue_row(item, allow_threshold, loop.first and bucket.first_bucket) }}{% endfor %}
+    {% else %}
+    <div class="group"><span class="group-name">Priority queue</span><span class="group-ct">0</span></div>
+    <div class="empty"><strong>No delegations yet.</strong><span>Run a governed delegation from the issue inbox below and the deterministic verdict lands here.</span></div>
+    {% endfor %}
+
+    <div class="group" id="issue-inbox">
+      <span class="group-name">Issue inbox</span><span class="group-ct">{{ issue_count }}</span>
+      <span class="group-note">page {{ page }} of {{ page_count }}{% if team %} · team {{ team }}{% endif %}</span>
+    </div>
+
+    {% if search_mode %}
+    <div class="disclose" role="status">
+      <b>{{ search_mode }}</b>
+      <span>{{ (search_completeness * 100)|round|int }}% retrieval completeness · ranked across issue keys, titles and descriptions. Retrieval is advisory; it never changes a verdict.</span>
+    </div>
+    {% endif %}
+
+    {% for issue in issues %}
+    <div class="issue-row" data-issue-row="{{ issue.external_key }}" {% if search_mode %}data-search-rank="{{ ((page - 1) * 18) + loop.index }}"{% endif %}>
+      <div class="row issue">
+        <svg class="ring idle" viewBox="0 0 16 16" aria-hidden="true"><circle class="track" cx="8" cy="8" r="6"/></svg>
+        <span class="row-key">{{ issue.external_key }}</span>
+        <span class="row-title" title="{{ issue.demo_note }}">{{ issue.title }}</span>
+        {% if issue.is_demo_path %}<span class="row-flag">DEMO PATH</span>{% endif %}
+        {% if issue.matched_by %}<span class="code-chip">{{ issue.matched_by|join('+') }} {{ issue.semantic_score }}</span>{% endif %}
+        <span class="row-team">{{ issue.team }}</span>
+        <span class="row-act">
+          <button class="mini triage-trigger" type="button" data-issue="{{ issue.external_key }}" aria-expanded="false">AI triage</button>
+          <button class="mini related-trigger" type="button" data-issue="{{ issue.external_key }}" aria-expanded="false">Related</button>
+          <button class="mini pri delegate" type="button" data-issue="{{ issue.external_key }}">Delegate</button>
+        </span>
+      </div>
+      <div class="row-panel triage-panel" hidden aria-live="polite"></div>
+      <div class="row-panel related-panel" hidden aria-live="polite"></div>
+      <div class="row-panel pipeline-panel" hidden aria-live="polite">
+        <div class="stepper" role="list" aria-label="Delegation pipeline">
+          <span class="step now" role="listitem"><span class="dot" aria-hidden="true"></span>INTAKE</span>
+          <span class="step now" role="listitem"><span class="dot" aria-hidden="true"></span>RETRIEVAL</span>
+          <span class="step now" role="listitem"><span class="dot" aria-hidden="true"></span>EXTRACTION</span>
+          <span class="step now" role="listitem"><span class="dot" aria-hidden="true"></span>POLICY</span>
+        </div>
+        <p class="note tight">All four stages run inside one server-side transaction, so this shows what is in flight rather than pretending to watch it advance. The delegation page then reports each stage's real recorded state. The verdict is computed server-side; nothing here can pre-empt it.</p>
+      </div>
+      <div class="row-panel error-panel" hidden><div class="inline-error"></div></div>
+    </div>
+    {% else %}
+    <div class="empty"><strong>No matching issues</strong><span>Change the text or team filter.</span></div>
+    {% endfor %}
+
+    <nav class="pagination" aria-label="Issue pages">
+      {% if page > 1 %}<a href="/?q={{ q|urlencode }}&amp;team={{ team|urlencode }}&amp;page={{ page - 1 }}#issue-inbox">&larr; Previous</a>{% endif %}
+      <span>Showing {{ issues|length }} of {{ issue_count }} synthetic issues</span>
+      {% if page < page_count %}<a href="/?q={{ q|urlencode }}&amp;team={{ team|urlencode }}&amp;page={{ page + 1 }}#issue-inbox">Next &rarr;</a>{% endif %}
+    </nav>
+
+    <div class="legend">
+      <span><span class="kbd">1</span> Approve</span>
+      <span><span class="kbd">3</span> Deny</span>
+      <span><span class="kbd">H</span> Hold (defer)</span>
+      <span><span class="kbd">&crarr;</span> Open delegation</span>
+      <span><span class="kbd">C</span> Start coding session</span>
+      <span><span class="kbd">&darr;</span><span class="kbd">&uarr;</span> Move</span>
+      <span class="spacer">Ring arc = evidence sufficiency · tick = {{ '%.2f'|format(allow_threshold) }} allow threshold</span>
+    </div>
+  </div>
+
+  <aside class="rail" aria-label="Selected delegation and launcher">
+    <div class="rail-sec" id="selected-rail" aria-live="polite">
+      <p class="rail-h">Selected delegation</p>
+      <p class="note tight">Focus a queue row to load its deterministic properties here.</p>
+    </div>
+
+    <div class="rail-sec" id="ask-agent-sec">
+      <p class="rail-h">Ask Agent</p>
+      {% if agent_chat_enabled %}
+      <form class="agent-in" id="agent-form">
+        <label class="sr-only" for="agent-query">Ask the agent about the selected delegation</label>
+        <input id="agent-query" type="text" maxlength="2000" placeholder="Why does this need approval?" required>
+        <button class="btn pri center" type="submit">Ask</button>
+      </form>
+      <p class="note tight">Scoped to the focused queue row. Advisory: it explains the deterministic decision and can never change it.</p>
+      <div class="agent-out" id="agent-answer" aria-live="polite"></div>
+      <div class="inline-error" id="agent-error" hidden></div>
+      {% else %}
+      <p class="note tight">Contextual Agent is disabled (<code>AGENT_CHAT_ENABLED=false</code>). <a href="/integrations" style="color:var(--accent)">Feature status &rarr;</a></p>
+      {% endif %}
+    </div>
+
+    <div class="rail-sec">
+      <p class="rail-h">Governed delegation</p>
+      <div class="form-grid">
+        <label><span>Requester</span>
+          <select id="requester-select">{% for user in users %}<option value="{{ user.id }}">{{ user.display_name }} · {{ user.role }} · owns {{ user.code_owner_paths|join(', ') if user.code_owner_paths else 'no declared paths' }}</option>{% endfor %}</select>
+        </label>
+        <label><span>Target agent</span>
+          <select id="agent-select">{% for agent in agents %}<option value="{{ agent.id }}">{{ agent.name }} · {{ agent.vendor }} · {{ (agent.verified_pass_rate * 100)|round|int }}% verified</option>{% endfor %}</select>
+        </label>
+      </div>
+      <p class="note">These identities become deterministic ownership and warrant inputs. Delegating from an issue row runs the full pipeline.</p>
+    </div>
+
+    <div class="rail-sec">
+      <p class="rail-h">Queue integrity</p>
+      <dl class="kv">
+        <dt>Audit chain</dt><dd class="{{ 'ok' if audit_ok else 'bad' }}">{{ 'chain intact' if audit_ok else 'BROKEN' }}</dd>
+        <dt>Policy</dt><dd>{{ nav.policy_version }}</dd>
+        <dt>AI provider</dt><dd>{{ provider }}</dd>
+        <dt>Threshold</dt><dd>{{ '%.2f'|format(allow_threshold) }}</dd>
+      </dl>
+      <p class="note">The model describes work. Policy {{ nav.policy_version }} decides authority. Model output cannot set a verdict.</p>
+    </div>
+
+    <div class="rail-sec">
+      <p class="rail-h">Measured safety gates</p>
+      <div class="metric-strip">
+        {% for key in ['unsafe_allow_count','fail_closed_correctness','e2e_pipeline_safe_rate','operational_adversarial_non_allow_rate'] %}
+        <div><small>{{ key|replace('_',' ') }}</small><strong>{{ evaluation_metrics.get(key,'NOT_MEASURED') }}</strong></div>
+        {% endfor %}
+        {% set burden = evaluation_targets.get('approval_burden_standard_slice',{}) %}
+        <div class="metric-alert">
+          <small>approval burden standard slice · target {{ burden.get('proposed_target','&le; 0.35') }}</small>
+          <strong>{{ burden.get('measured_value','NOT_MEASURED') }}</strong>
+          <span>{{ burden.get('status','NOT_MEASURED') }}</span>
+        </div>
+      </div>
+      <details class="disclosure">
+        <summary>Not yet measured (4)</summary>
+        <div class="inner">
+          <p>Risk classification, live-model judge quality, production latency and cost need evidence this synthetic run does not have.</p>
+          <ul class="plain">{% for key in ['risk_class_macro_f1','judge_precision_satisfied','p95_preflight_latency_ms','cost_per_delegation_usd'] %}<li><code>{{ key|replace('_',' ') }}</code> — {{ evaluation_metrics.get(key,'NOT_MEASURED') }}</li>{% endfor %}</ul>
+        </div>
+      </details>
+      <div class="rail-actions"><a class="btn" href="/evaluation">Open evaluation report <span aria-hidden="true">&rarr;</span></a></div>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
 {% block scripts %}<script>
-const requester=document.getElementById('requester-select'),agent=document.getElementById('agent-select');
-document.querySelectorAll('.delegate').forEach(button=>button.addEventListener('click',async()=>{const card=button.closest('.issue-card'),loading=card.querySelector('.pipeline-loading'),errorNode=card.querySelector('.inline-error');button.disabled=true;loading.hidden=false;errorNode.hidden=true;try{const result=await api('/v1/delegations',{method:'POST',body:JSON.stringify({issue_ref:button.dataset.issue,requester_id:requester.value,target_agent_id:agent.value,idempotency_key:crypto.randomUUID()})});location.href='/delegations/'+result.id;}catch(error){loading.hidden=true;button.disabled=false;renderError(errorNode,error,'delegation');}}));
+const requesterSelect=document.getElementById('requester-select'),agentSelect=document.getElementById('agent-select');
+const allowThreshold={{ allow_threshold|tojson }};
+const toolGrants={{ tool_grants|tojson }},neverGrantable={{ never_grantable_tools|tojson }};
+const searchContext={{ {'query_length': q|length, 'result_count': issue_count, 'team_filtered': team|length > 0}|tojson }};
+
+/* ---------- telemetry: unchanged product events ---------- */
+function relatedTelemetry(body){api('/v1/telemetry/related-issues',{method:'POST',body:JSON.stringify(body)}).catch(()=>{});}
+function searchTelemetry(event,row=null){if(!searchContext.query_length)return;const body={event,...searchContext};if(row){body.selected_issue_ref=row.dataset.issueRow;body.rank=Number(row.dataset.searchRank);}api('/v1/telemetry/semantic-search',{method:'POST',body:JSON.stringify(body)}).catch(()=>{});}
+searchTelemetry('viewed');
+
+function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined&&text!==null)node.textContent=text;if(className)node.className=className;return node;}
+function toneFor(verdict){return verdict==='ALLOW'?'allow':verdict==='DENY'?'deny':verdict==='REQUIRE_APPROVAL'?'hold':'idle';}
+
+/* ---------- related issues (advisory, near-duplicate aware) ---------- */
+function renderRelated(panel,body,source){
+  panel.replaceChildren();
+  panel.append(el('p',`Advisory only · ${body.retrieval.mode} · ${Math.round(body.retrieval.completeness*100)}% complete · relation and confidence are retrieval signals, not decisions`,'advisory'));
+  if(!body.suggestions.length){panel.append(el('p','No related issues found.','note'));return;}
+  const wrap=el('div','','table-wrap'),table=document.createElement('table');
+  table.innerHTML='<thead><tr><th>Issue</th><th>Relation</th><th>Confidence</th><th>Why</th><th>Open</th></tr></thead>';
+  const tbody=document.createElement('tbody');
+  body.suggestions.forEach((item,index)=>{
+    const tr=document.createElement('tr'),head=document.createElement('th');
+    head.append(el('code',item.external_key));
+    const relation=el('td',item.relation.replaceAll('_',' ')),confidence=el('td',item.confidence.toFixed(3)),why=el('td',item.why);
+    confidence.className='mono';
+    const cell=document.createElement('td'),link=document.createElement('a');
+    link.href=item.delegation_id?`/delegations/${encodeURIComponent(item.delegation_id)}`:`/?q=${encodeURIComponent(item.external_key)}`;
+    link.textContent='open →';link.style.color='var(--accent)';
+    link.addEventListener('click',()=>relatedTelemetry({event:'selected',source_issue_ref:source,suggested_issue_ref:item.external_key,relation:item.relation,rank:index+1}));
+    cell.append(link);
+    tr.append(head,relation,confidence,why,cell);tbody.append(tr);
+  });
+  table.append(tbody);wrap.append(table);panel.append(wrap);
+}
+
+/* ---------- AI triage recommendation: editable before it is applied ---------- */
+function renderTriage(panel,data){
+  panel.replaceChildren();
+  panel.append(el('p',`Advisory only · ${data.retrieval.mode} · ${Math.round(data.retrieval.completeness*100)}% complete · neighbours ${data.retrieval.neighbour_keys.join(', ')}`,'advisory'));
+  const current=el('p','','note tight');
+  current.innerHTML=`Current: <code>${data.issue.current_team}</code> · <code>${data.issue.current_priority}</code> · <code>${(data.issue.current_labels||[]).join(', ')||'no labels'}</code> · revision <code>${data.issue.revision}</code>`;
+  panel.append(current);
+  const form=document.createElement('form');form.className='inline-form triage-form';
+  const teamField=el('label','','field');teamField.append(el('span',`Team · ${Math.round(data.team.confidence*100)}%`));
+  const team=document.createElement('select');
+  data.team.available_teams.forEach(value=>team.add(new Option(value,value,value===data.team.recommended,value===data.team.recommended)));
+  teamField.append(team);
+  const priorityField=el('label','','field');priorityField.append(el('span',`Priority · ${Math.round(data.priority.confidence*100)}%`));
+  const priority=document.createElement('select');
+  ['urgent','high','medium','low'].forEach(value=>priority.add(new Option(value,value,value===data.priority.recommended,value===data.priority.recommended)));
+  priorityField.append(priority);
+  const labelsField=el('label','','field');labelsField.append(el('span','Labels'));
+  const labels=document.createElement('input');labels.value=data.labels.map(item=>item.label).join(', ');labels.maxLength=300;labelsField.append(labels);
+  const apply=el('button','Apply reviewed triage','btn pri center');apply.type='submit';
+  form.append(teamField,priorityField,labelsField,apply);panel.append(form);
+  const why=el('p','','note');
+  why.innerHTML=`<strong>Why:</strong> team — ${data.team.why}; priority — ${data.priority.why}. Labels: ${data.labels.map(item=>`${item.label} ${Math.round(item.confidence*100)}% (${item.why})`).join('; ')}.`;
+  panel.append(why);
+  const alternatives=el('p',`Alternative teams: ${data.team.alternatives.map(item=>`${item.team} ${Math.round(item.confidence*100)}%`).join(' · ')||'none'}`,'note');
+  panel.append(alternatives);
+  const failure=el('div','','inline-error');failure.hidden=true;panel.append(failure);
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    if(!confirm('Apply these reviewed triage values and append an audit event?'))return;
+    apply.disabled=true;failure.hidden=true;
+    try{
+      await api(`/v1/issues/${encodeURIComponent(data.issue.external_key)}/triage`,{method:'POST',body:JSON.stringify({
+        expected_revision:data.issue.revision,team:team.value,priority:priority.value,
+        labels:labels.value.split(',').map(value=>value.trim()).filter(Boolean)})});
+      toast('Triage applied and audited');setTimeout(()=>location.reload(),500);
+    }catch(error){renderError(failure,error,'triage application');apply.disabled=false;}
+  });
+}
+
+function panelFor(row,className){return row.querySelector('.'+className);}
+function collapseOthers(row,keep){['triage-panel','related-panel'].forEach(name=>{if(name===keep)return;const panel=panelFor(row,name);panel.hidden=true;const button=row.querySelector(name==='triage-panel'?'.triage-trigger':'.related-trigger');if(button)button.setAttribute('aria-expanded','false');});}
+
+document.querySelectorAll('.triage-trigger').forEach(button=>button.addEventListener('click',async()=>{
+  const row=button.closest('.issue-row'),panel=panelFor(row,'triage-panel');
+  if(button.getAttribute('aria-expanded')==='true'){button.setAttribute('aria-expanded','false');panel.hidden=true;return;}
+  collapseOthers(row,'triage-panel');button.disabled=true;panel.hidden=false;panel.replaceChildren(el('p','Generating triage recommendation…','loading'));
+  try{
+    const data=await api(`/v1/issues/${encodeURIComponent(button.dataset.issue)}/triage-recommendation`);
+    renderTriage(panel,data);button.setAttribute('aria-expanded','true');
+    api('/v1/telemetry/triage-recommendation',{method:'POST',body:JSON.stringify({issue_ref:button.dataset.issue,retrieval_mode:data.retrieval.mode})}).catch(()=>{});
+  }catch(error){panel.replaceChildren();const failure=el('div','','inline-error');panel.append(failure);renderError(failure,error,'triage recommendation');}
+  finally{button.disabled=false;}
+}));
+
+document.querySelectorAll('.related-trigger').forEach(button=>button.addEventListener('click',async()=>{
+  const row=button.closest('.issue-row'),panel=panelFor(row,'related-panel');
+  if(button.getAttribute('aria-expanded')==='true'){button.setAttribute('aria-expanded','false');panel.hidden=true;return;}
+  collapseOthers(row,'related-panel');searchTelemetry('selected',row);button.disabled=true;panel.hidden=false;
+  panel.replaceChildren(el('p','Finding related issues…','loading'));
+  try{
+    const body=await api(`/v1/issues/${encodeURIComponent(button.dataset.issue)}/related?limit=5`);
+    renderRelated(panel,body,button.dataset.issue);button.setAttribute('aria-expanded','true');
+    relatedTelemetry({event:'viewed',source_issue_ref:button.dataset.issue,result_count:body.suggestions.length});
+  }catch(error){panel.replaceChildren();const failure=el('div','','inline-error');panel.append(failure);renderError(failure,error,'related issue search');}
+  finally{button.disabled=false;}
+}));
+
+/* ---------- governed delegation launcher ---------- */
+async function delegate(issueRef,button){
+  const row=document.querySelector(`[data-issue-row="${issueRef}"]`);
+  if(!row)return;
+  const pipeline=panelFor(row,'pipeline-panel'),errorPanel=panelFor(row,'error-panel');
+  searchTelemetry('selected',row);
+  if(button)button.disabled=true;pipeline.hidden=false;errorPanel.hidden=true;
+  try{
+    /* One POST runs intake, retrieval, extraction and policy server-side. The stepper stays
+       in a single in-flight state rather than animating stages it cannot observe. */
+    const result=await api('/v1/delegations',{method:'POST',body:JSON.stringify({
+      issue_ref:issueRef,requester_id:requesterSelect.value,target_agent_id:agentSelect.value,idempotency_key:crypto.randomUUID()})});
+    pipeline.querySelectorAll('.step').forEach(step=>{step.className='step done';});
+    location.href='/delegations/'+result.id;
+  }catch(error){
+    pipeline.hidden=true;errorPanel.hidden=false;
+    renderError(errorPanel.querySelector('.inline-error'),error,'delegation');
+    if(button)button.disabled=false;
+  }
+}
+document.querySelectorAll('.delegate').forEach(button=>button.addEventListener('click',()=>delegate(button.dataset.issue,button)));
+
+/* ---------- verdict filter chips ---------- */
+document.querySelectorAll('[data-verdict-filter]').forEach(chip=>chip.addEventListener('click',()=>{
+  const wanted=chip.dataset.verdictFilter;
+  document.querySelectorAll('[data-verdict-filter]').forEach(other=>other.setAttribute('aria-pressed',String(other===chip)));
+  document.querySelectorAll('.row[data-verdict]').forEach(row=>{row.hidden=Boolean(wanted)&&row.dataset.verdict!==wanted;});
+  document.querySelectorAll('.group[data-group]').forEach(group=>{group.hidden=Boolean(wanted)&&group.dataset.group!==wanted;});
+}));
+
+/* ---------- keyboard-first triage over the queue ---------- */
+const rows=[...document.querySelectorAll('.row[data-delegation]')];
+let selected=rows.find(row=>row.getAttribute('aria-selected')==='true')||rows[0]||null;
+const rail=document.getElementById('selected-rail');
+let selectedDetail=null;
+
+function renderSelected(detail){
+  selectedDetail=detail;
+  const decision=detail.decision||{},risk=detail.risk_assessment||{},features=risk.features||{};
+  const verdictTone=toneFor(decision.verdict);
+  rail.replaceChildren();
+  rail.append(el('p','Verdict','rail-h'));
+  const tag=el('span','','verdict-tag '+verdictTone);tag.append(el('span','','dot'),document.createTextNode(decision.verdict||'PROCESSING'));
+  rail.append(tag);
+  const source=el('p','','note');
+  source.innerHTML=`Issued by deterministic policy <code>${decision.policy_version||'?'}</code>. <strong>Model output cannot set this verdict.</strong>`;
+  rail.append(source);
+
+  rail.append(el('p','Evidence sufficiency','rail-h tight'));
+  const meter=el('div','','meter');
+  const fill=el('i');fill.style.width=`${((risk.evidence_sufficiency||0)*100).toFixed(1)}%`;
+  fill.style.background=`var(--${(risk.evidence_sufficiency||0)>=allowThreshold?'allow':'hold'})`;
+  const mark=el('u');mark.style.left=`${(allowThreshold*100).toFixed(1)}%`;
+  meter.append(fill,mark);rail.append(meter);
+  const ends=el('div','','meter-ends');
+  ends.append(el('span',`${(risk.evidence_sufficiency||0).toFixed(2)} measured`),el('span',`${allowThreshold.toFixed(2)} required`));
+  rail.append(ends);
+
+  rail.append(el('p','Reason codes','rail-h tight'));
+  const codes=el('div','','tools');
+  (decision.reason_codes||[]).forEach(code=>codes.append(el('span',code,'code-chip '+verdictTone)));
+  rail.append(codes);
+  const rules=el('p',`Matched rules: ${(decision.matched_rule_ids||[]).join(', ')||'none'}`,'note');
+  rail.append(rules);
+
+  rail.append(el('p','Risk features','rail-h tight'));
+  const feat=el('div','','feat');
+  [['Consequence',risk.consequence],['Reversibility',risk.reversibility],['Composite risk',risk.composite_risk],
+   ['Retrieval',risk.retrieval_mode],['Protected surface',String(features.protected_surface)],['Injection signal',String(features.injection_signal)],
+   ['Requester owns',String(features.requester_is_code_owner)],['Fail closed',String(decision.fail_closed)]].forEach(([label,value])=>{
+    const cell=document.createElement('div');cell.append(el('small',label));
+    const bold=el('b',value===undefined||value===null?'—':value);
+    if(value==='true')bold.className='on';if(value==='false')bold.className='off';
+    cell.append(bold);feat.append(cell);
+  });
+  rail.append(feat);
+
+  rail.append(el('p','Proposed scope','rail-h tight'));
+  const kv=document.createElement('dl');kv.className='kv';
+  const pairs=[['Surfaces',(risk.proposed_surfaces||[]).join('\n')||'none grantable'],
+    ['Requester',`${(detail.requester||{}).display_name||''} · ${(detail.requester||{}).role||''}`],
+    ['Agent',(detail.agent||{}).name||''],['Status',detail.status],['Warrant',(detail.warrant||{}).id||'not issued']];
+  pairs.forEach(([key,value])=>{kv.append(el('dt',key));const dd=el('dd',value);if(value==='not issued'||value==='none grantable')dd.className='none';kv.append(dd);});
+  rail.append(kv);
+
+  const grants=(detail.warrant&&detail.warrant.allowed_tools)||toolGrants[risk.consequence]||[];
+  const denied=(detail.warrant&&detail.warrant.denied_tools)||neverGrantable;
+  rail.append(el('p',detail.warrant?'Granted tools':'Tools if approved','rail-h tight'));
+  const tools=el('div','','tools');
+  grants.forEach(tool=>tools.append(el('span',tool,'tool')));
+  denied.forEach(tool=>tools.append(el('span',tool,'tool no')));
+  rail.append(tools);
+
+  const actions=el('div','','rail-actions');
+  const open=el('a','','btn');open.href=`/delegations/${detail.id}`;
+  open.append(document.createTextNode('Open delegation'),el('span','↵','kbd'));
+  actions.append(open);
+  if(detail.status==='awaiting_approval'){
+    const approve=el('button','','btn pri');approve.type='button';
+    approve.append(document.createTextNode('Approve'),el('span','1','kbd inv'));
+    approve.addEventListener('click',()=>decide('approve'));
+    const deny=el('button','','btn danger');deny.type='button';
+    deny.append(document.createTextNode('Deny'),el('span','3','kbd'));
+    deny.addEventListener('click',()=>decide('deny'));
+    const hold=el('button','','btn');hold.type='button';
+    hold.append(document.createTextNode('Hold (defer)'),el('span','H','kbd'));
+    hold.addEventListener('click',()=>decide('defer'));
+    actions.append(approve,deny,hold);
+  }
+  if(detail.warrant&&detail.warrant.status==='active'&&(detail.warrant.allowed_tools||[]).includes('write_files')){
+    const code=el('button','','btn');code.type='button';
+    code.append(document.createTextNode('Start coding session'),el('span','C','kbd'));
+    code.addEventListener('click',startCoding);
+    actions.append(code);
+  }
+  rail.append(actions);
+  const failure=el('div','','inline-error');failure.hidden=true;failure.id='rail-error';rail.append(failure);
+  rail.append(el('p',`Approving names ${window.WARRANT.actor} as the authority on the warrant and appends a signed audit event.`,'note'));
+}
+
+async function loadSelected(){
+  if(!selected){return;}
+  rail.replaceChildren(el('p','Selected delegation','rail-h'),el('p','Loading deterministic properties…','loading'));
+  try{renderSelected(await api(`/v1/delegations/${selected.dataset.delegation}`));}
+  catch(error){rail.replaceChildren(el('p','Selected delegation','rail-h'));const failure=el('div','','inline-error');rail.append(failure);renderError(failure,error,'delegation load');}
+}
+function select(row){
+  if(!row)return;
+  rows.forEach(other=>other.setAttribute('aria-selected',String(other===row)));
+  selected=row;loadSelected();
+}
+rows.forEach(row=>{row.addEventListener('focus',()=>select(row));row.addEventListener('mousedown',()=>select(row));});
+if(selected)loadSelected();
+
+async function decide(action){
+  if(!selected||!selectedDetail)return;
+  if(action!=='approve'&&!confirm(`${action==='deny'?'Deny':'Defer'} ${selectedDetail.issue.external_key}?`))return;
+  const failure=document.getElementById('rail-error');
+  try{
+    await api(`/v1/delegations/${selected.dataset.delegation}/decision`,{method:'POST',body:JSON.stringify({action,approver_id:window.WARRANT.actor})});
+    toast(`Decision recorded: ${action}`);setTimeout(()=>location.reload(),450);
+  }catch(error){if(failure)renderError(failure,error,error.status===403?'CODE_OWNER_REQUIRED boundary':'decision');else toast(error.message);}
+}
+async function startCoding(){
+  if(!selected||!selectedDetail)return;
+  const failure=document.getElementById('rail-error');
+  try{
+    const session=await api('/v1/coding-sessions',{method:'POST',body:JSON.stringify({delegation_id:selected.dataset.delegation,provider:'mock',source:'ui'})});
+    location.href=`/coding-sessions/${session.id}`;
+  }catch(error){if(failure)renderError(failure,error,'coding session');else toast(error.message);}
+}
+function move(delta){
+  const visible=rows.filter(row=>!row.hidden);
+  if(!visible.length)return;
+  const at=visible.indexOf(selected),next=visible[Math.min(Math.max(at+delta,0),visible.length-1)]||visible[0];
+  next.focus();select(next);
+}
+registerShortcut('1',()=>decide('approve'));
+registerShortcut('3',()=>decide('deny'));
+registerShortcut('h',()=>decide('defer'));
+registerShortcut('c',startCoding);
+registerShortcut('enter',()=>{if(selected)location.href=`/delegations/${selected.dataset.delegation}`;});
+registerShortcut('arrowdown',()=>move(1));
+registerShortcut('arrowup',()=>move(-1));
+registerShortcut('j',()=>move(1));
+registerShortcut('k',()=>move(-1));
+
+registerCommand({group:'Delegation',label:'Run governed delegation on the first inbox issue…',hint:['D'],run:()=>{const first=document.querySelector('.delegate');if(first){first.scrollIntoView({block:'center'});delegate(first.dataset.issue,first);}else toast('No issue rows on this page');}});
+registerCommand({group:'Delegation',label:'Approve the selected delegation',hint:['1'],run:()=>decide('approve')});
+registerCommand({group:'Delegation',label:'Deny the selected delegation',hint:['3'],run:()=>decide('deny')});
+registerCommand({group:'Delegation',label:'Hold (defer) the selected delegation',hint:['H'],run:()=>decide('defer')});
+/* ---------- Ask Agent, scoped to the focused queue row ---------- */
+let conversationId=null;
+document.getElementById('agent-form')?.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const answer=document.getElementById('agent-answer'),errorNode=document.getElementById('agent-error');
+  const query=document.getElementById('agent-query').value.trim();
+  if(!query)return;
+  if(!selected){toast('Focus a queue row so the question has a scope');return;}
+  answer.replaceChildren(el('p','Gathering scoped evidence…','loading'));errorNode.hidden=true;
+  try{
+    const body=await api('/v1/agent/query',{method:'POST',body:JSON.stringify({
+      query,conversation_id:conversationId,
+      scope:{delegation_id:selected.dataset.delegation,repository_id:'local'}})});
+    conversationId=body.conversation_id;answer.replaceChildren(el('p',body.answer));
+    const sources=el('div','','src');
+    body.sources.forEach(source=>{const chip=el('span',source.label);chip.title=`${source.type}${source.reason?' · '+source.reason:''}`;sources.append(chip);});
+    answer.append(sources);
+    answer.append(el('span',`intent = ${body.intent} · degraded = ${body.degraded} · authoritative = ${body.authoritative} · authorising = ${body.authorising}`,'advisory'+(body.degraded?' warn':'')));
+  }catch(error){answer.replaceChildren();renderError(errorNode,error,'Agent query');}
+});
+registerShortcut('a',()=>document.getElementById('agent-query')?.focus());
+registerCommand({group:'Agent',label:'Ask about the selected delegation…',hint:['A'],note:'advisory',run:()=>{
+  const input=document.getElementById('agent-query');
+  if(input){input.scrollIntoView({block:'center'});input.focus();}
+  else if(selected)location.href=`/delegations/${selected.dataset.delegation}#agent-card`;
+  else toast('Focus a queue row first');
+}});
+registerCommand({group:'Execution',label:'Start a coding session on the selected delegation',hint:['C'],run:startCoding});
+registerCommand({group:'Issues',label:'Review AI triage for the first inbox issue',run:()=>{const first=document.querySelector('.triage-trigger');if(first){first.scrollIntoView({block:'center'});first.click();}}});
+registerCommand({group:'Issues',label:'Find near-duplicate issues for the first inbox issue',run:()=>{const first=document.querySelector('.related-trigger');if(first){first.scrollIntoView({block:'center'});first.click();}}});
 </script>{% endblock %}

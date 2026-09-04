@@ -130,6 +130,18 @@ arbitrary expression evaluator.
 **Revisit trigger:** Add typed operators only with policy conformance tests; never embed
 general code execution in policy documents.
 
+**Live-inference amendment:** The experimental `AI_PROVIDER=openrouter` path uses the
+named MiniMax M3 slug `minimax/minimax-m3:free` only for synthetic assignment data,
+because no assignment inference budget is available and the endpoint currently has free
+access. Compared with an unnamed endpoint, the model identity is explicit. What remains
+unresolved is the serving path: OpenRouter and the serving inference provider are
+separate processing layers, OpenRouter may route to different providers, and retention
+or processing policies can differ. Warrant mitigates this by keeping the deterministic
+policy engine authoritative; the model cannot produce an authorisation, widen scope,
+grant tools, extend expiry, or consume a nonce. Before non-synthetic use, provider
+routing, retention, sub-processor, DPA/ZDR, and `data_collection: "deny"` compatibility
+must be explicitly verified.
+
 ## D-ENG-010 — Failed evidence checks reduce trust without consuming retry authority
 
 **Context:** Consuming a nonce on a structural evidence error prevents an agent from
@@ -149,12 +161,16 @@ production reputation model.
 ## D-ENG-011 — Bounded provider recovery, lexical circuit fallback
 
 **Context:** Transient providers and embeddings must not expand authority or create
-unbounded request latency.
+unbounded request latency. The OpenRouter MiniMax M3 free endpoint supports JSON output
+but not server-enforced JSON Schema for this configuration.
 
 **Chosen approach:** Provider transport calls receive two exponential-backoff retries
 with jitter; malformed structured output receives one repair attempt carrying the
-validation error; an explicit fallback may run only after that budget. Three embedding
-failures in 60 seconds open a 60-second lexical-only circuit.
+validation error; an explicit fallback may run only after that budget. OpenAI defaults
+to `json_schema`; the configured `minimax/minimax-m3:free` capability defaults to
+`json_object`, inlines the schema in the system prompt, strips common wrappers before
+parsing, and still validates with the same Pydantic `extra="forbid"` schemas. Three
+embedding failures in 60 seconds open a 60-second lexical-only circuit.
 
 **Why:** Recovery is bounded, observable, and monotonic: fallback extraction is marked
 degraded and requires approval, while fallback judging can produce at most
@@ -162,10 +178,13 @@ degraded and requires approval, while fallback judging can produce at most
 verification.
 
 **Trade-offs:** Circuit state is process-local and the fixture fallback is unsuitable as
-live-model quality evidence.
+live-model quality evidence. OpenRouter free-endpoint pricing, availability, rate
+limits, routing, and serving-provider data handling may change; reported $0 cost is
+free-endpoint evidence, not production unit economics.
 
-**Revisit trigger:** Multiple replicas or measured provider SLOs; move circuit state and
-retry budgets into shared operational infrastructure without changing policy semantics.
+**Revisit trigger:** Multiple replicas, non-synthetic data, measured provider SLOs, or a
+paid live-model evaluation; move circuit state and retry budgets into shared operational
+infrastructure without changing policy semantics.
 
 ## D-ENG-012 — Synthetic scale and delivery evidence remain explicitly local
 
@@ -202,3 +221,66 @@ conflict clears.
 
 **Revisit trigger:** Production concurrency work may add a safe re-evaluation workflow,
 but it must re-run risk and policy rather than resurrect a stale approval.
+
+## D-ENG-014 — One contextual Agent, zero delegated authority
+
+**Chosen approach:** A single Agent service grounds answers in workspace records,
+repository citations, and coding-session artifacts. It persists conversation turns but
+cannot approve, issue a warrant, or start execution from a Q&A call.
+
+**Why:** Users get context across issue, policy, code, and execution without creating a
+probabilistic permission path. The deterministic Warrant service remains authoritative.
+
+**Trade-offs:** Answers are extractive/deterministic in offline mode rather than a broad
+general-purpose model experience.
+
+## D-ENG-015 — Real repository adapter with revision cache
+
+**Chosen approach:** Index the configured checkout directly behind a provider interface,
+cache metadata by Git/tree revision, and return bounded file/line snippets. Do not copy
+full repository bodies into the database.
+
+**Why:** It provides genuine code grounding with a replaceable seam and a smaller data
+retention surface. Path canonicalisation and exclusions are enforced by the provider.
+
+**Trade-offs:** This implementation is local-only and uses lightweight symbol/import/text
+analysis rather than a remote SCM API or compiler-grade semantic graph.
+
+## D-ENG-016 — Warrant-gated agents in isolated worktrees
+
+**Chosen approach:** Invoke the installed Codex CLI directly with argv arrays only
+after an active warrant. Run in a unique Git worktree, cap time/output/environment,
+enforce diff paths after execution, run host-owned verification, and persist the state
+machine and mandatory diff. Keep real execution off by default.
+
+**Why:** The external agent receives a concrete contract while the host retains the
+authoritative scope, verification, artifact, cancellation, and audit controls.
+
+**Trade-offs:** CLI authentication/sandbox support is environment-specific. In this
+workspace, the real Codex smoke could not initialize inside the host sandbox, and an
+unsandboxed retry was not authorised; only the adapter and gated test are claimed.
+
+## D-ENG-017 — Slack is an adapter into Warrant, not an alternate workflow
+
+**Chosen approach:** Verify/deduplicate Slack Events, map Slack identities explicitly,
+reuse Agent Q&A, and route `start coding` through delegation, deterministic policy,
+approval, warrant, and coding-session services.
+
+**Why:** Channel convenience cannot bypass governance. Missing approval produces a deep
+link, not execution.
+
+**Trade-offs:** The adapter is locally contract-tested but a real Slack workspace/token
+was not available for end-to-end delivery verification.
+
+## D-ENG-018 — Pstack remains development-time only
+
+**Chosen approach:** Do not introduce Pstack into application imports, startup, or
+deployment. The requested Pstack-assisted workflow was checked, but no executable or
+skill was present, so architecture review, dependency tracing, and security validation
+were performed manually.
+
+**Why:** The application must remain independently runnable and the implementation report
+must not imply a tool was used when it was unavailable.
+
+**Revisit trigger:** A future development environment provides Pstack; it may assist
+analysis and review but still must not become a runtime dependency.

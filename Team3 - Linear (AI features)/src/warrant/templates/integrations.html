@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Integrations · Warrant{% endblock %}
+{% block view_title %}Integrations{% endblock %}
+{% block view_count %}feature status from /healthz{% endblock %}
+{% block head_tools %}
+<a class="chip" href="/healthz">Raw /healthz</a>
+<a class="chip" href="/metrics">Metrics</a>
+{% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="doc">
+    <p class="crumb">Workspace <span>/</span> Integrations and feature status</p>
+    <h1>What is actually turned on</h1>
+    <p class="doc-sub">Read live from <code>/healthz</code> and the server configuration. A disabled feature answers <code>503</code> at its endpoint instead of degrading quietly.</p>
+
+    <article class="card">
+      <h2>Feature flags <span class="aside" id="health-status">reading /healthz…</span></h2>
+      <div class="feature-list" id="feature-list">
+        {% for key, label in [('agent_chat','Contextual Ask Agent'),('code_intelligence','Code intelligence'),('external_coding_agent','External coding agent'),('slack','Slack adapter'),('pr_publishing','Draft PR publishing')] %}
+        <div><code>{{ key }}</code><span class="dim">{{ label }}</span><span class="state {{ 'on' if features_enabled.get(key) else 'off' }}">{{ 'ENABLED' if features_enabled.get(key) else 'DISABLED' }}</span></div>
+        {% endfor %}
+      </div>
+      <p class="note">Rendered from the route context and re-confirmed against <code>/healthz</code> on load, so this table cannot drift from what the server will actually do.</p>
+      <div class="inline-error" id="health-error" hidden></div>
+    </article>
+
+    <article class="card">
+      <h2>Slack adapter <span class="aside">{{ 'configured' if slack.configured else 'not configured' }}</span></h2>
+      <dl class="verify {{ '' if slack.configured else 'fail' }}">
+        <dt>Feature flag</dt><dd>{{ 'SLACK_ENABLED=true' if slack.enabled else 'SLACK_ENABLED=false' }}</dd>
+        <dt>Signing secret</dt><dd>{{ 'present' if slack.signing_secret_present else 'absent' }}</dd>
+        <dt>Bot token</dt><dd>{{ 'present' if slack.bot_token_present else 'absent' }}</dd>
+        <dt>App id</dt><dd>{{ slack.app_id or 'unset' }}</dd>
+        <dt>Mapped users</dt><dd>{{ slack.user_map_size }}</dd>
+        <dt>Events endpoint</dt><dd>POST /v1/integrations/slack/events</dd>
+      </dl>
+      {% if not slack.configured %}
+      <p class="note">The endpoint refuses with <code>503</code> until both the flag and a signing secret are set. Unsigned or stale-timestamped requests are rejected with <code>401</code>, never processed on trust.</p>
+      {% else %}
+      <p class="note">Requests must carry a valid <code>X-Slack-Signature</code> over a fresh timestamp. A Slack message can request a delegation; it can never approve one.</p>
+      {% endif %}
+    </article>
+
+    <article class="card">
+      <h2>AI provider and integrity mode</h2>
+      <dl class="verify {{ 'fail' if fixture_failure else '' }}">
+        <dt>Provider</dt><dd>{{ provider }}</dd>
+        <dt>Fixture mode</dt><dd>{{ fixture_mode|lower }}</dd>
+        <dt>Injected failure</dt><dd>{{ fixture_failure or 'none' }}</dd>
+        <dt>Workspace</dt><dd>{{ workspace_id }}</dd>
+        <dt>Auth gate</dt><dd>{{ 'enabled' if auth_enabled else 'disabled (header-driven demo identity)' }}</dd>
+        <dt>Allow threshold</dt><dd>{{ '%.2f'|format(allow_threshold) }}</dd>
+        <dt>Warrant TTL</dt><dd>{{ warrant_ttl_minutes }} minutes</dd>
+      </dl>
+      <p class="note">{% if fixture_mode %}Every model output in this workspace is a deterministic fixture. The SIMULATED pill in the sidebar is an integrity requirement, not decoration.{% else %}A live model is configured. Model output still cannot set a verdict.{% endif %}</p>
+    </article>
+
+    <article class="card">
+      <h2>Repository and execution</h2>
+      <dl class="verify">
+        <dt>Repository id</dt><dd>{{ repository_id }}</dd>
+        <dt>Repository root</dt><dd>{{ repository_root }}</dd>
+        <dt>Coding provider</dt><dd>{{ coding_agent_provider }}</dd>
+        <dt>Worktree root</dt><dd>{{ coding_session_root }}</dd>
+      </dl>
+      <div id="runner-truth"><p class="loading">Reading runner capabilities…</p></div>
+    </article>
+  </div>
+
+  <aside class="rail" aria-label="Endpoint map">
+    <div class="rail-sec">
+      <p class="rail-h">Endpoints behind each surface</p>
+      <dl class="kv">
+        <dt>Triage</dt><dd>GET /v1/issues/search</dd>
+        <dt>Triage AI</dt><dd>GET /v1/issues/{ref}/triage-recommendation</dd>
+        <dt>Apply triage</dt><dd>POST /v1/issues/{ref}/triage</dd>
+        <dt>Related</dt><dd>GET /v1/issues/{ref}/related</dd>
+        <dt>Delegate</dt><dd>POST /v1/delegations</dd>
+        <dt>Decide</dt><dd>POST /v1/delegations/{id}/decision</dd>
+        <dt>Brief</dt><dd>GET /v1/delegations/{id}/brief</dd>
+        <dt>Ask Agent</dt><dd>POST /v1/agent/query</dd>
+        <dt>Ask code</dt><dd>POST /v1/code/query</dd>
+        <dt>Index</dt><dd>GET /v1/code/index/status</dd>
+        <dt>Capabilities</dt><dd>GET /v1/coding-sessions/capabilities</dd>
+        <dt>Sessions</dt><dd>POST /v1/coding-sessions</dd>
+        <dt>Audit</dt><dd>GET /v1/audit</dd>
+        <dt>Evaluations</dt><dd>GET /v1/evaluations</dd>
+      </dl>
+      <p class="note">Every mutating request carries the demo CSRF header through the shared <code>api()</code> helper.</p>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined&&text!==null)node.textContent=text;if(className)node.className=className;return node;}
+
+fetch('/healthz').then(response=>response.json()).then(health=>{
+  document.getElementById('health-status').textContent=`status ${health.status} · provider ${health.ai_provider}`;
+  document.querySelectorAll('#feature-list > div').forEach(row=>{
+    const key=row.querySelector('code').textContent,state=row.querySelector('.state'),enabled=health.features[key];
+    state.textContent=enabled?'ENABLED':'DISABLED';state.className='state '+(enabled?'on':'off');
+  });
+}).catch(error=>{
+  const failure=document.getElementById('health-error');failure.hidden=false;
+  failure.className='inline-error error-503';failure.innerHTML='<strong>Health read failed</strong><p>The table above still shows the server-rendered configuration.</p>';
+});
+
+api('/v1/coding-sessions/capabilities').then(caps=>{
+  const host=document.getElementById('runner-truth');host.replaceChildren();
+  Object.entries(caps.runners).forEach(([name,runner])=>{
+    const row=el('div','','runner'+(runner.available?'':' unavailable'));
+    row.append(el('code',name),el('span',runner.real?'REAL':'MOCK','provider-kind '+(runner.real?'real':'mock')),
+      el('span',`${runner.available?'available':'unavailable'} · ${runner.reason}`,'why'));
+    host.append(row);
+  });
+  host.append(el('p',`Git checkout available = ${caps.git_checkout.available} · external_execution_enabled = ${caps.external_execution_enabled} · PR publishing ${caps.pr_publishing.enabled?'enabled':'disabled'} (${caps.pr_publishing.reason}).`,'note'));
+}).catch(error=>{
+  const host=document.getElementById('runner-truth');host.replaceChildren();
+  const failure=el('div','','inline-error');host.append(failure);renderError(failure,error,'capability read');
+});
+</script>{% endblock %}

@@ -50,6 +50,9 @@ class SpyProvider(LLMProvider):
     def brief(self, detail, repair_error=None):
         raise NotImplementedError
 
+    def answer(self, question, facts, repair_error=None):
+        raise NotImplementedError
+
 
 def test_transport_errors_retry_twice(monkeypatch):
     delays: list[float] = []
@@ -64,8 +67,9 @@ def test_transport_errors_retry_twice(monkeypatch):
 
 def test_malformed_response_gets_one_repair_with_validation_error():
     primary = SpyProvider([ProviderMalformed("field missing")])
-    ResilientProvider(primary, base_delay_ms=0).extract("x", [], [])
+    response = ResilientProvider(primary, base_delay_ms=0).extract("x", [], [])
     assert primary.calls == [None, "field missing"]
+    assert response.schema_repair_count == 1
 
 
 def test_optional_fallback_is_used_after_retry_budget(monkeypatch):

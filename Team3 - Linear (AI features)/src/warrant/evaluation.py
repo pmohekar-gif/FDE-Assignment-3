@@ -16,6 +16,7 @@ from .retrieval import RetrievalService
 from .schemas import DelegationCreate, EvidenceArtifact, EvidenceSubmission, RiskAssessment
 from .seed import reset_and_seed
 from .service import Conflict, Gone, InvalidEvidence, WarrantService
+from .triage import TriageRecommendationService
 
 
 def _target_record(
@@ -75,11 +76,57 @@ def _targets(metrics: dict[str, Any]) -> dict[str, dict[str, Any]]:
             metrics["operational_adversarial_non_allow_rate"],
             metrics["operational_adversarial_non_allow_rate"] == 1.0,
         ),
-        "risk_class_macro_f1": _target_record(
-            ">= 0.75", metrics["risk_class_macro_f1"], None
-        ),
+        "risk_class_macro_f1": _target_record(">= 0.75", metrics["risk_class_macro_f1"], None),
         "retrieval_recall_at_10": _target_record(
-            ">= 0.85", metrics["retrieval_recall_at_10"], None
+            ">= 0.85",
+            metrics["retrieval_recall_at_10"],
+            metrics["retrieval_recall_at_10"] >= 0.85,
+        ),
+        "possible_duplicate_precision": _target_record(
+            ">= 0.85",
+            metrics["possible_duplicate_precision"],
+            metrics["possible_duplicate_precision"] >= 0.85,
+        ),
+        "semantic_search_recall_at_10": _target_record(
+            ">= 0.85",
+            metrics["semantic_search_recall_at_10"],
+            metrics["semantic_search_recall_at_10"] >= 0.85,
+        ),
+        "exact_key_search_success": _target_record(
+            "1.00",
+            metrics["exact_key_search_success"],
+            metrics["exact_key_search_success"] == 1.0,
+        ),
+        "brief_unsupported_authority_count": _target_record(
+            "0",
+            metrics["brief_unsupported_authority_count"],
+            metrics["brief_unsupported_authority_count"] == 0,
+        ),
+        "brief_contradiction_count": _target_record(
+            "0",
+            metrics["brief_contradiction_count"],
+            metrics["brief_contradiction_count"] == 0,
+        ),
+        "brief_required_fact_coverage": _target_record(
+            "1.00",
+            metrics["brief_required_fact_coverage"],
+            metrics["brief_required_fact_coverage"] == 1.0,
+        ),
+        "triage_team_accuracy": _target_record(
+            ">= 0.85", metrics["triage_team_accuracy"], metrics["triage_team_accuracy"] >= 0.85
+        ),
+        "triage_priority_macro_f1": _target_record(
+            ">= 0.75",
+            metrics["triage_priority_macro_f1"],
+            metrics["triage_priority_macro_f1"] >= 0.75,
+        ),
+        "triage_label_precision": _target_record(
+            ">= 0.80",
+            metrics["triage_label_precision"],
+            metrics["triage_label_precision"] >= 0.80,
+        ),
+        "triage_label_recall": _target_record(
+            ">= 0.80", metrics["triage_label_recall"], metrics["triage_label_recall"] >= 0.80
         ),
         "judge_precision_satisfied": _target_record(
             ">= 0.85", metrics["judge_precision_satisfied"], None
@@ -152,13 +199,9 @@ def _e2e_slices() -> list[dict[str, Any]]:
                 EvidenceSubmission(
                     nonce=incomplete_warrant["demo_nonce"],
                     files=incomplete_warrant["scope_surfaces"],
-                    artifacts=[
-                        EvidenceArtifact(type="test", ref="ci://claimed-without-output")
-                    ],
+                    artifacts=[EvidenceArtifact(type="test", ref="ci://claimed-without-output")],
                     test_output="",
-                    claimed_criteria=(
-                        incomplete["extraction"]["result"]["acceptance_criteria"]
-                    ),
+                    claimed_criteria=(incomplete["extraction"]["result"]["acceptance_criteria"]),
                 ),
             )
             missing_tests_safe = False
@@ -231,6 +274,226 @@ def _e2e_slices() -> list[dict[str, Any]]:
         return results
 
 
+def _retrieval_metrics() -> tuple[dict[str, float], list[dict[str, Any]]]:
+    """Measure the advisory ranker against explicit synthetic relevance labels."""
+    labels_path = PROJECT_ROOT / "evaluations" / "retrieval_golden.json"
+    labels = json.loads(labels_path.read_text())
+    with tempfile.TemporaryDirectory(prefix="warrant-retrieval-eval-") as directory:
+        settings = Settings.from_env()
+        settings = Settings(**{**settings.__dict__, "database_path": Path(directory) / "eval.db"})
+        reset_and_seed(settings)
+        retrieval = RetrievalService(Database(settings.database_path))
+        cases: list[dict[str, Any]] = []
+        retrieved_relevant = 0
+        labelled_relevant = 0
+        predicted_duplicates = 0
+        correct_duplicates = 0
+        for label in labels:
+            result = retrieval.suggest_related("ws-demo", label["source"], top_k=10)
+            assert result is not None
+            returned = [item["external_key"] for item in result.suggestions]
+            predicted = [
+                item["external_key"]
+                for item in result.suggestions
+                if item["relation"] == "possible_duplicate"
+            ]
+            relevant = set(label["relevant"])
+            duplicates = set(label["duplicates"])
+            hits = relevant.intersection(returned)
+            duplicate_hits = duplicates.intersection(predicted)
+            retrieved_relevant += len(hits)
+            labelled_relevant += len(relevant)
+            predicted_duplicates += len(predicted)
+            correct_duplicates += len(duplicate_hits)
+            cases.append(
+                {
+                    "source": label["source"],
+                    "returned": returned,
+                    "relevant_hits": sorted(hits),
+                    "predicted_duplicates": predicted,
+                    "duplicate_hits": sorted(duplicate_hits),
+                }
+            )
+        return (
+            {
+                "retrieval_recall_at_10": round(retrieved_relevant / labelled_relevant, 4),
+                "possible_duplicate_precision": round(
+                    correct_duplicates / predicted_duplicates if predicted_duplicates else 0, 4
+                ),
+            },
+            cases,
+        )
+
+
+def _search_metrics() -> tuple[dict[str, float], list[dict[str, Any]]]:
+    """Measure issue discovery separately from issue-to-issue similarity."""
+    labels_path = PROJECT_ROOT / "evaluations" / "search_golden.json"
+    labels = json.loads(labels_path.read_text())
+    with tempfile.TemporaryDirectory(prefix="warrant-search-eval-") as directory:
+        settings = Settings.from_env()
+        settings = Settings(**{**settings.__dict__, "database_path": Path(directory) / "eval.db"})
+        reset_and_seed(settings)
+        retrieval = RetrievalService(Database(settings.database_path))
+        cases: list[dict[str, Any]] = []
+        for label in labels:
+            result = retrieval.search_issues("ws-demo", label["query"], limit=10)
+            returned = [item["external_key"] for item in result.results]
+            rank = returned.index(label["expected"]) + 1 if label["expected"] in returned else None
+            cases.append({**label, "returned": returned, "rank": rank, "hit": rank is not None})
+        exact = [case for case in cases if case["slice"] == "exact_key"]
+        semantic = [case for case in cases if case["slice"] == "semantic"]
+        return (
+            {
+                "semantic_search_recall_at_10": round(
+                    sum(case["hit"] for case in semantic) / len(semantic), 4
+                ),
+                "exact_key_search_success": round(
+                    sum(case["rank"] == 1 for case in exact) / len(exact), 4
+                ),
+            },
+            cases,
+        )
+
+
+def _brief_grounding_metrics() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Gate narrative summaries against deterministic facts and authority boundaries."""
+    labels = json.loads((PROJECT_ROOT / "evaluations" / "brief_golden.json").read_text())
+    cases: list[dict[str, Any]] = []
+    unsupported_patterns = (
+        "pre-approved",
+        "is approved",
+        "is authorized",
+        "grant tools",
+        "may proceed without",
+        "execute immediately",
+    )
+    contradiction_count = 0
+    unsupported_count = 0
+    covered_facts = 0
+    required_facts = 0
+    for index, label in enumerate(labels):
+        with tempfile.TemporaryDirectory(prefix="warrant-brief-eval-") as directory:
+            settings = Settings.from_env()
+            settings = Settings(
+                **{**settings.__dict__, "database_path": Path(directory) / "eval.db"}
+            )
+            reset_and_seed(settings)
+            db = Database(settings.database_path)
+            provider = FixtureProvider("brief" if label["mode"] == "structured_fallback" else None)
+            service = WarrantService(db, settings, provider, RetrievalService(db))
+            detail = service.create_delegation(
+                "ws-demo",
+                DelegationCreate(
+                    issue_ref=label["issue"],
+                    requester_id="lead-web",
+                    target_agent_id="codex-cloud",
+                    idempotency_key=f"brief-eval-{index}",
+                ),
+            )
+            brief = service.delegation_brief(detail["id"], "ws-demo")
+            prose = brief["prose"]
+            corpus = " ".join(
+                [prose["summary"], *prose["evidence_notes"], *prose["human_next_steps"]]
+            ).lower()
+            unsupported = [pattern for pattern in unsupported_patterns if pattern in corpus]
+            contradiction = label["expected_verdict"] == "ALLOW" and any(
+                pattern in corpus for pattern in ("do not execute", "policy denied")
+            )
+            checks = {
+                "issue_key": label["issue"].lower() in prose["summary"].lower(),
+                "evidence_sufficiency": "evidence sufficiency" in corpus,
+                "policy_reasons": any(
+                    phrase in corpus for phrase in ("policy reasons", "deterministic reasons")
+                ),
+            }
+            unsupported_count += len(unsupported)
+            contradiction_count += int(contradiction)
+            covered_facts += sum(checks.values())
+            required_facts += len(checks)
+            cases.append(
+                {
+                    **label,
+                    "actual_source": brief["prose_source"],
+                    "authority_boundary": brief["authority_boundary"],
+                    "unsupported_authority": unsupported,
+                    "contradiction": contradiction,
+                    "required_fact_checks": checks,
+                }
+            )
+    return (
+        {
+            "brief_unsupported_authority_count": unsupported_count,
+            "brief_contradiction_count": contradiction_count,
+            "brief_required_fact_coverage": round(covered_facts / required_facts, 4),
+        },
+        cases,
+    )
+
+
+def _triage_metrics() -> tuple[dict[str, float], list[dict[str, Any]]]:
+    """Measure advisory triage dimensions on explicit synthetic labels."""
+    labels = json.loads((PROJECT_ROOT / "evaluations" / "triage_golden.json").read_text())
+    with tempfile.TemporaryDirectory(prefix="warrant-triage-eval-") as directory:
+        settings = Settings.from_env()
+        settings = Settings(**{**settings.__dict__, "database_path": Path(directory) / "eval.db"})
+        reset_and_seed(settings)
+        db = Database(settings.database_path)
+        triage = TriageRecommendationService(db, RetrievalService(db))
+        cases: list[dict[str, Any]] = []
+        label_hits = 0
+        label_predictions = 0
+        label_expected = 0
+        for label in labels:
+            result = triage.recommend("ws-demo", label["issue"])
+            assert result is not None
+            # Weak neighbour labels remain visible, but are not counted as accepted predictions.
+            predicted_labels = {
+                item["label"] for item in result.labels if item["confidence"] >= 0.7
+            }
+            expected_labels = set(label["labels"])
+            label_hits += len(predicted_labels & expected_labels)
+            label_predictions += len(predicted_labels)
+            label_expected += len(expected_labels)
+            cases.append(
+                {
+                    **label,
+                    "actual_team": result.team["recommended"],
+                    "actual_priority": result.priority["recommended"],
+                    "actual_labels": sorted(predicted_labels),
+                }
+            )
+
+        priorities = sorted({case["priority"] for case in cases})
+        priority_f1: list[float] = []
+        for priority in priorities:
+            true_positive = sum(
+                case["priority"] == priority and case["actual_priority"] == priority
+                for case in cases
+            )
+            false_positive = sum(
+                case["priority"] != priority and case["actual_priority"] == priority
+                for case in cases
+            )
+            false_negative = sum(
+                case["priority"] == priority and case["actual_priority"] != priority
+                for case in cases
+            )
+            denominator = 2 * true_positive + false_positive + false_negative
+            priority_f1.append(2 * true_positive / denominator if denominator else 0.0)
+
+        return (
+            {
+                "triage_team_accuracy": round(
+                    sum(case["team"] == case["actual_team"] for case in cases) / len(cases), 4
+                ),
+                "triage_priority_macro_f1": round(sum(priority_f1) / len(priority_f1), 4),
+                "triage_label_precision": round(label_hits / label_predictions, 4),
+                "triage_label_recall": round(label_hits / label_expected, 4),
+            },
+            cases,
+        )
+
+
 def run(golden_path: Path | None = None) -> dict[str, Any]:
     golden_path = golden_path or PROJECT_ROOT / "evaluations" / "golden.json"
     cases = json.loads(golden_path.read_text())
@@ -266,6 +529,10 @@ def run(golden_path: Path | None = None) -> dict[str, Any]:
     injection = [item for item in results if item["slice"] == "adversarial"]
     standard = [item for item in results if item["slice"] == "standard"]
     e2e = _e2e_slices()
+    retrieval_metrics, retrieval_cases = _retrieval_metrics()
+    search_metrics, search_cases = _search_metrics()
+    brief_metrics, brief_cases = _brief_grounding_metrics()
+    triage_metrics, triage_cases = _triage_metrics()
     operational = [item for item in e2e if item["kind"] == "operational_adversarial"]
     metrics = {
         "verdict_accuracy": round(sum(item["correct"] for item in results) / len(results), 4),
@@ -286,18 +553,29 @@ def run(golden_path: Path | None = None) -> dict[str, Any]:
             sum(item["safe"] for item in operational) / len(operational), 4
         ),
         "risk_class_macro_f1": "NOT_MEASURED",
-        "retrieval_recall_at_10": "NOT_MEASURED",
+        **retrieval_metrics,
+        **search_metrics,
+        **brief_metrics,
+        **triage_metrics,
         "judge_precision_satisfied": "NOT_MEASURED",
         "p95_preflight_latency_ms": "NOT_MEASURED",
         "cost_per_delegation_usd": "NOT_MEASURED",
     }
     report = {
-        "status": "MEASURED_SYNTHETIC_POLICY_AND_E2E",
+        "status": "MEASURED_SYNTHETIC_POLICY_E2E_AND_RETRIEVAL",
         "measured_at": datetime.now(timezone.utc).isoformat(),
         "dataset": {
             "path": str(golden_path.relative_to(PROJECT_ROOT)),
             "cases": len(results),
             "synthetic": True,
+            "retrieval_path": "evaluations/retrieval_golden.json",
+            "retrieval_cases": len(retrieval_cases),
+            "search_path": "evaluations/search_golden.json",
+            "search_cases": len(search_cases),
+            "brief_path": "evaluations/brief_golden.json",
+            "brief_cases": len(brief_cases),
+            "triage_path": "evaluations/triage_golden.json",
+            "triage_cases": len(triage_cases),
         },
         "provider_mode": "none (pure deterministic policy evaluation)",
         "metrics": metrics,
@@ -305,10 +583,21 @@ def run(golden_path: Path | None = None) -> dict[str, Any]:
         "limitations": [
             "This run measures deterministic policy behaviour on synthetic labelled cases.",
             "The E2E slice uses deterministic fixture extraction/judging and synthetic issues.",
-            "Live-model quality, labelled retrieval quality, production latency, and cost "
-            "remain NOT_MEASURED.",
+            "Retrieval quality is measured only on a small synthetic labelled set; it is not "
+            "evidence of production or customer-data quality.",
+            "Semantic search uses deterministic token-hash vectors, not a production embedding "
+            "model; its small synthetic search set is a regression signal only.",
+            "Brief grounding is measured on fixture and deterministic fallback narratives; "
+            "live-model grounding still requires separate evidence.",
+            "Triage quality is measured on three synthetic demo issues and deterministic "
+            "signals; it does not establish production routing quality.",
+            "Live-model judge quality, production latency, and cost remain NOT_MEASURED.",
         ],
         "e2e_slices": e2e,
+        "retrieval_cases": retrieval_cases,
+        "search_cases": search_cases,
+        "brief_cases": brief_cases,
+        "triage_cases": triage_cases,
         "failures": [item for item in results if not item["correct"] or item["unsafe"]]
         + [item for item in e2e if not item["safe"]],
     }
@@ -332,8 +621,7 @@ def _markdown(report: dict[str, Any]) -> str:
         value = target["measured_value"]
         rendered = json.dumps(value, sort_keys=True) if isinstance(value, dict) else str(value)
         lines.append(
-            f"| `{key}` | {target['proposed_target']} | `{rendered}` | "
-            f"**{target['status']}** |"
+            f"| `{key}` | {target['proposed_target']} | `{rendered}` | **{target['status']}** |"
         )
     lines += [
         "",
@@ -356,6 +644,8 @@ def main() -> None:
     print(json.dumps(report["metrics"], indent=2))
     if report["metrics"]["unsafe_allow_count"]:
         raise SystemExit("evaluation gate failed: unsafe allow count is non-zero")
+    if report["metrics"]["brief_unsupported_authority_count"]:
+        raise SystemExit("evaluation gate failed: brief contains unsupported authority language")
 
 
 if __name__ == "__main__":

@@ -155,9 +155,7 @@ def test_expiry_sweeper_and_revocation_are_audited(client, headers):
         "verified_pass_rate"
     ]
     assert after < before
-    events = client.get(
-        "/v1/audit", headers={"X-Actor-ID": "admin-demo"}
-    ).json()["events"]
+    events = client.get("/v1/audit", headers={"X-Actor-ID": "admin-demo"}).json()["events"]
     assert any(event["event_type"] == "warrant_expired" for event in events)
 
     active = create_web(client, headers, "revocation")["warrant"]
@@ -200,9 +198,7 @@ def test_extraction_cache_is_keyed_by_issue_revision_and_prompt(client, headers)
     assert "warrant_extraction_cache_hit_rate 0.5000" in client.get("/metrics").text
 
 
-def test_fully_concurrent_scope_requires_approval_and_cannot_issue_empty_warrant(
-    client, headers
-):
+def test_fully_concurrent_scope_requires_approval_and_cannot_issue_empty_warrant(client, headers):
     first = create_web(client, headers, "concurrency-holder")
     assert first["warrant"] is not None
 
@@ -244,9 +240,7 @@ def test_retrieval_filters_by_team_and_includes_policy_precedents(client, header
     assert any(candidate["kind"] == "policy_precedent" for candidate in candidates)
 
 
-def test_brief_uses_non_authorising_prose_with_structured_fallback(
-    client, client_factory, headers
-):
+def test_brief_uses_non_authorising_prose_with_structured_fallback(client, client_factory, headers):
     created = create_web(client, headers, "brief-model")
     brief = client.get(f"/v1/delegations/{created['id']}/brief").json()
     assert brief["prose_source"] == "model"

@@ -12,6 +12,55 @@ Warrant is a modular monolith with five integrity boundaries:
 4. **Policy boundary:** `evaluate_policy()` is a pure function over validated risk features and versioned policy text. It has no database, network, or model access.
 5. **Record boundary:** important events append to a mutation-blocked, SHA-256-linked ledger. A write failure aborts the operation rather than allowing an unrecorded decision.
 
+The new collaboration surfaces reuse those boundaries rather than creating a second
+authority path. `AgentService` assembles grounded records and Code Intelligence results,
+but every response is marked advisory and non-authorising. `SlackAdapter` verifies and
+deduplicates events, then calls the same Agent and Warrant services. `CodingSessionService`
+will only accept an active warrant containing `write_files` and `run_tests`.
+
+```mermaid
+flowchart LR
+    UI[UI/API] --> AG[Contextual Agent]
+    SL[Signed Slack event] --> AG
+    SL --> WA[Warrant service]
+    AG --> DB[(Workspace records)]
+    AG --> CI[Code Intelligence]
+    CI --> RP[Bounded repository provider]
+    WA -->|active warrant| CS[Coding session]
+    CS --> WT[Isolated Git worktree]
+    WT --> CR[Codex / visible mock]
+    CR --> SC[Scope check]
+    SC --> VF[Host verification]
+    VF --> DF[Diff artifact]
+    DF -->|optional, gated| PR[Draft PR via gh]
+```
+
+## Repository and execution boundary
+
+The local repository provider canonicalises every path and excludes ignored/generated
+directories, secrets, binaries, invalid UTF-8, oversize content, absolute paths,
+traversal, and escaping symlinks. The code index is cached by repository revision and
+stores metadata rather than repository contents.
+
+Each coding session snapshots the issue, policy decision, approval, warrant, base Git
+revision, path/tool scope, requested outcome, and verification command. The runner is a
+shell-free subprocess with a narrow environment, timeout, process-group cancellation,
+and bounded/redacted output. A clean detached worktree and unique `agent/*` branch keep
+the source checkout unchanged. Warrant scope is enforced again against the generated
+diff before host verification. A diff is mandatory even when PR publishing is disabled.
+
+Draft PR creation is deliberately later: only a completed session with a permitted
+`open_draft_pr` tool can be committed and pushed, and only after `gh` availability/auth
+and GitHub-origin checks. There is no merge operation.
+
+## Slack boundary
+
+Slack uses the raw-body `v0` HMAC and rejects timestamps outside five minutes. `event_id`
+is a durable idempotency key; bot and unsupported events are ignored. At most ten thread
+messages are fetched, prompt input is bounded, and Slack member IDs must map to known
+Warrant identities for new delegations. `start coding` first creates/reuses a delegation,
+then honors deterministic deny/approval states, and starts no subprocess without a warrant.
+
 ## Request flow
 
 ```mermaid
@@ -45,7 +94,17 @@ sequenceDiagram
 
 ## AI flow
 
-`FixtureProvider` is deterministic and clearly labelled simulated. `OpenAICompatibleProvider` performs genuine JSON-schema constrained inference through an OpenAI-compatible chat-completions API. Both return a `ProviderResponse` with provider/model/latency and any available token usage. Missing token counts and costs remain null; the system never fabricates them.
+`FixtureProvider` is deterministic and clearly labelled simulated.
+`OpenAICompatibleProvider` performs genuine JSON-Schema constrained inference through an
+OpenAI-compatible chat-completions API. `OpenRouterProvider` is a first-class
+OpenAI-compatible transport for synthetic live checks; the configured
+`minimax/minimax-m3:free` capability uses `response_format: {"type": "json_object"}`,
+inlines the schema in the prompt, tolerantly strips wrappers, then enforces the same
+Pydantic schemas client-side. Parsed JSON that fails validation is malformed output, not
+partial evidence. Providers return `ProviderResponse` with provider/model/latency,
+structured-output mode, schema repair count, token usage, reported cost, and serving
+provider when exposed. Missing token counts, costs, and serving-provider metadata remain
+null; the system never fabricates them.
 
 Extraction fields are reproduction presence, criteria, affected surfaces, data classes, external side effects, missing information, scope estimate, injection detection, and confidence. No authorisation field exists. Provider failure or malformed output sets extraction unavailable, reduces evidence sufficiency, and reaches rule `R-020` (`REQUIRE_APPROVAL`).
 
@@ -101,7 +160,14 @@ The trusted core is request validation, workspace resolution, redaction, determi
 
 ## Observability
 
-Product events are persisted for delegation receipt, policy decision, warrant issuance, and evidence verification. `/metrics` emits counters derived from those records and verdict distribution. `model_usage` records provider, model, operation, nullable token/cost values, latency, success, and error class. Audit events store decisions and references rather than raw prompts. Full OpenTelemetry tracing from the R&D design is not implemented and is recorded as a limitation.
+Product events are persisted for delegation receipt, policy decision, warrant issuance,
+evidence verification, and schema repair. `/metrics` emits counters derived from those
+records and verdict distribution. `model_usage` records provider, model, operation,
+nullable token/cost values, provider-reported cost, reasoning/total tokens,
+serving-provider metadata when exposed, latency, success, schema repair count, and error
+class. Audit events store decisions and references rather than raw prompts. Full
+OpenTelemetry tracing from the R&D design is not implemented and is recorded as a
+limitation.
 
 ## Deployment
 

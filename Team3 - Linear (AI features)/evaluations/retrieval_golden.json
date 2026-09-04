@@ -1,0 +1,6 @@
+[
+  {"source": "PAY-3000", "relevant": ["PAY-3200", "PAY-3080", "PAY-3040", "PAY-3120", "PAY-3160"], "duplicates": ["PAY-3200"]},
+  {"source": "WEB-3001", "relevant": ["WEB-3201", "WEB-3081", "WEB-3121", "WEB-3041", "WEB-3161"], "duplicates": ["WEB-3201"]},
+  {"source": "GROW-3003", "relevant": ["GROW-3203"], "duplicates": ["GROW-3203"]},
+  {"source": "DATA-3004", "relevant": ["DATA-3204"], "duplicates": ["DATA-3204"]}
+]

@@ -1,0 +1,63 @@
+{#- Shared operator-shell components. Every value rendered here comes from the API or the
+    route context; nothing is invented in the template. -#}
+
+{%- macro tone(verdict) -%}
+{%- if verdict == 'ALLOW' -%}allow{%- elif verdict == 'DENY' -%}deny{%- elif verdict == 'REQUIRE_APPROVAL' -%}hold{%- else -%}idle{%- endif -%}
+{%- endmacro -%}
+
+{#- The signature component: a 15px ring whose arc length is the measured evidence
+    sufficiency and whose tick marks the policy's allow threshold. Circumference is
+    2*pi*6 = 37.7, so the dash offset is the unmeasured remainder. -#}
+{%- macro ring(sufficiency, verdict, threshold=0.7) -%}
+{%- set value = (sufficiency if sufficiency is not none else 0) | float -%}
+<svg class="ring {{ tone(verdict) }}" viewBox="0 0 16 16" role="img"
+     aria-label="Evidence sufficiency {{ '%.2f'|format(value) }}, allow threshold {{ '%.2f'|format(threshold) }}">
+  <title>sufficiency {{ '%.2f'|format(value) }} · allow threshold {{ '%.2f'|format(threshold) }}</title>
+  <circle class="track" cx="8" cy="8" r="6"/>
+  <circle class="arc" cx="8" cy="8" r="6" stroke-dasharray="37.7" stroke-dashoffset="{{ '%.1f'|format(37.7 * (1 - value)) }}"/>
+  <path class="tick" d="M8 0.6v2" transform="rotate({{ '%.1f'|format(threshold * 360) }} 8 8)"/>
+</svg>
+{%- endmacro -%}
+
+{%- macro sufficiency_meter(value, threshold=0.7, verdict=None) -%}
+{%- set measured = (value if value is not none else 0) | float -%}
+<div class="meter" role="meter" aria-label="Evidence sufficiency" aria-valuemin="0" aria-valuemax="1"
+     aria-valuenow="{{ '%.2f'|format(measured) }}">
+  <i style="width:{{ (measured * 100)|round(1) }}%;background:var(--{{ 'allow' if measured >= threshold else 'hold' }})"></i>
+  <u style="left:{{ (threshold * 100)|round(1) }}%"></u>
+</div>
+<div class="meter-ends"><span>{{ '%.2f'|format(measured) }} measured</span><span>{{ '%.2f'|format(threshold) }} required for ALLOW</span></div>
+{%- endmacro -%}
+
+{%- macro queue_row(item, threshold=0.7, selected=false) -%}
+<a class="row" href="/delegations/{{ item.id }}" data-delegation="{{ item.id }}" data-verdict="{{ item.verdict }}"
+   data-status="{{ item.status }}" data-key="{{ item.external_key }}" data-title="{{ item.title }}"
+   aria-selected="{{ 'true' if selected else 'false' }}">
+  {{ ring(item.evidence_sufficiency, item.verdict, threshold) }}
+  <span class="row-key">{{ item.external_key }}</span>
+  <span class="row-title">{{ item.title }}</span>
+  <span class="code-chip {{ tone(item.verdict) }}" title="{{ (item.reason_codes or ['no reason code recorded'])|join(', ') }}">{{ (item.reason_codes or ['NO_REASON_CODE'])[0] }}</span>
+  <span class="suff">{{ '%.2f'|format(item.evidence_sufficiency or 0) }}</span>
+  <span class="row-team">{{ item.team }}</span>
+  <span class="av" title="{{ item.requester_name }} · {{ item.requester_id }}">{{ item.requester_initials }}</span>
+  <span class="row-time relative-time" data-short data-time="{{ item.created_at }}">{{ item.created_at }}</span>
+</a>
+{%- endmacro -%}
+
+{%- macro ask_agent(scope_kind, scope_id, enabled, placeholder='What is blocking this? Where is that enforced?') -%}
+<article class="card" id="agent-card">
+  <h2>Ask Agent <span class="aside">advisory · authoritative = false</span></h2>
+  {% if enabled %}
+  <form class="agent-in" id="agent-form" data-scope-kind="{{ scope_kind }}" data-scope-id="{{ scope_id }}">
+    <label class="sr-only" for="agent-query">Ask the agent</label>
+    <input id="agent-query" type="text" maxlength="2000" placeholder="{{ placeholder }}" required>
+    <button class="btn pri center" type="submit">Ask</button>
+  </form>
+  <p class="note tight">Scoped to <code>{{ scope_kind }}</code> evidence plus the configured repository. The answer explains the deterministic decision; it can never change it.</p>
+  <div class="agent-out" id="agent-answer" aria-live="polite"></div>
+  <div class="inline-error" id="agent-error" hidden></div>
+  {% else %}
+  <p>Contextual Agent is disabled for this workspace (<code>AGENT_CHAT_ENABLED=false</code>). <a href="/integrations" style="color:var(--accent)">Feature status &rarr;</a></p>
+  {% endif %}
+</article>
+{%- endmacro -%}

@@ -1,0 +1,81 @@
+{
+  "status": "FINDING_VERDICT_DRIFT",
+  "measured_at": "2026-08-31T09:17:07.880396+00:00",
+  "synthetic_data_only": true,
+  "provider": "openrouter",
+  "configured_model": "minimax/minimax-m3:free",
+  "configured_base_url": "https://openrouter.ai/api/v1",
+  "structured_output_mode": "json_object",
+  "timeout_seconds": 45.0,
+  "calls": [
+    {
+      "issue_ref": "PAY-4471",
+      "delegation_id": "dlg_045ef7e704044928",
+      "expected_verdict": "REQUIRE_APPROVAL",
+      "actual_verdict": "REQUIRE_APPROVAL",
+      "safe": true,
+      "provider": "openrouter",
+      "model": "minimax/minimax-m3:free",
+      "serving_provider": "GMICloud",
+      "structured_output_mode": "json_object",
+      "schema_repair_count": 0,
+      "latency_ms": 50578,
+      "input_tokens": 1116,
+      "output_tokens": 276,
+      "reasoning_tokens": 0,
+      "total_tokens": 1392,
+      "reported_cost_usd": 0.0
+    },
+    {
+      "issue_ref": "SEC-4502",
+      "delegation_id": "dlg_aa85f7038cd04d34",
+      "expected_verdict": "DENY",
+      "actual_verdict": "DENY",
+      "safe": true,
+      "provider": "openrouter",
+      "model": "minimax/minimax-m3:free",
+      "serving_provider": "GMICloud",
+      "structured_output_mode": "json_object",
+      "schema_repair_count": 0,
+      "latency_ms": 70419,
+      "input_tokens": 1085,
+      "output_tokens": 138,
+      "reasoning_tokens": 0,
+      "total_tokens": 1223,
+      "reported_cost_usd": 0.0
+    },
+    {
+      "issue_ref": "WEB-4519",
+      "delegation_id": "dlg_9c5f02516c234744",
+      "expected_verdict": "ALLOW",
+      "actual_verdict": "REQUIRE_APPROVAL",
+      "safe": false,
+      "provider": "openrouter",
+      "model": "minimax/minimax-m3:free",
+      "serving_provider": "GMICloud",
+      "structured_output_mode": "json_object",
+      "schema_repair_count": 0,
+      "latency_ms": 49064,
+      "input_tokens": 1060,
+      "output_tokens": 168,
+      "reasoning_tokens": 0,
+      "total_tokens": 1228,
+      "reported_cost_usd": 0.0
+    }
+  ],
+  "metrics": {
+    "p50_preflight_latency_ms": 50578,
+    "p95_preflight_latency_ms": "NOT_MEASURED",
+    "cost_per_delegation_usd": 0.0,
+    "schema_repair_total": 0
+  },
+  "cost_target_assessment": "NOT_COMPARABLE_TO_PRODUCTION_TARGET: measured while using OpenRouter's free MiniMax M3 endpoint; $0 inference cost is promotional/free-endpoint economics and is not representative of production unit economics.",
+  "routing_caveat": "OpenRouter and the serving inference provider are separate processing layers; serving-provider retention and processing behaviour must be verified before non-synthetic use.",
+  "failures": [
+    {
+      "issue_ref": "WEB-4519",
+      "expected": "ALLOW",
+      "actual": "REQUIRE_APPROVAL"
+    }
+  ]
+}

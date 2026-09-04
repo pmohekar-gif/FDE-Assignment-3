@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Code intelligence · Warrant{% endblock %}
+{% block view_title %}Code intelligence{% endblock %}
+{% block view_count %}repository {{ repository_id }}{% endblock %}
+{% block head_tools %}
+<button class="chip" type="button" id="refresh-index">Refresh index</button>
+{% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="doc">
+    <p class="crumb">Workspace <span>/</span> Code intelligence <span>/</span> {{ repository_id }}</p>
+    <h1>Ask the configured repository</h1>
+    <p class="doc-sub">Every answer cites <code>path:start-end</code> from the indexed checkout. Nothing here is authoritative and nothing here grants authority.</p>
+
+    {% if code_intelligence_enabled %}
+    <article class="card">
+      <h2>Query <span class="aside">authoritative = false · authorising = false</span></h2>
+      <form class="agent-in" id="code-form">
+        <label class="sr-only" for="code-query">Ask about the codebase</label>
+        <input id="code-query" type="text" maxlength="1000" placeholder="Where is the deterministic verdict computed, and where is it re-checked?" required>
+        <button class="btn pri center" type="submit">Ask</button>
+      </form>
+      <div class="btn-row" style="margin-top:4px">
+        {% for example in example_queries %}<button class="mini" type="button" data-example="{{ example }}">{{ example }}</button>{% endfor %}
+      </div>
+      <div class="agent-out" id="code-answer" aria-live="polite"></div>
+      <div class="inline-error" id="code-error" hidden></div>
+    </article>
+    {% else %}
+    <article class="card">
+      <h2>Disabled</h2>
+      <p>Code Intelligence is turned off for this workspace (<code>CODE_INTELLIGENCE_ENABLED=false</code>). The endpoints answer <code>503</code> rather than degrading silently. <a href="/integrations" style="color:var(--accent)">Feature status &rarr;</a></p>
+    </article>
+    {% endif %}
+
+    <article class="card">
+      <h2>What this surface will and will not do</h2>
+      <ul>
+        <li>It answers only from files the configured ignore source lets it read, and it names the <code>ignore_source</code> it used.</li>
+        <li>It reports whether the answer came from a <code>cached_index</code> and at which <code>revision</code>, so a stale answer is visible rather than implied.</li>
+        <li>It reports <code>dependency_resolved</code> so you can tell a text match from a resolved import edge.</li>
+        <li>It cannot approve, deny, grant a tool, or alter a policy verdict. <code>authorising</code> is always <code>false</code>.</li>
+      </ul>
+    </article>
+  </div>
+
+  <aside class="rail" aria-label="Index status">
+    <div id="index-status" aria-live="polite">
+      <div class="rail-sec">
+        <p class="rail-h">Index status</p>
+        <p class="loading">Reading <code>/v1/code/index/status</code>…</p>
+      </div>
+    </div>
+    <div class="rail-sec">
+      <p class="rail-h">Context budget</p>
+      <p class="note tight">The budget below is enforced server-side. A query that would exceed it is truncated and the response says so, rather than quietly dropping evidence.</p>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined&&text!==null)node.textContent=text;if(className)node.className=className;return node;}
+const statusHost=document.getElementById('index-status');
+
+async function loadStatus(){
+  statusHost.replaceChildren();
+  const section=el('div','','rail-sec');section.append(el('p','Index status','rail-h'));statusHost.append(section);
+  section.append(el('p','Reading index status…','loading'));
+  try{
+    const status=await api('/v1/code/index/status');
+    statusHost.replaceChildren();
+    const panel=el('div','','rail-sec');panel.append(el('p','Index status','rail-h'));statusHost.append(panel);
+    const list=document.createElement('dl');list.className='kv';
+    const pairs=[['Enabled',String(status.enabled)],['Indexed',String(status.indexed)],['Stale',String(status.stale)],
+      ['Repository',status.repository_id||'—'],['Revision',status.revision||'—'],
+      ['Modules',status.module_count===undefined?'not indexed':String(status.module_count)],
+      ['Symbols',status.symbol_count===undefined?'not indexed':String(status.symbol_count)],
+      ['Dependency edges',status.dependency_edges===undefined?'not indexed':String(status.dependency_edges)],
+      ['Files',status.file_count===undefined?'not indexed':String(status.file_count)],
+      ['Ignore source',status.ignore_source||'—'],
+      ['Max snippets',String((status.context_budget||{}).max_snippets??'—')],
+      ['Max chars',String((status.context_budget||{}).max_total_chars??'—')],
+      ['Indexed at',status.indexed_at||'never']];
+    pairs.forEach(([key,value])=>{list.append(el('dt',key));const dd=el('dd',value);
+      if(value==='false'||value==='not indexed'||value==='never')dd.className='none';
+      if(value==='true'&&key!=='Stale')dd.className='ok';
+      if(key==='Stale'&&value==='true')dd.className='warn';
+      list.append(dd);});
+    panel.append(list);
+    panel.append(el('p',`authoritative = ${status.authoritative} · authorising = ${status.authorising}`,'advisory'));
+    const actions=el('div','','rail-actions');
+    const refresh=el('button','Refresh index now','btn');refresh.type='button';refresh.addEventListener('click',refreshIndex);
+    actions.append(refresh);panel.append(actions);
+    const failure=el('div','','inline-error');failure.hidden=true;failure.id='index-error';panel.append(failure);
+  }catch(error){
+    statusHost.replaceChildren();
+    const panel=el('div','','rail-sec');panel.append(el('p','Index status','rail-h'));statusHost.append(panel);
+    const failure=el('div','','inline-error');panel.append(failure);renderError(failure,error,'index status');
+  }
+}
+
+async function refreshIndex(){
+  const failure=document.getElementById('index-error');
+  if(failure)failure.hidden=true;
+  try{
+    const result=await api('/v1/code/index/refresh',{method:'POST'});
+    toast(`Index refreshed at ${result.revision} · ${result.module_count} modules · ${result.dependency_edges} edges`);
+    loadStatus();
+  }catch(error){if(failure)renderError(failure,error,'index refresh');else toast(error.message);}
+}
+loadStatus();
+document.getElementById('refresh-index').addEventListener('click',refreshIndex);
+
+async function ask(query){
+  const answer=document.getElementById('code-answer'),errorNode=document.getElementById('code-error');
+  if(!answer)return;
+  answer.replaceChildren(el('p','Searching the configured repository…','loading'));errorNode.hidden=true;
+  try{
+    const body=await api('/v1/code/query',{method:'POST',body:JSON.stringify({query,repository_id:{{ repository_id|tojson }},limit:8})});
+    answer.replaceChildren(el('p',body.answer));
+    if(body.modules.length){
+      const modules=el('div','','tools');
+      body.modules.forEach(module=>modules.append(el('span',module,'tool neutral')));
+      answer.append(el('p','Modules cited','rail-h tight'),modules);
+    }
+    body.sources.forEach(source=>{
+      const citation=el('div','','citation'),top=el('div','','citation-top');
+      top.append(el('b',`${source.path}:${source.start_line}-${source.end_line}`),
+        el('span',`${source.module||'—'} · edge ${source.edge} · score ${source.score}`,'aside'));
+      const pre=document.createElement('pre');pre.textContent=source.snippet;
+      citation.append(top,pre);
+      const why=el('p',source.reason,'note');why.style.padding='0 10px 8px';citation.append(why);
+      answer.append(citation);
+    });
+    if(!body.sources.length)answer.append(el('p','No repository location matched, so nothing is cited. The answer above is the honest empty result.','note'));
+    answer.append(el('span',`revision = ${body.revision} · cached_index = ${body.cached_index} · ignore_source = ${body.ignore_source} · dependency_resolved = ${body.dependency_resolved} · truncated = ${body.truncated} · authoritative = ${body.authoritative} · authorising = ${body.authorising}`,'advisory'));
+  }catch(error){answer.replaceChildren();renderError(errorNode,error,'code query');}
+}
+document.getElementById('code-form')?.addEventListener('submit',event=>{
+  event.preventDefault();ask(document.getElementById('code-query').value.trim());
+});
+document.querySelectorAll('[data-example]').forEach(button=>button.addEventListener('click',()=>{
+  const input=document.getElementById('code-query');input.value=button.dataset.example;ask(button.dataset.example);
+}));
+registerShortcut('a',()=>document.getElementById('code-query')?.focus());
+registerCommand({group:'Agent',label:'Focus the code intelligence query',hint:['A'],run:()=>document.getElementById('code-query')?.focus()});
+registerCommand({group:'Agent',label:'Refresh the repository index',run:refreshIndex});
+</script>{% endblock %}

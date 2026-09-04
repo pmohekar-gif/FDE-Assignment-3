@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Verdict(str, Enum):
@@ -20,6 +20,13 @@ class Consequence(str, Enum):
     DESTRUCTIVE = "DESTRUCTIVE"
     FINANCIAL_SECURITY = "FINANCIAL_SECURITY"
     UNKNOWN = "UNKNOWN"
+
+
+class AuthTokenRequest(BaseModel):
+    """Shared demo credential exchange for an API bearer token."""
+
+    username: str = Field(max_length=80)
+    password: str = Field(max_length=256)
 
 
 class Reversibility(str, Enum):
@@ -41,6 +48,61 @@ class DelegationCreate(BaseModel):
     requester_id: str = Field(min_length=2, max_length=80)
     target_agent_id: str = Field(min_length=2, max_length=80)
     idempotency_key: str = Field(min_length=4, max_length=120)
+
+
+class RelatedIssueTelemetry(BaseModel):
+    event: Literal["viewed", "selected"]
+    source_issue_ref: str = Field(min_length=2, max_length=80)
+    suggested_issue_ref: str | None = Field(default=None, min_length=2, max_length=80)
+    relation: Literal["possible_duplicate", "related"] | None = None
+    rank: int | None = Field(default=None, ge=1, le=10)
+    result_count: int | None = Field(default=None, ge=0, le=10)
+
+    @model_validator(mode="after")
+    def selection_has_suggestion(self) -> "RelatedIssueTelemetry":
+        if self.event == "selected" and not self.suggested_issue_ref:
+            raise ValueError("selected events require suggested_issue_ref")
+        return self
+
+
+class SemanticSearchTelemetry(BaseModel):
+    event: Literal["viewed", "selected"]
+    query_length: int = Field(ge=2, le=300)
+    result_count: int = Field(ge=0, le=50)
+    team_filtered: bool
+    selected_issue_ref: str | None = Field(default=None, min_length=2, max_length=80)
+    rank: int | None = Field(default=None, ge=1, le=50)
+
+    @model_validator(mode="after")
+    def selection_has_issue_and_rank(self) -> "SemanticSearchTelemetry":
+        if self.event == "selected" and (not self.selected_issue_ref or self.rank is None):
+            raise ValueError("selected events require selected_issue_ref and rank")
+        return self
+
+
+class DelegationBriefTelemetry(BaseModel):
+    event: Literal["viewed"] = "viewed"
+    delegation_id: str = Field(min_length=4, max_length=80)
+    prose_source: Literal["model", "structured_fallback"]
+    stale: bool
+
+
+class TriageApplication(BaseModel):
+    expected_revision: int = Field(ge=1)
+    team: str = Field(min_length=1, max_length=80)
+    priority: Literal["urgent", "high", "medium", "low"]
+    labels: list[str] = Field(max_length=12)
+
+    @field_validator("labels")
+    @classmethod
+    def clean_labels(cls, values: list[str]) -> list[str]:
+        cleaned = [value.strip().lower()[:40] for value in values if value.strip()]
+        return list(dict.fromkeys(cleaned))
+
+
+class TriageTelemetry(BaseModel):
+    issue_ref: str = Field(min_length=2, max_length=80)
+    retrieval_mode: Literal["HYBRID", "LEXICAL_ONLY"]
 
 
 class ExtractionResult(BaseModel):
@@ -137,6 +199,20 @@ class BriefNarrative(BaseModel):
     human_next_steps: list[str] = Field(max_length=8)
 
 
+class AnswerResult(BaseModel):
+    """Grounded natural-language synthesis of already-retrieved facts.
+
+    Backs the Contextual Agent ("Ask Agent") and Code Intelligence query chat
+    surfaces. The model may only phrase what the supplied facts already say —
+    it never adds authority, never sets a verdict, and never asserts anything
+    the facts do not support.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str = Field(min_length=1, max_length=4000)
+
+
 class WarrantView(BaseModel):
     id: str
     delegation_id: str
@@ -168,3 +244,51 @@ class PolicySimulationSource(PolicySource):
 class WarrantRevocation(BaseModel):
     actor_id: str = Field(min_length=2, max_length=80)
     reason: str = Field(min_length=3, max_length=1000)
+
+
+class AgentScope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issue_id: str | None = Field(default=None, max_length=80)
+    delegation_id: str | None = Field(default=None, max_length=80)
+    coding_session_id: str | None = Field(default=None, max_length=80)
+    repository_id: str | None = Field(default=None, max_length=120)
+
+
+class AgentQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=2, max_length=2000)
+    scope: AgentScope = Field(default_factory=AgentScope)
+    conversation_id: str | None = Field(default=None, max_length=80)
+
+
+class CodeQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=2, max_length=1000)
+    repository_id: str = Field(default="local", min_length=1, max_length=120)
+    limit: int = Field(default=8, ge=1, le=20)
+
+
+class CodingSessionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    delegation_id: str = Field(min_length=4, max_length=80)
+    provider: Literal["mock", "codex"] | None = None
+    requested_outcome: str | None = Field(default=None, max_length=4000)
+    source: Literal["ui", "api", "slack"] = "api"
+
+
+class CodingSessionCancel(BaseModel):
+    actor_id: str = Field(min_length=2, max_length=80)
+
+
+class PullRequestCreate(BaseModel):
+    actor_id: str = Field(min_length=2, max_length=80)
+    title: str | None = Field(default=None, max_length=240)
+    body: str | None = Field(default=None, max_length=5000)
+    # Omitted entirely -> fall back to PR_REVIEWERS / PR_BASE_BRANCH from configuration.
+    # An explicit empty list means "open it with no reviewers", which is not the same thing.
+    reviewers: list[str] | None = Field(default=None, max_length=25)
+    base: str | None = Field(default=None, max_length=240)

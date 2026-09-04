@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Delegations · Warrant{% endblock %}
+{% block view_title %}Delegations{% endblock %}
+{% block view_count %}{{ queue|length }} shown · {{ nav.delegations }} total{% endblock %}
+{% block head_tools %}
+<button class="chip" type="button" data-verdict-filter="" aria-pressed="true">Verdict <span class="k">any</span></button>
+<button class="chip" type="button" data-verdict-filter="REQUIRE_APPROVAL" aria-pressed="false">Hold</button>
+<button class="chip" type="button" data-verdict-filter="ALLOW" aria-pressed="false">Allow</button>
+<button class="chip" type="button" data-verdict-filter="DENY" aria-pressed="false">Deny</button>
+{% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="list">
+    {% for bucket in queue_groups %}
+    <div class="group {{ ui.tone(bucket.verdict) }}" data-group="{{ bucket.verdict }}">
+      <span class="group-name">{{ bucket.label }}</span><span class="group-ct">{{ bucket.rows|length }}</span>
+      <span class="group-note">{{ bucket.note }}</span>
+    </div>
+    {% for item in bucket.rows %}{{ ui.queue_row(item, allow_threshold, loop.first and bucket.first_bucket) }}{% endfor %}
+    {% else %}
+    <div class="empty"><strong>No delegations yet.</strong><span>Run a governed delegation from the <a href="/#issue-inbox" style="color:var(--accent)">issue inbox</a>.</span></div>
+    {% endfor %}
+    <div class="legend">
+      <span><span class="kbd">&crarr;</span> Open delegation</span>
+      <span><span class="kbd">&darr;</span><span class="kbd">&uarr;</span> Move</span>
+      <span class="spacer">Ring arc = evidence sufficiency · tick = {{ '%.2f'|format(allow_threshold) }} allow threshold</span>
+    </div>
+  </div>
+
+  <aside class="rail" aria-label="Delegation distribution">
+    <div class="rail-sec">
+      <p class="rail-h">Verdict distribution</p>
+      <dl class="kv">
+        {% for bucket in queue_groups %}
+        <dt>{{ bucket.verdict }}</dt><dd>{{ bucket.rows|length }}</dd>
+        {% endfor %}
+        <dt>Total</dt><dd>{{ nav.delegations }}</dd>
+      </dl>
+      <p class="note">Every verdict here was produced by deterministic policy {{ nav.policy_version }} from feature vectors, never by a model.</p>
+    </div>
+    <div class="rail-sec">
+      <p class="rail-h">Awaiting a human</p>
+      <dl class="kv"><dt>Hold</dt><dd class="warn">{{ nav.triage }}</dd></dl>
+      <div class="rail-actions"><a class="btn pri" href="/">Open triage queue <span aria-hidden="true">&rarr;</span></a></div>
+    </div>
+    <div class="rail-sec">
+      <p class="rail-h">Sufficiency ring</p>
+      <p class="note tight">Each row's ring encodes the measured evidence sufficiency as arc length. The tick sits at the policy's ALLOW threshold of {{ '%.2f'|format(allow_threshold) }}: an arc short of the tick can never be auto-allowed.</p>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+const rows=[...document.querySelectorAll('.row[data-delegation]')];
+let selected=rows.find(row=>row.getAttribute('aria-selected')==='true')||rows[0]||null;
+rows.forEach(row=>{row.addEventListener('focus',()=>{rows.forEach(other=>other.setAttribute('aria-selected',String(other===row)));selected=row;});});
+function move(delta){
+  const visible=rows.filter(row=>!row.hidden);if(!visible.length)return;
+  const at=visible.indexOf(selected),next=visible[Math.min(Math.max(at+delta,0),visible.length-1)]||visible[0];
+  next.focus();
+}
+registerShortcut('arrowdown',()=>move(1));
+registerShortcut('arrowup',()=>move(-1));
+registerShortcut('j',()=>move(1));
+registerShortcut('k',()=>move(-1));
+registerShortcut('enter',()=>{if(selected)location.href=`/delegations/${selected.dataset.delegation}`;});
+document.querySelectorAll('[data-verdict-filter]').forEach(chip=>chip.addEventListener('click',()=>{
+  const wanted=chip.dataset.verdictFilter;
+  document.querySelectorAll('[data-verdict-filter]').forEach(other=>other.setAttribute('aria-pressed',String(other===chip)));
+  document.querySelectorAll('.row[data-verdict]').forEach(row=>{row.hidden=Boolean(wanted)&&row.dataset.verdict!==wanted;});
+  document.querySelectorAll('.group[data-group]').forEach(group=>{group.hidden=Boolean(wanted)&&group.dataset.group!==wanted;});
+}));
+</script>{% endblock %}

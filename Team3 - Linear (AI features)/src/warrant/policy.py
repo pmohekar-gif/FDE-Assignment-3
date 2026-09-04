@@ -87,12 +87,7 @@ class PolicyDocument(BaseModel):
             names = ", ".join(sorted(value.value for value in missing_grants))
             raise ValueError(f"tool_grants missing consequences: {names}")
         never = set(self.never_grantable_tools)
-        leaked = {
-            tool
-            for grants in self.tool_grants.values()
-            for tool in grants
-            if tool in never
-        }
+        leaked = {tool for grants in self.tool_grants.values() for tool in grants if tool in never}
         if leaked:
             names = ", ".join(sorted(leaked))
             raise ValueError(f"never-grantable tools present in grants: {names}")

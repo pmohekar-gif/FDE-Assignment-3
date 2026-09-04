@@ -1,17 +1,149 @@
 {% extends "base.html" %}
-{% block title %}Policy workbench · Warrant{% endblock %}
-{% block content %}
-<section class="shell detail-head"><a class="back" href="/">← Operator inbox</a><div class="detail-title"><div><p class="eyebrow">Deterministic authority</p><h1>Policy workbench</h1><p>Active {{ policy.version }} · activated <time class="relative-time" data-time="{{ policy.activated_at }}">{{ policy.activated_at }}</time> · SHA <code>{{ policy.sha256 }}</code></p></div><span class="status-pill allow">ACTIVE</span></div></section>
-<section class="shell policy-layout"><div class="decision-main">
-  <article class="panel"><div class="section-head"><div><p class="eyebrow">Consequence × reversibility</p><h2>Authority matrix</h2></div></div><div class="table-wrap"><table><thead><tr><th>Consequence</th>{% for rev in ['AUTOMATIC','MANUAL','IRREVERSIBLE','UNKNOWN'] %}<th>{{ rev }}</th>{% endfor %}</tr></thead><tbody>{% for consequence,row in document.matrix.items() %}<tr><th>{{ consequence }}</th>{% for rev in ['AUTOMATIC','MANUAL','IRREVERSIBLE','UNKNOWN'] %}<td id="rule-{{ row[rev].rule_id }}"><strong>{{ row[rev].verdict }}</strong><small>{{ row[rev].reason_code }} · {{ row[rev].rule_id }}</small></td>{% endfor %}</tr>{% endfor %}</tbody></table></div></article>
-  <article class="panel"><p class="eyebrow">Ordered rules</p><h2>Readable rule list</h2><div class="rule-cards">{% for rule in document.rules %}<div id="rule-{{ rule.id }}" class="rule-card"><div><code>{{ rule.id }}</code><span>line {{ rule_lines.get(rule.id,'?') }}</span></div><strong>{{ rule.verdict }}</strong><p>{{ rule.reason_codes|join(', ') }}</p><small>{{ 'Terminal' if rule.terminal else 'Autonomy-reducing' }}{{ ' · fail closed' if rule.fail_closed else '' }}</small></div>{% endfor %}</div></article>
-</div><aside class="decision-aside"><article class="panel policy-editor"><p class="eyebrow">§13 policy loop</p><h2>Edit, simulate, activate</h2><p>Change a rule and the immutable <code>version</code>, then simulate. Activation remains disabled until the exact text passes.</p><label for="policy-yaml">Policy YAML with line numbers</label><div class="code-editor"><pre id="line-numbers" aria-hidden="true"></pre><textarea id="policy-yaml" spellcheck="false">{{ policy.yaml_source }}</textarea></div><div class="decision-actions"><button id="simulate" class="primary">Simulate</button><button id="activate" disabled>Activate</button></div><div id="policy-result" aria-live="polite"></div></article></aside></section>
+{% block title %}Policy · Warrant{% endblock %}
+{% block view_title %}Policy{% endblock %}
+{% block view_count %}{{ policy.version }} · {{ document.rules|length }} rules{% endblock %}
+{% block head_tools %}
+<span class="chip">SHA <span class="k">{{ policy.sha256[:12] }}</span></span>
+<span class="chip">threshold <span class="k">{{ '%.2f'|format(document.allow_sufficiency_threshold) }}</span></span>
 {% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="doc">
+    <p class="crumb">Workspace <span>/</span> Deterministic authority <span>/</span> {{ policy.version }}</p>
+    <h1>The only thing that can grant authority</h1>
+    <p class="doc-sub">Active {{ policy.version }} · activated <span class="relative-time" data-time="{{ policy.activated_at }}">{{ policy.activated_at }}</span> · SHA <code>{{ policy.sha256 }}</code></p>
+
+    <article class="card">
+      <h2>Never grantable by any policy version <span class="aside">enforced at load time</span></h2>
+      <div class="tools">{% for tool in document.never_grantable_tools %}<span class="tool no">{{ tool }}</span>{% endfor %}</div>
+      <p class="note">A policy document that lists any of these in <code>tool_grants</code> fails validation and cannot be activated. This is a load-time invariant, not a runtime check that could be skipped.</p>
+    </article>
+
+    <article class="card">
+      <h2>Authority matrix <span class="aside">consequence &times; reversibility</span></h2>
+      <div class="table-wrap">
+        <table class="matrix">
+          <thead><tr><th>Consequence</th>{% for rev in ['AUTOMATIC','MANUAL','IRREVERSIBLE','UNKNOWN'] %}<th>{{ rev }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {% for consequence, row in document.matrix.items() %}
+            <tr><th><code>{{ consequence }}</code></th>
+              {% for rev in ['AUTOMATIC','MANUAL','IRREVERSIBLE','UNKNOWN'] %}
+              <td id="rule-{{ row[rev].rule_id }}" class="v-{{ row[rev].verdict|lower }}"><strong>{{ row[rev].verdict }}</strong><small>{{ row[rev].reason_code }}</small><small>{{ row[rev].rule_id }}</small></td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2>Tool grants by consequence</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Consequence</th><th>Grantable tools</th></tr></thead>
+          <tbody>
+            {% for consequence, tools in document.tool_grants.items() %}
+            <tr><th><code>{{ consequence }}</code></th><td><div class="tools">{% for tool in tools %}<span class="tool">{{ tool }}</span>{% else %}<span class="tool no">none</span>{% endfor %}</div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2>Ordered rules <span class="aside">{{ document.rules|length }} · first terminal match wins</span></h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Rule</th><th>Line</th><th>Verdict</th><th>Reason codes</th><th>Behaviour</th><th>Explanation</th></tr></thead>
+          <tbody>
+            {% for rule in document.rules %}
+            <tr id="rule-{{ rule.id }}">
+              <th><code>{{ rule.id }}</code></th>
+              <td><code>{{ rule_lines.get(rule.id,'?') }}</code></td>
+              <td><strong>{{ rule.verdict }}</strong></td>
+              <td>{% for code in rule.reason_codes %}<code>{{ code }}</code>{{ ' ' if not loop.last }}{% endfor %}</td>
+              <td>{{ 'terminal' if rule.terminal else 'autonomy-reducing' }}{{ ' · fail closed' if rule.fail_closed else '' }}</td>
+              <td>{{ rule_explanations.get(rule.id, '') }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2>Policy source <span class="aside">{{ policy.yaml_source.splitlines()|length }} lines</span></h2>
+      <label class="field"><span>Edit, simulate, then activate</span>
+        <textarea id="policy-yaml" spellcheck="false" rows="22" style="font:400 11.5px/1.6 var(--mono)">{{ policy.yaml_source }}</textarea>
+      </label>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn pri center" type="button" id="simulate">Simulate against persisted delegations</button>
+        <button class="btn center" type="button" id="activate" disabled>Activate</button>
+      </div>
+      <div id="policy-result" aria-live="polite"></div>
+      <p class="note">Activation stays disabled until the exact text you simulated passes the adversarial guard. Changing one character re-arms the gate. A simulation that would newly allow an unsafe delegation blocks activation outright.</p>
+    </article>
+  </div>
+
+  <aside class="rail" aria-label="Policy properties">
+    <div class="rail-sec">
+      <p class="rail-h">Active policy</p>
+      <dl class="kv">
+        <dt>Version</dt><dd>{{ policy.version }}</dd>
+        <dt>SHA-256</dt><dd>{{ policy.sha256 }}</dd>
+        <dt>Activated</dt><dd><span class="relative-time" data-time="{{ policy.activated_at }}">{{ policy.activated_at }}</span></dd>
+        <dt>Rules</dt><dd>{{ document.rules|length }}</dd>
+        <dt>Terminal</dt><dd>{{ document.rules|selectattr('terminal')|list|length }}</dd>
+        <dt>Fail closed</dt><dd>{{ document.rules|selectattr('fail_closed')|list|length }}</dd>
+        <dt>Threshold</dt><dd>{{ '%.2f'|format(document.allow_sufficiency_threshold) }}</dd>
+      </dl>
+      <p class="note">{{ document.description }}</p>
+    </div>
+    <div class="rail-sec">
+      <p class="rail-h">Verdict order</p>
+      <p class="note tight">Autonomy can only be reduced. A degraded run may turn ALLOW into REQUIRE_APPROVAL or DENY; it can never move in the other direction. That property is asserted in the evaluation suite, not just described here.</p>
+      <div class="rail-actions"><a class="btn" href="/evaluation">Evaluation integrity <span aria-hidden="true">&rarr;</span></a></div>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
 {% block scripts %}<script>
-const source=document.getElementById('policy-yaml'),simulate=document.getElementById('simulate'),activate=document.getElementById('activate'),result=document.getElementById('policy-result');let simulatedSource=null;
-const lineNumbers=document.getElementById('line-numbers');function numberLines(){lineNumbers.textContent=Array.from({length:source.value.split('\n').length},(_,index)=>index+1).join('\n');}numberLines();source.addEventListener('scroll',()=>lineNumbers.scrollTop=source.scrollTop);
-function policyError(error){activate.disabled=true;const details=error.body.details;if(error.status===422&&Array.isArray(details)){result.className='inline-error error-422';result.innerHTML=`<strong>Policy validation failed</strong><ul>${details.map(item=>`<li>Line ${item.line||'?'}: ${item.message}</li>`).join('')}</ul>`;}else renderError(result,error,error.status===409?'adversarial safety guard':'policy');}
-simulate.addEventListener('click',async()=>{simulate.disabled=true;result.className='loading-panel';result.textContent='Running persisted delegation diff and adversarial guard…';try{const body=await api('/v1/policies/simulate',{method:'POST',body:JSON.stringify({yaml_source:source.value,against:'last_n_delegations',n:50})});simulatedSource=source.value;activate.disabled=!body.can_activate;result.className=body.can_activate?'success-panel':'inline-error error-409';result.innerHTML=`<strong>${body.can_activate?'Simulation passed':'Activation blocked'}</strong><p>Adversarial guard: ${body.unsafe_allows.length?'unsafe allows found':'0 unsafe allows'} · ${body.evaluated_delegations} delegations compared.</p><div class="diff-list">${body.verdict_diffs.map(item=>`<div class="${item.newly_allowed?'newly-allowed':''}"><code>${item.delegation_id}</code><span>${item.previous_verdict} → ${item.proposed_verdict}</span>${item.newly_allowed?'<b>NEWLY ALLOWED</b>':''}</div>`).join('')||'<p>No persisted delegation diffs yet.</p>'}</div>`;}catch(error){policyError(error);}finally{simulate.disabled=false;}});
-source.addEventListener('input',()=>{numberLines();if(source.value!==simulatedSource)activate.disabled=true;});
-activate.addEventListener('click',async()=>{if(source.value!==simulatedSource)return;activate.disabled=true;try{const body=await api('/v1/policies',{method:'POST',body:JSON.stringify({yaml_source:source.value})});result.className='success-panel';result.innerHTML=`<strong>Policy ${body.version} activated</strong><p>SHA ${body.sha}</p>`;setTimeout(()=>location.reload(),700);}catch(error){policyError(error);}});
+const source=document.getElementById('policy-yaml'),simulate=document.getElementById('simulate'),activate=document.getElementById('activate'),result=document.getElementById('policy-result');
+let simulatedSource=null;
+
+function policyError(error){
+  activate.disabled=true;
+  const details=error.body.details;
+  if(error.status===422&&Array.isArray(details)){
+    result.className='inline-error error-422';
+    result.innerHTML=`<strong>Policy validation failed</strong><ul>${details.map(item=>`<li>Line ${item.line||'?'}: ${item.message}</li>`).join('')}</ul>`;
+  }else renderError(result,error,error.status===409?'adversarial safety guard':'policy');
+}
+simulate.addEventListener('click',async()=>{
+  simulate.disabled=true;result.className='loading-panel';
+  result.textContent='Running persisted delegation diff and adversarial guard…';
+  try{
+    const body=await api('/v1/policies/simulate',{method:'POST',body:JSON.stringify({yaml_source:source.value,against:'last_n_delegations',n:50})});
+    simulatedSource=source.value;activate.disabled=!body.can_activate;
+    result.className=body.can_activate?'success-panel':'inline-error error-409';
+    result.innerHTML=`<strong>${body.can_activate?'Simulation passed':'Activation blocked'}</strong>`
+      +`<p>Adversarial guard: ${body.unsafe_allows.length?`${body.unsafe_allows.length} unsafe allow(s) found`:'0 unsafe allows'} · ${body.evaluated_delegations} persisted delegations compared.</p>`
+      +`<div class="diff-list">${body.verdict_diffs.map(item=>`<div class="${item.newly_allowed?'newly-allowed':''}"><code>${item.delegation_id}</code><span>${item.previous_verdict} → ${item.proposed_verdict}</span>${item.newly_allowed?'<b>NEWLY ALLOWED</b>':''}</div>`).join('')||'<p>No persisted delegation changed verdict.</p>'}</div>`;
+  }catch(error){policyError(error);}finally{simulate.disabled=false;}
+});
+source.addEventListener('input',()=>{if(source.value!==simulatedSource)activate.disabled=true;});
+activate.addEventListener('click',async()=>{
+  if(source.value!==simulatedSource)return;
+  activate.disabled=true;
+  try{
+    const body=await api('/v1/policies',{method:'POST',body:JSON.stringify({yaml_source:source.value})});
+    result.className='success-panel';result.innerHTML=`<strong>Policy ${body.version} activated</strong><p>SHA ${body.sha}</p>`;
+    setTimeout(()=>location.reload(),700);
+  }catch(error){policyError(error);}
+});
+registerCommand({group:'Policy',label:'Simulate the edited policy',run:()=>simulate.click()});
+registerCommand({group:'Policy',label:'Activate the simulated policy',run:()=>{if(activate.disabled)toast('Simulate first — activation is gated on the exact text');else activate.click();}});
 </script>{% endblock %}

@@ -1,0 +1,61 @@
+# Applied-changes manifest
+# Source: Gaurav-Team3 - Linear (AI features)
+# Target: Team3 - Linear (AI features)
+# Applied: 2026-09-03T16:31:03+05:30
+# Baseline verification: PASS (baseline untouched; policies/, security.py, audit.py, seed.py, ui.py identical)
+
+## Differences at time of copy
+Files Team3 - Linear (AI features)/.env.example and Gaurav-Team3 - Linear (AI features)/.env.example differ
+Files Team3 - Linear (AI features)/AI_COLLABORATION.md and Gaurav-Team3 - Linear (AI features)/AI_COLLABORATION.md differ
+Files Team3 - Linear (AI features)/BUILD_STATUS.md and Gaurav-Team3 - Linear (AI features)/BUILD_STATUS.md differ
+Files Team3 - Linear (AI features)/Makefile and Gaurav-Team3 - Linear (AI features)/Makefile differ
+Files Team3 - Linear (AI features)/README.md and Gaurav-Team3 - Linear (AI features)/README.md differ
+Only in Team3 - Linear (AI features): applied-changes-manifest.txt
+Files Team3 - Linear (AI features)/docs/ARCHITECTURE.md and Gaurav-Team3 - Linear (AI features)/docs/ARCHITECTURE.md differ
+Files Team3 - Linear (AI features)/docs/DECISIONS.md and Gaurav-Team3 - Linear (AI features)/docs/DECISIONS.md differ
+Files Team3 - Linear (AI features)/docs/ENGINEERING_REPORT.md and Gaurav-Team3 - Linear (AI features)/docs/ENGINEERING_REPORT.md differ
+Files Team3 - Linear (AI features)/docs/LIMITATIONS.md and Gaurav-Team3 - Linear (AI features)/docs/LIMITATIONS.md differ
+Only in Gaurav-Team3 - Linear (AI features)/docs: features
+Only in Gaurav-Team3 - Linear (AI features)/evaluations: brief_golden.json
+Only in Gaurav-Team3 - Linear (AI features)/evaluations: live-run-2026-08-31.json
+Files Team3 - Linear (AI features)/evaluations/results.json and Gaurav-Team3 - Linear (AI features)/evaluations/results.json differ
+Files Team3 - Linear (AI features)/evaluations/results.md and Gaurav-Team3 - Linear (AI features)/evaluations/results.md differ
+Only in Gaurav-Team3 - Linear (AI features)/evaluations: retrieval_golden.json
+Only in Gaurav-Team3 - Linear (AI features)/evaluations: search_golden.json
+Only in Gaurav-Team3 - Linear (AI features)/evaluations: triage_golden.json
+Files Team3 - Linear (AI features)/pyproject.toml and Gaurav-Team3 - Linear (AI features)/pyproject.toml differ
+Files Team3 - Linear (AI features)/src/warrant/config.py and Gaurav-Team3 - Linear (AI features)/src/warrant/config.py differ
+Files Team3 - Linear (AI features)/src/warrant/db.py and Gaurav-Team3 - Linear (AI features)/src/warrant/db.py differ
+Files Team3 - Linear (AI features)/src/warrant/evaluation.py and Gaurav-Team3 - Linear (AI features)/src/warrant/evaluation.py differ
+Only in Gaurav-Team3 - Linear (AI features)/src/warrant: live_check.py
+Files Team3 - Linear (AI features)/src/warrant/main.py and Gaurav-Team3 - Linear (AI features)/src/warrant/main.py differ
+Files Team3 - Linear (AI features)/src/warrant/policy.py and Gaurav-Team3 - Linear (AI features)/src/warrant/policy.py differ
+Files Team3 - Linear (AI features)/src/warrant/providers.py and Gaurav-Team3 - Linear (AI features)/src/warrant/providers.py differ
+Files Team3 - Linear (AI features)/src/warrant/retrieval.py and Gaurav-Team3 - Linear (AI features)/src/warrant/retrieval.py differ
+Files Team3 - Linear (AI features)/src/warrant/schemas.py and Gaurav-Team3 - Linear (AI features)/src/warrant/schemas.py differ
+Files Team3 - Linear (AI features)/src/warrant/service.py and Gaurav-Team3 - Linear (AI features)/src/warrant/service.py differ
+Files Team3 - Linear (AI features)/src/warrant/static/app.css and Gaurav-Team3 - Linear (AI features)/src/warrant/static/app.css differ
+Files Team3 - Linear (AI features)/src/warrant/templates/dashboard.html and Gaurav-Team3 - Linear (AI features)/src/warrant/templates/dashboard.html differ
+Files Team3 - Linear (AI features)/src/warrant/templates/delegation.html and Gaurav-Team3 - Linear (AI features)/src/warrant/templates/delegation.html differ
+Only in Gaurav-Team3 - Linear (AI features)/src/warrant: triage.py
+Files Team3 - Linear (AI features)/tests/e2e/test_complete_journey.py and Gaurav-Team3 - Linear (AI features)/tests/e2e/test_complete_journey.py differ
+Files Team3 - Linear (AI features)/tests/integration/test_api_pipeline.py and Gaurav-Team3 - Linear (AI features)/tests/integration/test_api_pipeline.py differ
+Files Team3 - Linear (AI features)/tests/integration/test_conformance.py and Gaurav-Team3 - Linear (AI features)/tests/integration/test_conformance.py differ
+Only in Gaurav-Team3 - Linear (AI features)/tests/integration: test_delegation_brief_contract.py
+Files Team3 - Linear (AI features)/tests/integration/test_failure_matrix.py and Gaurav-Team3 - Linear (AI features)/tests/integration/test_failure_matrix.py differ
+Only in Gaurav-Team3 - Linear (AI features)/tests/integration: test_related_issues_api.py
+Only in Gaurav-Team3 - Linear (AI features)/tests/integration: test_semantic_search_api.py
+Only in Gaurav-Team3 - Linear (AI features)/tests/integration: test_triage_recommendation_api.py
+Files Team3 - Linear (AI features)/tests/integration/test_ui_routes.py and Gaurav-Team3 - Linear (AI features)/tests/integration/test_ui_routes.py differ
+Files Team3 - Linear (AI features)/tests/security/test_boundaries.py and Gaurav-Team3 - Linear (AI features)/tests/security/test_boundaries.py differ
+Only in Gaurav-Team3 - Linear (AI features)/tests/unit: test_delegation_brief_evaluation.py
+Only in Gaurav-Team3 - Linear (AI features)/tests/unit: test_openrouter_structured_output.py
+Files Team3 - Linear (AI features)/tests/unit/test_resilience.py and Gaurav-Team3 - Linear (AI features)/tests/unit/test_resilience.py differ
+Only in Gaurav-Team3 - Linear (AI features)/tests/unit: test_retrieval_evaluation.py
+Files Team3 - Linear (AI features)/tests/unit/test_risk_scope.py and Gaurav-Team3 - Linear (AI features)/tests/unit/test_risk_scope.py differ
+Files Team3 - Linear (AI features)/tests/unit/test_security_and_retrieval.py and Gaurav-Team3 - Linear (AI features)/tests/unit/test_security_and_retrieval.py differ
+Only in Gaurav-Team3 - Linear (AI features)/tests/unit: test_semantic_search.py
+Only in Gaurav-Team3 - Linear (AI features)/tests/unit: test_semantic_search_evaluation.py
+Only in Gaurav-Team3 - Linear (AI features)/tests/unit: test_triage_evaluation.py
+Only in Gaurav-Team3 - Linear (AI features)/tests/unit: test_triage_recommendations.py
+Files Team3 - Linear (AI features)/tests/unit/test_ui_regressions.py and Gaurav-Team3 - Linear (AI features)/tests/unit/test_ui_regressions.py differ

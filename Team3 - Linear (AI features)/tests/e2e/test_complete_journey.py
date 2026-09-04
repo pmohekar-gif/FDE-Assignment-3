@@ -48,6 +48,8 @@ def test_complete_customer_journey(client, headers):
         "warrant_issued",
         "evidence_verified",
     }
-    assert client.get("/v1/audit?format=csv", headers=audit_headers).headers[
-        "content-type"
-    ].startswith("text/csv")
+    assert (
+        client.get("/v1/audit?format=csv", headers=audit_headers)
+        .headers["content-type"]
+        .startswith("text/csv")
+    )
