@@ -131,12 +131,21 @@ CREATE TABLE IF NOT EXISTS delegation_briefs (
   generated_at TEXT NOT NULL,
   FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
 );
+CREATE TABLE IF NOT EXISTS team_summaries (
+  team TEXT NOT NULL, workspace_id TEXT NOT NULL, facts_hash TEXT NOT NULL,
+  prose TEXT NOT NULL, prose_source TEXT NOT NULL, generated_at TEXT NOT NULL,
+  provider TEXT, model TEXT,
+  PRIMARY KEY (workspace_id, team),
+  FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+);
 CREATE INDEX IF NOT EXISTS idx_delegations_workspace ON delegations(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_warrants_workspace ON warrants(workspace_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_events(workspace_id, seq);
 CREATE INDEX IF NOT EXISTS idx_telemetry_name ON telemetry_events(workspace_id, name);
 CREATE INDEX IF NOT EXISTS idx_extraction_cache_issue ON extraction_cache(issue_id, issue_revision);
 CREATE INDEX IF NOT EXISTS idx_briefs_workspace ON delegation_briefs(workspace_id, generated_at);
+CREATE INDEX IF NOT EXISTS idx_team_summaries_generated
+  ON team_summaries(workspace_id, generated_at);
 CREATE TABLE IF NOT EXISTS linear_issue_links (
   issue_id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
@@ -209,6 +218,17 @@ class Database:
             for name, definition in usage_additions.items():
                 if name not in usage_columns:
                     connection.execute(f"ALTER TABLE model_usage ADD COLUMN {name} {definition}")
+                    
+            summary_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(team_summaries)"
+                ).fetchall()
+            }
+            for name in ("provider", "model"):
+                if name not in summary_columns:
+                    connection.execute(f"ALTER TABLE team_summaries ADD COLUMN {name} TEXT")
+                    
             # linear_issue_links is created via SCHEMA above; no ALTER needed
 
     @contextmanager

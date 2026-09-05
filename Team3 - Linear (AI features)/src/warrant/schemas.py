@@ -233,3 +233,28 @@ class LinearImportRequest(BaseModel):
 class WarrantRevocation(BaseModel):
     actor_id: str = Field(min_length=2, max_length=80)
     reason: str = Field(min_length=3, max_length=1000)
+
+
+class TeamSummaryTelemetry(BaseModel):
+    """Telemetry payload for team_summary_viewed events.
+
+    Only aggregate counts are recorded — no raw issue body, title, or prose.
+    """
+
+    event: Literal["team_summary_viewed"] = "team_summary_viewed"
+    team: str = Field(min_length=1, max_length=80)
+    issue_count: int = Field(ge=0)
+    delegation_count: int = Field(ge=0)
+
+
+class TeamSummaryProse(BaseModel):
+    """Schema for AI-generated team accountability summaries.
+    
+    The AI must generate a purely explanatory summary of the provided deterministic facts.
+    It cannot authorise, approve, or deny anything, nor can it modify policy.
+    """
+    prose: str = Field(
+        min_length=10,
+        max_length=2000,
+        description="A readable explanation of the deterministic team accountability facts.",
+    )

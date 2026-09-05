@@ -50,6 +50,9 @@ class SpyProvider(LLMProvider):
     def brief(self, detail, repair_error=None):
         raise NotImplementedError
 
+    def team_summary(self, facts, repair_error=None):
+        raise NotImplementedError
+
 
 def test_transport_errors_retry_twice(monkeypatch):
     delays: list[float] = []

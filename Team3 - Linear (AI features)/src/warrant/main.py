@@ -806,6 +806,26 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "next_cursor": events[-1]["seq"] if len(events) == limit else None,
         }
 
+    @app.get("/v1/summaries/team/{team}")
+    async def team_summary_endpoint(
+        team: str,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+    ) -> dict:
+        workspace_id = workspace(x_workspace_id)
+        return service.team_accountability_summary(workspace_id, team, x_actor_id or "")
+
+    @app.post("/v1/summaries/team/{team}/refresh")
+    async def refresh_team_summary_endpoint(
+        team: str,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict:
+        require_csrf(x_csrf_token)
+        workspace_id = workspace(x_workspace_id)
+        return service.refresh_team_summary(workspace_id, team, x_actor_id or "")
+
     @app.get("/v1/evaluations")
     async def latest_evaluation() -> dict:
         path = PROJECT_ROOT / "evaluations" / "results.json"

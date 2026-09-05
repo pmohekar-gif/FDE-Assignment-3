@@ -1685,6 +1685,414 @@ class WarrantService:
         return filtered
 
     # ------------------------------------------------------------------
+    # Team accountability summary (read-only, deterministic)
+    # ------------------------------------------------------------------
+
+    def _team_accountability_facts(self, workspace_id: str, team: str) -> dict[str, Any]:
+        """Gather pure, deterministic facts about a team's accountability state.
+        Raises NotFound if team does not exist.
+        """
+        # ── Team existence check ─────────────────────────────────────────
+        team_issue_count = self.db.one(
+            "SELECT COUNT(*) AS n FROM issues WHERE workspace_id=? AND team=?",
+            (workspace_id, team),
+        )
+        if not team_issue_count or int(team_issue_count["n"]) == 0:
+            raise NotFound("team not found")
+        issue_count = int(team_issue_count["n"])
+
+        # ── Priority mix ─────────────────────────────────────────────────
+        priority_rows = self.db.all(
+            "SELECT priority, COUNT(*) AS n FROM issues "
+            "WHERE workspace_id=? AND team=? GROUP BY priority",
+            (workspace_id, team),
+        )
+        priority_mix = {row["priority"]: int(row["n"]) for row in priority_rows}
+
+        # ── Issue IDs for this team (used to join through delegations) ───
+        team_issue_ids = [
+            row["id"]
+            for row in self.db.all(
+                "SELECT id FROM issues WHERE workspace_id=? AND team=?",
+                (workspace_id, team),
+            )
+        ]
+        placeholders = ",".join("?" for _ in team_issue_ids)
+
+        # ── All delegation IDs for this team (aggregate counts) ──────────
+        all_delegation_ids: list[str] = []
+        if team_issue_ids:
+            all_delegation_rows = self.db.all(
+                "SELECT d.id FROM delegations d "
+                f"WHERE d.workspace_id=? AND d.issue_id IN ({placeholders})",
+                [workspace_id, *team_issue_ids],
+            )
+            all_delegation_ids = [row["id"] for row in all_delegation_rows]
+
+        delegation_count = len(all_delegation_ids)
+
+        # ── Recent delegations (display, capped at 20) ──────────────────
+        delegations: list[dict[str, Any]] = []
+        if team_issue_ids:
+            delegation_rows = self.db.all(
+                "SELECT d.id, d.status, d.target_agent_id, d.created_at, "
+                "i.external_key "
+                "FROM delegations d JOIN issues i ON i.id=d.issue_id "
+                f"WHERE d.workspace_id=? AND d.issue_id IN ({placeholders}) "
+                "ORDER BY d.created_at DESC LIMIT 20",
+                [workspace_id, *team_issue_ids],
+            )
+            for row in delegation_rows:
+                delegations.append(
+                    {
+                        "id": row["id"],
+                        "status": row["status"],
+                        "target_agent_id": row["target_agent_id"],
+                        "issue_ref": row["external_key"],
+                        "created_at": row["created_at"],
+                    }
+                )
+
+        # ── Verdict counts (over ALL delegations) ────────────────────────
+        verdict_counts: dict[str, int] = {}
+        if all_delegation_ids:
+            d_placeholders = ",".join("?" for _ in all_delegation_ids)
+            verdict_rows = self.db.all(
+                "SELECT json_extract(result_json, '$.verdict') AS verdict, "
+                "COUNT(*) AS n FROM policy_decisions "
+                f"WHERE delegation_id IN ({d_placeholders}) GROUP BY verdict",
+                all_delegation_ids,
+            )
+            verdict_counts = {row["verdict"]: int(row["n"]) for row in verdict_rows}
+
+        # ── Pending human approvals ──────────────────────────────────────
+        pending_approvals = 0
+        if team_issue_ids:
+            pending_row = self.db.one(
+                "SELECT COUNT(*) AS n FROM delegations "
+                f"WHERE workspace_id=? AND issue_id IN ({placeholders}) "
+                "AND status='awaiting_approval'",
+                [workspace_id, *team_issue_ids],
+            )
+            pending_approvals = int(pending_row["n"]) if pending_row else 0
+
+        # ── Warrant breakdown (over ALL delegations) ─────────────────────
+        # Status precedence (read-only, no sweep mutation):
+        #   revoked_at set  → revoked
+        #   expired_at set  → expired (swept)
+        #   consumed_at set → consumed
+        #   expires_at<=now → expired (unswept, dynamic check)
+        #   else            → active
+        active_warrants = 0
+        expired_warrants = 0
+        revoked_warrants = 0
+        consumed_warrants = 0
+        now_iso = self.now()
+        if all_delegation_ids:
+            warrant_rows = self.db.all(
+                "SELECT consumed_at, revoked_at, expired_at, expires_at "
+                f"FROM warrants WHERE delegation_id IN ({d_placeholders})",
+                all_delegation_ids,
+            )
+            for w in warrant_rows:
+                if w["revoked_at"]:
+                    revoked_warrants += 1
+                elif w["expired_at"]:
+                    expired_warrants += 1
+                elif w["consumed_at"]:
+                    consumed_warrants += 1
+                elif w["expires_at"] and w["expires_at"] <= now_iso:
+                    expired_warrants += 1
+                else:
+                    active_warrants += 1
+
+        # ── Failed / inconclusive verifications ──────────────────────────
+        failed_verifications = 0
+        inconclusive_verifications = 0
+        if all_delegation_ids:
+            # warrants → evidence_bundles → verification_verdicts
+            verification_rows = self.db.all(
+                "SELECT vv.verdict FROM verification_verdicts vv "
+                "JOIN evidence_bundles eb ON eb.id=vv.bundle_id "
+                "JOIN warrants w ON w.id=eb.warrant_id "
+                f"WHERE w.delegation_id IN ({d_placeholders})",
+                all_delegation_ids,
+            )
+            for vr in verification_rows:
+                if vr["verdict"] == "FAIL":
+                    failed_verifications += 1
+                elif vr["verdict"] == "INCONCLUSIVE":
+                    inconclusive_verifications += 1
+
+        # ── Denied delegations ───────────────────────────────────────────
+        denied_delegations = verdict_counts.get("DENY", 0)
+
+        # ── Risk surfaces ────────────────────────────────────────────────
+        risky_surfaces: list[str] = []
+        protected_surfaces: list[str] = []
+        if all_delegation_ids:
+            risk_rows = self.db.all(
+                "SELECT result_json FROM risk_assessments "
+                f"WHERE delegation_id IN ({d_placeholders})",
+                all_delegation_ids,
+            )
+            seen_surfaces: set[str] = set()
+            for rr in risk_rows:
+                assessment = Database.loads(rr["result_json"], {})
+                for surface in assessment.get("proposed_surfaces", []):
+                    if surface not in seen_surfaces:
+                        seen_surfaces.add(surface)
+                        risky_surfaces.append(surface)
+
+            # Cross-reference with protected/security-sensitive surfaces
+            surface_defs = self.db.all(
+                "SELECT glob, label, protected, security_sensitive "
+                "FROM surfaces WHERE workspace_id=?",
+                (workspace_id,),
+            )
+
+            for surf in risky_surfaces:
+                for sdef in surface_defs:
+                    if fnmatch.fnmatch(surf, sdef["glob"]) and (
+                        sdef["protected"] or sdef["security_sensitive"]
+                    ):
+                        if surf not in protected_surfaces:
+                            protected_surfaces.append(surf)
+
+        # ── Audit chain health ───────────────────────────────────────────
+        audit_detail = self.audit.verify_detail(workspace_id)
+
+        return {
+            "team": team,
+            "issue_count": issue_count,
+            "priority_mix": priority_mix,
+            "recent_delegations": delegations,
+            "delegation_count": delegation_count,
+            "verdict_counts": verdict_counts,
+            "pending_human_approvals": pending_approvals,
+            "denied_delegations": denied_delegations,
+            "active_warrants": active_warrants,
+            "expired_warrants": expired_warrants,
+            "revoked_warrants": revoked_warrants,
+            "consumed_warrants": consumed_warrants,
+            "failed_verifications": failed_verifications,
+            "inconclusive_verifications": inconclusive_verifications,
+            "risky_surfaces": risky_surfaces,
+            "protected_surfaces": protected_surfaces,
+            "audit_chain": {
+                "verified": audit_detail["verified"],
+                "broken_at_seq": audit_detail["broken_at_seq"],
+            },
+        }
+
+    def team_accountability_summary(
+        self, workspace_id: str, team: str, actor_id: str
+    ) -> dict[str, Any]:
+        """Return a deterministic, read-only accountability summary for *team*.
+
+        Guarantees
+        ----------
+        * No domain-state mutation; only telemetry is recorded.
+        * No creation/update of approvals, warrants, policy decisions,
+          delegations, evidence, or issues.
+        * Telemetry contains only aggregate counts — no raw issue body or prose.
+        * Does not generate cache prose on cache miss.
+        """
+        # ── Auth gate ────────────────────────────────────────────────────
+        self.require_admin(workspace_id, actor_id)
+
+        # ── Get facts and hash ───────────────────────────────────────────
+        facts = self._team_accountability_facts(workspace_id, team)
+        facts_hash = hashlib.sha256(
+            Database.dumps(facts).encode("utf-8")
+        ).hexdigest()
+
+        # ── Fetch cache ──────────────────────────────────────────────────
+        cache_row = self.db.one(
+            "SELECT facts_hash, prose, prose_source, generated_at, "
+            "provider, model "
+            "FROM team_summaries WHERE workspace_id=? AND team=?",
+            (workspace_id, team),
+        )
+
+        if not cache_row:
+            cache_status = "miss"
+            refresh_required = True
+            prose = None
+            prose_source = None
+            generated_at = None
+            provider = None
+            model = None
+        else:
+            if cache_row["facts_hash"] == facts_hash:
+                cache_status = "hit"
+                refresh_required = False
+            else:
+                cache_status = "stale"
+                refresh_required = True
+            prose = cache_row["prose"]
+            prose_source = cache_row["prose_source"]
+            generated_at = cache_row["generated_at"]
+            provider = cache_row["provider"]
+            model = cache_row["model"]
+
+        # ── Telemetry (minimal, no raw prose) ────────────────────────────
+        self.telemetry(
+            workspace_id,
+            "team_summary_viewed",
+            None,
+            team=team,
+            issue_count=facts["issue_count"],
+            delegation_count=facts["delegation_count"],
+        )
+
+        # ── Assemble response ────────────────────────────────────────────
+        return {
+            "authorising": False,
+            "decision_source": "deterministic_policy",
+            "summary_may_change_verdict": False,
+            **facts,
+            "facts_hash": facts_hash,
+            "prose": prose,
+            "prose_source": prose_source,
+            "generated_at": generated_at,
+            "cache_status": cache_status,
+            "refresh_required": refresh_required,
+            "provider": provider,
+            "model": model,
+        }
+
+    def refresh_team_summary(
+        self, workspace_id: str, team: str, actor_id: str
+    ) -> dict[str, Any]:
+        """Regenerate deterministic prose for the team summary and update the cache."""
+        # ── Auth gate ────────────────────────────────────────────────────
+        self.require_admin(workspace_id, actor_id)
+
+        # ── Get facts and hash ───────────────────────────────────────────
+        facts = self._team_accountability_facts(workspace_id, team)
+        facts_hash = hashlib.sha256(
+            Database.dumps(facts).encode("utf-8")
+        ).hexdigest()
+
+        # ── OpenRouter Safety Guard ──────────────────────────────────────
+        block_provider = False
+        if self.settings.ai_provider == "openrouter":
+            has_linear = self.db.one(
+                "SELECT 1 FROM issues i "
+                "JOIN linear_issue_links l ON i.id = l.issue_id "
+                "WHERE i.workspace_id = ? AND i.team = ? AND l.source = 'linear' "
+                "LIMIT 1",
+                (workspace_id, team)
+            )
+            if has_linear:
+                block_provider = True
+
+        # ── Generate non-authorising prose ───────────────────────────────
+        disclaimer = (
+            "This summary provides a point-in-time snapshot of the team's accountability state. "
+            "It cannot approve or deny delegations, issue warrants, or alter policies."
+        )
+        prose_parts = [disclaimer, ""]
+        prose_parts.append(f"Team '{team}' currently has {facts['issue_count']} total issues.")
+        prose_parts.append(
+            f"There are {facts['delegation_count']} lifetime delegations, "
+            f"with {facts['active_warrants']} active warrants "
+            f"and {facts['pending_human_approvals']} pending approvals."
+        )
+        if facts['failed_verifications'] > 0:
+            prose_parts.append(f"Note: {facts['failed_verifications']} verifications have failed.")
+        
+        fallback_prose = "\n".join(prose_parts)
+        prose = fallback_prose
+        prose_source = "structured_fallback"
+        provider: str | None = None
+        model: str | None = None
+        
+        if not block_provider:
+            from .providers import ProviderError, ProviderMalformed
+            from .schemas import TeamSummaryProse
+            try:
+                response = self.provider.team_summary(facts)
+                if isinstance(response.value, TeamSummaryProse):
+                    prose = disclaimer + "\n\n" + response.value.prose
+                    prose_source = "model"
+                    provider = response.provider
+                    model = response.model
+                    
+                    self.record_usage(
+                        workspace_id,
+                        f"team_summary:{team}",
+                        "team_summary",
+                        response,
+                    )
+            except (ProviderError, ProviderMalformed) as exc:
+                # Record the failed attempt for observability
+                self.record_usage(
+                    workspace_id,
+                    f"team_summary:{team}",
+                    "team_summary",
+                    None,
+                    error=exc,
+                )
+
+        generated_at = self.now()
+
+        # ── Upsert cache ─────────────────────────────────────────────────
+        self.db.execute(
+            "INSERT INTO team_summaries "
+            "(team, workspace_id, facts_hash, prose, prose_source, generated_at, provider, model) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(workspace_id, team) DO UPDATE SET "
+            "facts_hash=excluded.facts_hash, prose=excluded.prose, "
+            "prose_source=excluded.prose_source, "
+            "generated_at=excluded.generated_at, "
+            "provider=excluded.provider, model=excluded.model",
+            (team, workspace_id, facts_hash, prose, prose_source, generated_at, provider, model),
+        )
+
+        # ── Audit event ──────────────────────────────────────────────────
+        self.audit.append(
+            workspace_id=workspace_id,
+            actor_type="human",
+            actor_id=actor_id,
+            event_type="team_summary_refreshed",
+            subject_type="team",
+            subject_id=team,
+            payload={
+                "team": team,
+                "facts_hash": facts_hash,
+                "prose_source": prose_source,
+                "generated_at": generated_at,
+            },
+        )
+
+        # ── Telemetry ────────────────────────────────────────────────────
+        self.telemetry(
+            workspace_id,
+            "team_summary_refreshed",
+            None,
+            team=team,
+            issue_count=facts["issue_count"],
+            delegation_count=facts["delegation_count"],
+        )
+
+        return {
+            "authorising": False,
+            "decision_source": "deterministic_policy",
+            "summary_may_change_verdict": False,
+            **facts,
+            "facts_hash": facts_hash,
+            "prose": prose,
+            "prose_source": prose_source,
+            "generated_at": generated_at,
+            "cache_status": "refreshed",
+            "refresh_required": False,
+            "provider": provider,
+            "model": model,
+        }
+
+    # ------------------------------------------------------------------
     # Linear adapter import
     # ------------------------------------------------------------------
 

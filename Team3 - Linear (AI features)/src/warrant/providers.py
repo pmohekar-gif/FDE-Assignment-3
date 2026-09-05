@@ -19,6 +19,7 @@ from .schemas import (
     EvidenceSubmission,
     ExtractionResult,
     JudgeResult,
+    TeamSummaryProse,
 )
 
 
@@ -32,7 +33,7 @@ class ProviderMalformed(ProviderError):
 
 @dataclass(frozen=True)
 class ProviderResponse:
-    value: ExtractionResult | JudgeResult | BriefNarrative
+    value: ExtractionResult | JudgeResult | BriefNarrative | TeamSummaryProse
     provider: str
     model: str
     latency_ms: int
@@ -70,6 +71,12 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def brief(self, detail: dict[str, Any], repair_error: str | None = None) -> ProviderResponse:
+        raise NotImplementedError
+
+    @abstractmethod
+    def team_summary(
+        self, facts: dict[str, Any], repair_error: str | None = None
+    ) -> ProviderResponse:
         raise NotImplementedError
 
 
@@ -233,6 +240,25 @@ class FixtureProvider(LLMProvider):
             None,
         )
 
+    def team_summary(
+        self, facts: dict[str, Any], repair_error: str | None = None
+    ) -> ProviderResponse:
+        started = time.perf_counter()
+        self._fail("team_summary")
+        value = TeamSummaryProse(
+            prose=f"This is a simulated AI summary for team {facts.get('team', 'Unknown')}. "
+                  f"There are {facts.get('active_warrants', 0)} active warrants."
+        )
+        return ProviderResponse(
+            value,
+            self.name,
+            self.model,
+            int((time.perf_counter() - started) * 1000),
+            None,
+            None,
+            None,
+        )
+
 
 def tolerant_json_loads(content: str) -> Any:
     """Decode the first JSON value, tolerating fences and surrounding prose.
@@ -333,7 +359,7 @@ class ChatCompletionsProvider(LLMProvider):
                 f"{system}\nReturn exactly one JSON object matching this required JSON Schema. "
                 f"Do not wrap it in markdown or prose.\nJSON_SCHEMA:\n{json.dumps(schema)}"
             )
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "temperature": 0,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -361,6 +387,8 @@ class ChatCompletionsProvider(LLMProvider):
                 if operation == "extract"
                 else JudgeResult.model_validate(parsed)
                 if operation == "judge"
+                else TeamSummaryProse.model_validate(parsed)
+                if operation == "team_summary"
                 else BriefNarrative.model_validate(parsed)
             )
         except (KeyError, IndexError, json.JSONDecodeError, ValidationError) as exc:
@@ -469,6 +497,18 @@ class ChatCompletionsProvider(LLMProvider):
         if repair_error:
             user += f"\nREPAIR_REQUIRED: prior response failed schema validation: {repair_error}"
         return self._call("brief", system, user, BriefNarrative.model_json_schema())
+
+    def team_summary(
+        self, facts: dict[str, Any], repair_error: str | None = None
+    ) -> ProviderResponse:
+        system = (
+            "Generate a readable explanation of the deterministic team accountability facts. "
+            "You cannot authorise, approve, or deny anything, nor can you modify policy."
+        )
+        user = f"TEAM_FACTS\n{json.dumps(facts)}\nEND_TEAM_FACTS"
+        if repair_error:
+            user += f"\nREPAIR_REQUIRED: prior response failed schema validation: {repair_error}"
+        return self._call("team_summary", system, user, TeamSummaryProse.model_json_schema())
 
 
 class OpenAICompatibleProvider(ChatCompletionsProvider):
@@ -587,6 +627,14 @@ class ResilientProvider(LLMProvider):
         return self._run(
             lambda error: self.primary.brief(detail, error),
             lambda error: self._fallback().brief(detail, error),
+        )
+
+    def team_summary(
+        self, facts: dict[str, Any], repair_error: str | None = None
+    ) -> ProviderResponse:
+        return self._run(
+            lambda error: self.primary.team_summary(facts, error),
+            lambda error: self._fallback().team_summary(facts, error),
         )
 
     def _fallback(self) -> LLMProvider:
