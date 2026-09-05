@@ -1,18 +1,126 @@
 {% extends "base.html" %}
-{% block title %}Audit ledger · Warrant{% endblock %}
-{% block content %}
-<section class="shell detail-head"><a class="back" href="/">← Operator inbox</a><div class="detail-title"><div><p class="eyebrow">Immutable accountability record</p><h1>Audit ledger</h1></div><span id="chain-status" class="status-pill {{ 'allow' if chain_verified else 'deny' }}">{{ 'CHAIN VERIFIED' if chain_verified else 'BROKEN AT #' ~ broken_at_seq }}</span></div></section>
-<section class="shell panel ledger-panel">
-  <div class="section-head"><div><h2>Ask the decision record</h2><p>Filters retain the complete chain verification while narrowing the displayed stories.</p></div><div class="button-row"><button id="reverify">Re-verify chain</button><button id="export-csv" class="primary">Export filtered CSV</button></div></div>
-  <form id="audit-filters" class="audit-filters" method="get"><label>From<input type="datetime-local" name="from" value="{{ filters.from }}"></label><label>To<input type="datetime-local" name="to" value="{{ filters.to }}"></label><label>Agent<select name="agent_id"><option value="">Any</option>{% for agent in agents %}<option value="{{ agent.id }}" {% if filters.agent_id==agent.id %}selected{% endif %}>{{ agent.name }}</option>{% endfor %}</select></label><label>Authority<select name="authority_id"><option value="">Any</option>{% for user in users %}<option value="{{ user.id }}" {% if filters.authority_id==user.id %}selected{% endif %}>{{ user.display_name }}</option>{% endfor %}</select></label><label>Surface<input name="surface" value="{{ filters.surface }}" placeholder="web/reports"></label><label>Verdict<select name="verdict"><option value="">Any</option>{% for value in ['ALLOW','REQUIRE_APPROVAL','DENY'] %}<option value="{{ value }}" {% if filters.verdict==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label><button type="submit">Apply filters</button><a href="/audit">Clear</a></form>
-  <div id="audit-error" class="inline-error" hidden></div>
-  <div class="audit-stories">{% for group in audit_groups %}<article class="audit-story"><div class="story-head"><div><p class="eyebrow">Delegation story</p><h3>{{ group.external_key or group.delegation_id or 'System event' }}</h3></div>{% if group.delegation_id %}<a href="/delegations/{{ group.delegation_id }}">Open decision →</a>{% endif %}</div><ol>{% for event in group.events %}<li><span class="event-icon">{{ '×' if 'den' in event.event_type or 'failed' in event.event_type else '✓' }}</span><div><strong>{{ event.event_type|replace('_',' ') }}</strong><small>{{ event.actor_type }} · {{ event.actor_id }} · <time class="relative-time" data-time="{{ event.created_at }}">{{ event.created_at }}</time></small><details><summary>Payload and integrity</summary><pre>{{ event.payload|tojson(indent=2) }}</pre><code>#{{ event.seq }} · {{ event.hash }}</code></details></div></li>{% endfor %}</ol></article>{% else %}<div class="empty"><strong>No matching audit stories</strong><p>Change the filters or run a delegation.</p></div>{% endfor %}</div>
-  {% if next_cursor %}<a class="button-link" href="/audit?cursor={{ next_cursor }}&agent_id={{ filters.agent_id|urlencode }}&authority_id={{ filters.authority_id|urlencode }}&surface={{ filters.surface|urlencode }}&verdict={{ filters.verdict|urlencode }}">Older events →</a>{% endif %}
-</section>
+{% block title %}Audit chain · Warrant{% endblock %}
+{% block view_title %}Audit chain{% endblock %}
+{% block view_count %}{{ events|length }} events{% endblock %}
+{% block head_tools %}
+<span class="chip" id="chain-status"><span class="dot" style="color:var(--{{ 'allow' if chain_verified else 'deny' }})" aria-hidden="true"></span>{{ 'CHAIN VERIFIED' if chain_verified else 'BROKEN AT #' ~ broken_at_seq }}</span>
+<button class="chip" type="button" id="reverify">Re-verify</button>
+<button class="chip" type="button" id="export-csv">Export CSV</button>
 {% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="doc">
+    <p class="crumb">Workspace <span>/</span> Immutable accountability record</p>
+    <h1>Every decision, hashed to the one before it</h1>
+    <p class="doc-sub">Filters narrow what is displayed. Chain verification always runs over the complete ledger, so a filter can never hide a break.</p>
+
+    <article class="card">
+      <h2>Filters <span class="aside">applied server-side</span></h2>
+      <form id="audit-filters" class="form-grid" method="get" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+        <label><span>From</span><input type="datetime-local" name="from" value="{{ filters.from }}"></label>
+        <label><span>To</span><input type="datetime-local" name="to" value="{{ filters.to }}"></label>
+        <label><span>Agent</span><select name="agent_id"><option value="">Any</option>{% for agent in agents %}<option value="{{ agent.id }}" {% if filters.agent_id == agent.id %}selected{% endif %}>{{ agent.name }}</option>{% endfor %}</select></label>
+        <label><span>Authority</span><select name="authority_id"><option value="">Any</option>{% for user in users %}<option value="{{ user.id }}" {% if filters.authority_id == user.id %}selected{% endif %}>{{ user.display_name }}</option>{% endfor %}</select></label>
+        <label><span>Surface</span><input name="surface" value="{{ filters.surface }}" placeholder="web/reports"></label>
+        <label><span>Verdict</span><select name="verdict"><option value="">Any</option>{% for value in ['ALLOW','REQUIRE_APPROVAL','DENY'] %}<option value="{{ value }}" {% if filters.verdict == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      </form>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn pri center" type="submit" form="audit-filters">Apply filters</button>
+        <a class="btn center" href="{{ '/audit' if auth_enabled else '/audit?actor_id=admin-demo' }}">Clear</a>
+      </div>
+      <div class="inline-error" id="audit-error" hidden></div>
+    </article>
+
+    {% for group in audit_groups %}
+    <article class="card">
+      <h2>{{ group.external_key or group.delegation_id or 'System event' }}
+        <span class="aside">{{ group.events|length }} events{% if group.delegation_id %} · <a href="/delegations/{{ group.delegation_id }}" style="color:var(--accent)">open decision &rarr;</a>{% endif %}</span>
+      </h2>
+      <div class="tl">
+        {% for event in group.events %}
+        <div class="tl-row">
+          <span class="pip {{ 'bad' if 'den' in event.event_type or 'failed' in event.event_type or 'revok' in event.event_type else 'ok' }}" aria-hidden="true"></span>
+          <code>{{ event.event_type }}</code>
+          <span class="what">{{ event.actor_type }} · {{ event.actor_id }}{% if event.verdict %} · {{ event.verdict }}{% endif %}{% if event.surfaces %} · {{ event.surfaces|join(', ') }}{% endif %}</span>
+          <span class="when relative-time" data-short data-time="{{ event.created_at }}">{{ event.created_at }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <details class="disclosure">
+        <summary>Event hashes and payloads ({{ group.events|length }})</summary>
+        <div class="inner">
+          {% for event in group.events %}
+          <p class="mono">#{{ event.seq }} · {{ event.event_type }}<br><span class="dim">{{ event.hash }}</span></p>
+          <pre>{{ event.payload|tojson(indent=2) }}</pre>
+          {% endfor %}
+        </div>
+      </details>
+    </article>
+    {% else %}
+    <div class="empty"><strong>No matching audit stories</strong><span>Change the filters or run a delegation.</span></div>
+    {% endfor %}
+
+    {% if next_cursor %}
+    <div class="btn-row" style="margin-top:12px">
+      <a class="btn center" href="/audit?cursor={{ next_cursor }}&amp;actor_id={{ filters.actor_id|default('admin-demo')|urlencode }}&amp;agent_id={{ filters.agent_id|urlencode }}&amp;authority_id={{ filters.authority_id|urlencode }}&amp;surface={{ filters.surface|urlencode }}&amp;verdict={{ filters.verdict|urlencode }}">Older events &rarr;</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <aside class="rail" aria-label="Chain integrity">
+    <div class="rail-sec">
+      <p class="rail-h">Chain integrity</p>
+      <dl class="kv">
+        <dt>Verified</dt><dd class="{{ 'ok' if chain_verified else 'bad' }}">{{ 'chain intact' if chain_verified else 'BROKEN' }}</dd>
+        <dt>Broken at</dt><dd class="{{ 'none' if not broken_at_seq }}">{{ broken_at_seq if broken_at_seq else 'nowhere' }}</dd>
+        <dt>Displayed</dt><dd>{{ events|length }}</dd>
+        <dt>Head seq</dt><dd>{{ events[0].seq if events else '—' }}</dd>
+        <dt>Head hash</dt><dd>{{ events[0].hash[:20] ~ '…' if events else '—' }}</dd>
+      </dl>
+      <p class="note">Each event hashes its own payload together with the previous event's hash. Editing or removing one event breaks every hash after it, and verification names the first broken sequence number.</p>
+    </div>
+    <div class="rail-sec">
+      <p class="rail-h">Export</p>
+      <p class="note tight">The CSV carries the same filters and the same hashes, and its filename says <code>simulated</code> because the underlying data is synthetic.</p>
+      <div class="rail-actions"><button class="btn" type="button" id="export-csv-rail">Export filtered CSV</button></div>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
 {% block scripts %}<script>
-const auditForm=document.getElementById('audit-filters');auditForm.addEventListener('submit',()=>{let field=auditForm.querySelector('[name=actor_id]');if(!field){field=document.createElement('input');field.type='hidden';field.name='actor_id';auditForm.appendChild(field);}field.value=window.WARRANT.actor;});
+const auditForm=document.getElementById('audit-filters');
+auditForm.addEventListener('submit',()=>{
+  let field=auditForm.querySelector('[name=actor_id]');
+  if(!field){field=document.createElement('input');field.type='hidden';field.name='actor_id';auditForm.appendChild(field);}
+  field.value=window.WARRANT.actor;
+});
 function filterQuery(){const data=new FormData(auditForm),params=new URLSearchParams();for(const [key,value] of data)if(value&&key!=='actor_id')params.set(key,value);return params;}
-document.getElementById('reverify').addEventListener('click',async()=>{const errorNode=document.getElementById('audit-error');try{const result=await api('/v1/audit?'+filterQuery());const status=document.getElementById('chain-status');status.textContent=result.chain_verified?'CHAIN VERIFIED':`BROKEN AT #${result.broken_at_seq}`;status.className=`status-pill ${result.chain_verified?'allow':'deny'}`;}catch(error){renderError(errorNode,error,'audit verification');}});
-document.getElementById('export-csv').addEventListener('click',async()=>{const errorNode=document.getElementById('audit-error');try{const response=await fetch('/v1/audit?format=csv&'+filterQuery(),{headers:{'X-Actor-Id':window.WARRANT.actor,'X-Workspace-Id':window.WARRANT.workspace}});if(!response.ok){const body=await response.json();throw new ApiError(response.status,body);}const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='warrant-audit-filtered.csv';link.click();URL.revokeObjectURL(url);}catch(error){renderError(errorNode,error,'CSV export');}});
+
+async function reverify(){
+  const errorNode=document.getElementById('audit-error');errorNode.hidden=true;
+  try{
+    const result=await api('/v1/audit?'+filterQuery());
+    const status=document.getElementById('chain-status');
+    status.replaceChildren();
+    const dot=document.createElement('span');dot.className='dot';dot.style.color=`var(--${result.chain_verified?'allow':'deny'})`;
+    status.append(dot,document.createTextNode(result.chain_verified?'CHAIN VERIFIED':`BROKEN AT #${result.broken_at_seq}`));
+    toast(result.chain_verified?'Chain re-verified over the complete ledger':`Chain broken at #${result.broken_at_seq}`);
+  }catch(error){renderError(errorNode,error,'audit verification');}
+}
+async function exportCsv(){
+  const errorNode=document.getElementById('audit-error');errorNode.hidden=true;
+  try{
+    const response=await fetch('/v1/audit?format=csv&'+filterQuery(),{headers:{'X-Actor-Id':window.WARRANT.actor,'X-Workspace-Id':window.WARRANT.workspace}});
+    if(!response.ok){const body=await response.json();throw new ApiError(response.status,body);}
+    const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');
+    link.href=url;link.download='warrant-audit-filtered-simulated.csv';link.click();URL.revokeObjectURL(url);
+  }catch(error){renderError(errorNode,error,'CSV export');}
+}
+document.getElementById('reverify').addEventListener('click',reverify);
+document.getElementById('export-csv').addEventListener('click',exportCsv);
+document.getElementById('export-csv-rail').addEventListener('click',exportCsv);
+registerCommand({group:'Audit',label:'Re-verify the audit chain',run:reverify});
+registerCommand({group:'Audit',label:'Export the filtered audit CSV',run:exportCsv});
 </script>{% endblock %}

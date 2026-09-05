@@ -22,8 +22,7 @@ def test_related_issues_endpoint_returns_bounded_advisory_contract_without_write
     assert all(item["external_key"] != "PAY-4471" for item in body["suggestions"])
     assert all(item["team"] == "Payments" for item in body["suggestions"])
     assert all(
-        item["relation"] in {"possible_duplicate", "related"}
-        for item in body["suggestions"]
+        item["relation"] in {"possible_duplicate", "related"} for item in body["suggestions"]
     )
     assert table_counts(client) == before
 

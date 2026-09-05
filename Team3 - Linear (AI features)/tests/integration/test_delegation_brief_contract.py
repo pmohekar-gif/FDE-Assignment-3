@@ -26,9 +26,7 @@ def assert_non_authorising_contract(brief, delegation):
     assert facts["verdict"] == delegation["decision"]["verdict"]
     assert facts["reason_codes"] == delegation["decision"]["reason_codes"]
     assert facts["proposed_surfaces"] == delegation["risk_assessment"]["proposed_surfaces"]
-    assert facts["evidence_sufficiency"] == delegation["risk_assessment"][
-        "evidence_sufficiency"
-    ]
+    assert facts["evidence_sufficiency"] == delegation["risk_assessment"]["evidence_sufficiency"]
     assert facts["missing_information"] == brief["missing_information"]
     assert facts["warrant_status"] == brief["warrant"]["status"]
 

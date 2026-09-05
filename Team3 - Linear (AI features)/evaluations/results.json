@@ -1,6 +1,6 @@
 {
   "status": "MEASURED_SYNTHETIC_POLICY_E2E_AND_RETRIEVAL",
-  "measured_at": "2026-09-01T09:13:27.710213+00:00",
+  "measured_at": "2026-09-03T11:43:42.215055+00:00",
   "dataset": {
     "path": "evaluations/golden.json",
     "cases": 120,
@@ -360,10 +360,10 @@
         "WEB-3261",
         "PLAT-3162",
         "PLAT-3362",
-        "PAY-3010",
-        "PAY-3210",
         "DATA-3114",
         "DATA-3314",
+        "PAY-3010",
+        "PAY-3210",
         "GROW-3013"
       ],
       "rank": 1,

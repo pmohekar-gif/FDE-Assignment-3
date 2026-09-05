@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Warrant</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="demo-banner">
+  <b>{{ 'Simulated' if fixture_mode else 'Live model' }}</b>
+  <span>Warrant is a delegation control plane for AI coding agents. Every identity below is synthetic demo data from <code>warrant.seed</code>.</span>
+</div>
+
+<div class="auth">
+  <div class="auth-box">
+    <div class="auth-mark">
+      <span class="mark" aria-hidden="true">W</span>
+      <span><span class="ws-name">Warrant</span><span class="ws-sub">{{ workspace_id }}</span></span>
+    </div>
+
+    <article class="card">
+      <h1>Sign in</h1>
+      <p>
+        This is a <strong>demo identity gate</strong>, not a production identity provider: one shared
+        password from configuration, no OAuth or SSO, no self-registration, no password reset, no MFA.
+        It exists so the acting identity comes from a server-side session instead of a client-supplied
+        <code>X-Actor-Id</code> header. Signing in only establishes <em>who</em> you are; deterministic
+        policy still decides what you may do.
+      </p>
+      {% if error %}
+      <div class="inline-error error-401" role="alert"><strong>Authentication required</strong><p>{{ error }}</p></div>
+      {% endif %}
+      <form class="auth-form" method="post" action="/login">
+        <!-- Keep this hidden token: POST /login and POST /logout use the same demo CSRF check as every other mutation. -->
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ next }}">
+        <label class="field"><span>User</span>
+          <input id="username" name="username" autocomplete="username" required value="{{ credentials[0].username if credentials else '' }}">
+        </label>
+        <label class="field"><span>Demo password</span>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="btn pri center" type="submit">Sign in</button>
+      </form>
+    </article>
+
+    <article class="card">
+      <h2>Demo credentials <span class="aside">published on purpose</span></h2>
+      <p>Every seeded user shares the configured <code>DEMO_PASSWORD</code>. Roles are what differ, and roles are what authority depends on.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>User</th><th>Name</th><th>Role</th><th>Password</th></tr></thead>
+          <tbody>
+            {% for credential in credentials %}
+            <tr><th><code>{{ credential.username }}</code></th><td>{{ credential.display_name }}</td><td>{{ credential.role }}</td><td><code>{{ credential.password }}</code></td></tr>
+            {% else %}
+            <tr><td colspan="4">Authentication is disabled in this workspace, so there are no credentials to publish.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="note">Sign in as <code>admin-demo</code> to reach the audit chain and policy activation. Sign in as a lead or a member to watch authority be refused rather than granted.</p>
+    </article>
+  </div>
+</div>
+
+<script>
+  /* The theme choice made inside the app applies here too, so sign-in does not flash. */
+  (function(){
+    try{const stored=localStorage.getItem('warrant.theme');if(stored==='light'||stored==='dark')document.documentElement.setAttribute('data-theme',stored);}catch(error){}
+  })();
+</script>
+</body>
+</html>

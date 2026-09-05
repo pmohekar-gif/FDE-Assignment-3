@@ -8,9 +8,7 @@ def table_counts(client):
 
 
 def triage_service(client):
-    return TriageRecommendationService(
-        client.app.state.db, client.app.state.service.retrieval
-    )
+    return TriageRecommendationService(client.app.state.db, client.app.state.service.retrieval)
 
 
 def assert_bounded_contract(result):

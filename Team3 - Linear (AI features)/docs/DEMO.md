@@ -3,7 +3,7 @@
 ## Reset
 
 ```bash
-cd Session/Tasks/Week3
+cd "Session/Tasks/Week3/Team3 - Linear (AI features)"
 make demo-reset
 make dev
 ```
@@ -84,6 +84,33 @@ Open **Evaluation**. State precisely: “On 120 synthetic, labelled policy cases
 allows are zero and fail-closed correctness is 100%. Approval burden is 43.64%, outside
 the 35% target and above K3's 40% threshold. Verdict accuracy is interpreter conformance,
 not product quality; the fixture-backed E2E slice is the only end-to-end signal.”
+
+## 8. Agent, code grounding, and execution artifact
+
+Return to the `WEB-4519` delegation. In **Ask Agent**, ask “Why was this allowed?” and
+then “Where is delegation approval enforced in code?” Show that issue/policy answers
+cite workspace records while code answers cite actual paths and line ranges. Point out
+the advisory/non-authorising label.
+
+Choose **mock (simulated)** and start the coding session. The mock is the reproducible
+demo path, not a claim of real agent intelligence. Open the session and show:
+
+- immutable issue/policy/warrant/base-revision contract;
+- explicit provider kind and state/event timeline;
+- isolated worktree and `agent/*` branch;
+- host verification result;
+- changed-file summary and mandatory unified diff;
+- draft-PR unavailability reason when the feature/auth/origin gate is closed.
+
+For an authorised host with a working CLI and Git checkout, opt into a real runner with
+`EXTERNAL_CODING_AGENT_ENABLED=true`; never enable it merely to make a demo claim.
+
+## Optional Slack contract demo
+
+Use a correctly signed fixture request against `/v1/integrations/slack/events` to show
+URL verification, an `app_mention` summary, deduplication, and a `start coding PAY-4471`
+response that stops for approval. Do not claim live Slack delivery without a real app
+installation and bot token.
 
 ## Optional degraded path
 

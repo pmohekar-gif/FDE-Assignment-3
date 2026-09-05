@@ -396,9 +396,8 @@ def _brief_grounding_metrics() -> tuple[dict[str, Any], list[dict[str, Any]]]:
                 [prose["summary"], *prose["evidence_notes"], *prose["human_next_steps"]]
             ).lower()
             unsupported = [pattern for pattern in unsupported_patterns if pattern in corpus]
-            contradiction = (
-                label["expected_verdict"] == "ALLOW"
-                and any(pattern in corpus for pattern in ("do not execute", "policy denied"))
+            contradiction = label["expected_verdict"] == "ALLOW" and any(
+                pattern in corpus for pattern in ("do not execute", "policy denied")
             )
             checks = {
                 "issue_key": label["issue"].lower() in prose["summary"].lower(),

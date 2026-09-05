@@ -1448,8 +1448,7 @@ class WarrantService:
             cached_response = Database.loads(cached["response_json"], {})
             cached_response["lifecycle"] = {
                 "cache_hit": True,
-                "stale": cached["facts_hash"] != facts_hash
-                or cached["prompt_hash"] != prompt_hash,
+                "stale": cached["facts_hash"] != facts_hash or cached["prompt_hash"] != prompt_hash,
                 "generated_at": cached["generated_at"],
                 "refresh_required": cached["facts_hash"] != facts_hash
                 or cached["prompt_hash"] != prompt_hash,

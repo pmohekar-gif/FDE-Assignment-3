@@ -22,6 +22,13 @@ class Consequence(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class AuthTokenRequest(BaseModel):
+    """Shared demo credential exchange for an API bearer token."""
+
+    username: str = Field(max_length=80)
+    password: str = Field(max_length=256)
+
+
 class Reversibility(str, Enum):
     AUTOMATIC = "AUTOMATIC"
     MANUAL = "MANUAL"
@@ -192,6 +199,20 @@ class BriefNarrative(BaseModel):
     human_next_steps: list[str] = Field(max_length=8)
 
 
+class AnswerResult(BaseModel):
+    """Grounded natural-language synthesis of already-retrieved facts.
+
+    Backs the Contextual Agent ("Ask Agent") and Code Intelligence query chat
+    surfaces. The model may only phrase what the supplied facts already say —
+    it never adds authority, never sets a verdict, and never asserts anything
+    the facts do not support.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str = Field(min_length=1, max_length=4000)
+
+
 class WarrantView(BaseModel):
     id: str
     delegation_id: str
@@ -248,13 +269,58 @@ class TeamSummaryTelemetry(BaseModel):
 
 
 class TeamSummaryProse(BaseModel):
-    """Schema for AI-generated team accountability summaries.
-    
-    The AI must generate a purely explanatory summary of the provided deterministic facts.
-    It cannot authorise, approve, or deny anything, nor can it modify policy.
-    """
+    """Schema for non-authorising AI-generated team accountability prose."""
+
     prose: str = Field(
         min_length=10,
         max_length=2000,
-        description="A readable explanation of the deterministic team accountability facts.",
+        description="A readable explanation of deterministic team accountability facts.",
     )
+
+
+class AgentScope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issue_id: str | None = Field(default=None, max_length=80)
+    delegation_id: str | None = Field(default=None, max_length=80)
+    coding_session_id: str | None = Field(default=None, max_length=80)
+    repository_id: str | None = Field(default=None, max_length=120)
+
+
+class AgentQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=2, max_length=2000)
+    scope: AgentScope = Field(default_factory=AgentScope)
+    conversation_id: str | None = Field(default=None, max_length=80)
+
+
+class CodeQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=2, max_length=1000)
+    repository_id: str = Field(default="local", min_length=1, max_length=120)
+    limit: int = Field(default=8, ge=1, le=20)
+
+
+class CodingSessionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    delegation_id: str = Field(min_length=4, max_length=80)
+    provider: Literal["mock", "codex"] | None = None
+    requested_outcome: str | None = Field(default=None, max_length=4000)
+    source: Literal["ui", "api", "slack"] = "api"
+
+
+class CodingSessionCancel(BaseModel):
+    actor_id: str = Field(min_length=2, max_length=80)
+
+
+class PullRequestCreate(BaseModel):
+    actor_id: str = Field(min_length=2, max_length=80)
+    title: str | None = Field(default=None, max_length=240)
+    body: str | None = Field(default=None, max_length=5000)
+    # Omitted entirely -> fall back to PR_REVIEWERS / PR_BASE_BRANCH from configuration.
+    # An explicit empty list means "open it with no reviewers", which is not the same thing.
+    reviewers: list[str] | None = Field(default=None, max_length=25)
+    base: str | None = Field(default=None, max_length=240)

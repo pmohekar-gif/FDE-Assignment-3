@@ -107,8 +107,7 @@ def test_triage_view_telemetry_contains_no_issue_body(client, headers):
     )
     assert response.status_code == 202
     event = client.app.state.db.one(
-        "SELECT attributes_json FROM telemetry_events "
-        "WHERE name='triage_recommendation_viewed'"
+        "SELECT attributes_json FROM telemetry_events WHERE name='triage_recommendation_viewed'"
     )
     assert client.app.state.db.loads(event["attributes_json"]) == {
         "issue_ref": "PAY-4471",

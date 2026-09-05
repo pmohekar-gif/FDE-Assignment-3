@@ -5,48 +5,227 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Warrant{% endblock %}</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
-  <header class="topbar">
-    <a class="brand" href="/"><span class="brand-mark">W</span><span>Warrant</span></a>
-    <nav aria-label="Primary navigation">
-      <a href="/">Inbox</a><a href="/policy">Policy</a><a id="audit-nav" href="/audit?actor_id=admin-demo">Audit</a><a href="/evaluation">Evaluation</a>
-    </nav>
-    <label class="actor-switcher">Acting as:
-      <select id="actor-switcher" aria-label="Session actor">
-        {% for user in users|default([]) %}<option value="{{ user.id }}" {% if user.id == 'admin-demo' %}selected{% endif %}>{{ user.display_name }} · {{ user.role }}</option>{% endfor %}
-      </select>
-    </label>
-    <div id="health-mode" class="mode {{ 'degraded' if fixture_failure else ('fixture' if fixture_mode else 'live') }}">
-      <span></span><b>{{ 'DEGRADED · ' ~ fixture_failure if fixture_failure else ('SIMULATED / FIXTURE AI' if fixture_mode else 'LIVE MODEL') }}</b>
+<body class="shell">
+{% set path = request.url.path if request else '/' %}
+<div id="degraded-banner" class="demo-banner degraded" {% if not fixture_failure %}hidden{% endif %}>
+  <b>Degraded</b>
+  <span id="degraded-detail">{{ 'Injected failure: ' ~ fixture_failure ~ '. Policy fails closed and increases human involvement rather than guessing.' if fixture_failure else '' }}</span>
+</div>
+<div class="demo-banner">
+  <b>{{ 'Simulated' if fixture_mode else 'Live model' }}</b>
+  <span>Every issue, identity, agent, verdict and diff in this workspace is synthetic demo data from <code>warrant.seed</code> &mdash; not customer evidence. AI assembles evidence; deterministic policy decides authority.</span>
+</div>
+
+<div class="app">
+  <nav class="side" aria-label="Workspace">
+    <div class="ws">
+      <span class="mark" aria-hidden="true">W</span>
+      <span><span class="ws-name">Warrant</span><span class="ws-sub">{{ workspace_id }}</span></span>
     </div>
-  </header>
-  <main>{% block content %}{% endblock %}</main>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script>
-    window.WARRANT = {
-      csrf: {{ csrf_token|default('')|tojson }}, fixture: {{ fixture_mode|default(true)|tojson }},
-      workspace: {{ workspace_id|default('ws-demo')|tojson }}, actor: localStorage.getItem('warrant.actor') || 'admin-demo'
-    };
-    class ApiError extends Error { constructor(status, body) { super(body.error || body.detail || `Request failed (${status})`); this.status=status; this.body=body; } }
-    function toast(message) { const node=document.getElementById('toast'); node.textContent=message; node.className='toast show'; setTimeout(()=>node.className='toast',2800); }
-    async function api(path, options={}) {
-      options.headers=Object.assign({'Content-Type':'application/json','X-CSRF-Token':window.WARRANT.csrf,'X-Workspace-Id':window.WARRANT.workspace,'X-Actor-Id':window.WARRANT.actor},options.headers||{});
-      const response=await fetch(path,options), type=response.headers.get('content-type')||'';
-      const body=type.includes('json')?await response.json():await response.text();
-      if(!response.ok) throw new ApiError(response.status,typeof body==='object'?body:{error:body}); return body;
+
+    <p class="nav-label">Queue</p>
+    <a class="nav-item" href="/" {% if path == '/' %}aria-current="page"{% endif %}>
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h8M2 12h5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+      Triage <span class="ct {{ 'warn' if nav and nav.triage else '' }}">{{ (nav.triage if nav else 0) }}</span>
+    </a>
+    <a class="nav-item" href="/delegations" {% if path.startswith('/delegations') %}aria-current="page"{% endif %}>
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M5.5 8.2l1.8 1.8 3.4-3.6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+      Delegations <span class="ct">{{ (nav.delegations if nav else 0) }}</span>
+    </a>
+    <a class="nav-item" href="/coding-sessions" {% if path.startswith('/coding-sessions') %}aria-current="page"{% endif %}>
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 5.5L3 8l3 2.5M10 5.5L13 8l-3 2.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Coding sessions <span class="ct">{{ (nav.sessions if nav else 0) }}</span>
+    </a>
+
+    <p class="nav-label">Workspace</p>
+    <a class="nav-item" href="/#issue-inbox">
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+      Issues <span class="ct">{{ (nav.issues if nav else 0) }}</span>
+    </a>
+    <a class="nav-item" href="/code" {% if path.startswith('/code') %}aria-current="page"{% endif %}>
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v9h-11z" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M5 6.5L6.8 8 5 9.5M8.4 9.8h2.6" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
+      Code intelligence <span class="ct {{ 'ok' if code_intelligence_enabled else 'off' }}">{{ 'on' if code_intelligence_enabled else 'off' }}</span>
+    </a>
+    <a class="nav-item" href="/policy" {% if path.startswith('/policy') %}aria-current="page"{% endif %}>
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l5 2.4v4c0 3-2.2 4.8-5 5.6C5.2 13.2 3 11.4 3 8.4v-4L8 2z" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+      Policy <span class="ct">{{ (nav.policy_version if nav else '—') }}</span>
+    </a>
+    <a class="nav-item" id="audit-nav" href="{{ '/audit' if auth_enabled else '/audit?actor_id=admin-demo' }}" {% if path.startswith('/audit') %}aria-current="page"{% endif %}>
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h3l1.5-4 2 8L11 8h2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Audit chain <span class="ct {{ 'ok' if nav and nav.audit_ok else 'bad' }}">{{ 'ok' if nav and nav.audit_ok else 'broken' }}</span>
+    </a>
+    <a class="nav-item" href="/evaluation" {% if path.startswith('/evaluation') %}aria-current="page"{% endif %}>
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13V7M7 13V3M11 13V9" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      Evaluation <span class="ct">{{ (nav.evaluation if nav else 0) }}</span>
+    </a>
+    <a class="nav-item" href="/integrations" {% if path.startswith('/integrations') %}aria-current="page"{% endif %}>
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="8" r="2" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="11.5" cy="4.5" r="2" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="11.5" cy="11.5" r="2" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M6.4 7l3.3-1.7M6.4 9l3.3 1.7" stroke="currentColor" stroke-width="1.3"/></svg>
+      Integrations <span class="ct">{{ (nav.integrations if nav else 0) }}</span>
+    </a>
+
+    <div class="side-foot">
+      {% if auth_enabled %}
+        {% if current_user %}
+        <div class="actor">
+          <span class="av" aria-hidden="true">{{ current_user.display_name[:2]|upper }}</span>
+          <span><span class="actor-name">Signed in as <b>{{ current_user.display_name }} · {{ current_user.role }}</b></span><span class="actor-role">{{ current_user.id }}</span></span>
+        </div>
+        <form class="signout" method="post" action="/logout">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Sign out</button>
+        </form>
+        {% else %}
+        <a class="btn center" href="/login">Sign in</a>
+        {% endif %}
+      {% else %}
+      <label class="actor-select"><span>Acting as</span>
+        <select id="actor-switcher" aria-label="Session actor">
+          {% for user in users|default([]) %}<option value="{{ user.id }}" {% if user.id == 'admin-demo' %}selected{% endif %}>{{ user.display_name }} · {{ user.role }} · {{ user.id }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <div id="health-mode" class="mode {{ 'degraded' if fixture_failure else ('fixture' if fixture_mode else 'live') }}">
+        <span class="dot" aria-hidden="true"></span><b>{{ 'DEGRADED · ' ~ fixture_failure if fixture_failure else ('SIMULATED · FIXTURE AI' if fixture_mode else 'LIVE MODEL · ' ~ provider) }}</b>
+      </div>
+      <button class="theme-btn" id="theme-toggle" type="button">
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5a5.5 5.5 0 100 11 4.2 4.2 0 010-11z" fill="currentColor"/></svg>
+        <span id="theme-label">Light theme</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="view-head">
+      <h1 class="view-title">{% block view_title %}Warrant{% endblock %}</h1>
+      <span class="view-count">{% block view_count %}{% endblock %}</span>
+      <div class="head-tools">
+        {% block head_tools %}{% endblock %}
+        <button class="chip" type="button" id="open-palette" aria-label="Open command palette"><span class="k">&#8984;</span>K</button>
+      </div>
+    </div>
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<div class="scrim" id="palette-scrim" hidden>
+  <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="palette-in">
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input type="text" id="palette-input" placeholder="Search issues, ask the agent, or run a command…" aria-label="Command or search" autocomplete="off">
+      <button class="chip" type="button" id="close-palette">esc</button>
+    </div>
+    <div class="palette-list" id="palette-list" role="listbox" aria-label="Commands"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script>
+  window.WARRANT = {
+    csrf: {{ csrf_token|default('')|tojson }}, fixture: {{ fixture_mode|default(true)|tojson }},
+    workspace: {{ workspace_id|default('ws-demo')|tojson }}, authEnabled: {{ auth_enabled|default(false)|tojson }},
+    /* With AUTH_ENABLED the acting identity comes from the server-side session and
+       cannot be changed client-side; the X-Actor-Id header below is ignored by the server. */
+    actor: {{ (current_user.id if current_user else None)|tojson }} || localStorage.getItem('warrant.actor') || 'admin-demo',
+    commands: [], shortcuts: {}
+  };
+  class ApiError extends Error { constructor(status, body) { super(body.error || body.detail || `Request failed (${status})`); this.status=status; this.body=body; } }
+  function toast(message) { const node=document.getElementById('toast'); node.textContent=message; node.className='toast show'; setTimeout(()=>node.className='toast',2800); }
+  async function api(path, options={}) {
+    options.headers=Object.assign({'Content-Type':'application/json','X-CSRF-Token':window.WARRANT.csrf,'X-Workspace-Id':window.WARRANT.workspace,'X-Actor-Id':window.WARRANT.actor},options.headers||{});
+    const response=await fetch(path,options), type=response.headers.get('content-type')||'';
+    const body=type.includes('json')?await response.json():await response.text();
+    if(!response.ok) throw new ApiError(response.status,typeof body==='object'?body:{error:body}); return body;
+  }
+  function renderError(container,error,context='request') {
+    const labels={401:'Authentication required',403:'Authority prohibited',409:'State conflict',410:'Authority expired',422:'Evidence or policy invalid',503:'Capability unavailable'};
+    container.hidden=false; container.className=`inline-error error-${error.status||500}`;
+    container.innerHTML=`<strong>${labels[error.status]||'Request failed'}</strong><p>${error.message}</p><small>${context} was not applied.</small>`;
+  }
+  function formatRelative(value) { const delta=(new Date(value).getTime()-Date.now())/1000,future=delta>0,seconds=Math.abs(delta); let amount,unit; if(seconds<60){amount=Math.max(1,Math.round(seconds));unit='second';}else if(seconds<3600){amount=Math.round(seconds/60);unit='minute';}else if(seconds<86400){amount=Math.round(seconds/3600);unit='hour';}else{amount=Math.round(seconds/86400);unit='day';}return future?`in ${amount} ${unit}${amount===1?'':'s'}`:`${amount} ${unit}${amount===1?'':'s'} ago`; }
+  function shortRelative(value){ const seconds=Math.abs((new Date(value).getTime()-Date.now())/1000); if(seconds<60)return `${Math.max(1,Math.round(seconds))}s`; if(seconds<3600)return `${Math.round(seconds/60)}m`; if(seconds<86400)return `${Math.round(seconds/3600)}h`; return `${Math.round(seconds/86400)}d`; }
+  function applyRelativeTimes(root=document){ root.querySelectorAll('.relative-time').forEach(node=>{if(!node.dataset.time)return;node.textContent=node.dataset.short!==undefined?shortRelative(node.dataset.time):formatRelative(node.dataset.time);node.title=node.dataset.time;}); }
+  applyRelativeTimes();
+
+  const actorSelect=document.getElementById('actor-switcher'),auditNav=document.getElementById('audit-nav');
+  function syncActor(){if(auditNav&&!window.WARRANT.authEnabled)auditNav.href=`/audit?actor_id=${encodeURIComponent(window.WARRANT.actor)}`;}
+  if(actorSelect){actorSelect.value=[...actorSelect.options].some(option=>option.value===window.WARRANT.actor)?window.WARRANT.actor:'admin-demo';window.WARRANT.actor=actorSelect.value;syncActor();actorSelect.addEventListener('change',()=>{window.WARRANT.actor=actorSelect.value;localStorage.setItem('warrant.actor',actorSelect.value);syncActor();window.dispatchEvent(new Event('warrant:actor'));});}
+
+  /* The mode pill and the degraded banner are integrity surfaces, not decoration: they always
+     reflect what /healthz reports, even when the page was rendered before a failure appeared. */
+  fetch('/healthz').then(response=>response.json()).then(health=>{
+    const node=document.getElementById('health-mode'),banner=document.getElementById('degraded-banner');
+    if(health.status==='degraded'){node.className='mode degraded';node.querySelector('b').textContent=`DEGRADED · ${health.degraded.join(', ')}`;
+      banner.hidden=false;document.getElementById('degraded-detail').textContent=`Injected failure: ${health.degraded.join(', ')}. Policy fails closed and increases human involvement rather than guessing.`;}
+  }).catch(()=>{});
+
+  /* theme: an explicit choice is stamped on <html> and remembered; unset follows the system. */
+  (function(){
+    const root=document.documentElement,label=document.getElementById('theme-label');
+    const stored=localStorage.getItem('warrant.theme'); if(stored==='light'||stored==='dark')root.setAttribute('data-theme',stored);
+    function isLight(){const stamp=root.getAttribute('data-theme');return stamp?stamp==='light':window.matchMedia('(prefers-color-scheme: light)').matches;}
+    function sync(){label.textContent=isLight()?'Dark theme':'Light theme';}
+    document.getElementById('theme-toggle').addEventListener('click',()=>{const next=isLight()?'dark':'light';root.setAttribute('data-theme',next);localStorage.setItem('warrant.theme',next);sync();});
+    sync();
+  })();
+
+  /* command palette: every entry navigates or runs a real request; pages contribute their own. */
+  function registerCommand(command){window.WARRANT.commands.push(command);}
+  function registerShortcut(key,handler){window.WARRANT.shortcuts[key.toLowerCase()]=handler;}
+  registerCommand({group:'Go to',label:'Triage queue',hint:['G','T'],run:()=>location.href='/'});
+  registerCommand({group:'Go to',label:'All delegations',hint:['G','D'],run:()=>location.href='/delegations'});
+  registerCommand({group:'Go to',label:'Coding sessions',hint:['G','S'],run:()=>location.href='/coding-sessions'});
+  registerCommand({group:'Go to',label:'Issue inbox',run:()=>location.href='/#issue-inbox'});
+  registerCommand({group:'Go to',label:'Code intelligence',hint:['G','C'],run:()=>location.href='/code'});
+  registerCommand({group:'Go to',label:'Policy',hint:['G','P'],run:()=>location.href='/policy'});
+  registerCommand({group:'Go to',label:'Audit chain',hint:['G','A'],run:()=>location.href=(window.WARRANT.authEnabled?'/audit':`/audit?actor_id=${encodeURIComponent(window.WARRANT.actor)}`)});
+  registerCommand({group:'Go to',label:'Evaluation integrity',hint:['G','E'],run:()=>location.href='/evaluation'});
+  registerCommand({group:'Go to',label:'Integrations and feature status',run:()=>location.href='/integrations'});
+  registerCommand({group:'Agent',label:'Ask about the codebase…',note:'path:line cited',run:()=>location.href='/code'});
+
+  (function(){
+    const scrim=document.getElementById('palette-scrim'),input=document.getElementById('palette-input'),list=document.getElementById('palette-list');
+    let matches=[],cursor=0;
+    function render(){
+      const term=input.value.trim().toLowerCase();
+      matches=window.WARRANT.commands.filter(c=>!term||c.label.toLowerCase().includes(term)||(c.group||'').toLowerCase().includes(term));
+      cursor=Math.min(cursor,Math.max(0,matches.length-1)); list.replaceChildren();
+      if(!matches.length){const empty=document.createElement('p');empty.className='palette-empty';empty.textContent='No command matches. Press esc to close.';list.append(empty);return;}
+      let group=null;
+      matches.forEach((command,index)=>{
+        if(command.group!==group){group=command.group;const heading=document.createElement('p');heading.className='cmd-group';heading.textContent=group;list.append(heading);}
+        const button=document.createElement('button');button.type='button';button.className='cmd';button.setAttribute('role','option');
+        button.setAttribute('aria-selected',String(index===cursor));button.append(document.createTextNode(command.label));
+        const hint=document.createElement('span');hint.className='hint';
+        (command.hint||[]).forEach(key=>{const kbd=document.createElement('span');kbd.className='kbd';kbd.textContent=key;hint.append(kbd);});
+        if(command.note){const em=document.createElement('em');em.textContent=command.note;hint.append(em);}
+        button.append(hint);button.addEventListener('click',()=>{open(false);command.run();});list.append(button);
+      });
     }
-    function renderError(container,error,context='request') {
-      const labels={401:'Authentication required',403:'Authority prohibited',409:'State conflict',410:'Authority expired',422:'Evidence or policy invalid'};
-      container.hidden=false; container.className=`inline-error error-${error.status||500}`;
-      container.innerHTML=`<strong>${labels[error.status]||'Request failed'}</strong><p>${error.message}</p><small>${context} was not applied.</small>`;
-    }
-    function formatRelative(value) { const delta=(new Date(value).getTime()-Date.now())/1000,future=delta>0,seconds=Math.abs(delta); let amount,unit; if(seconds<60){amount=Math.max(1,Math.round(seconds));unit='second';}else if(seconds<3600){amount=Math.round(seconds/60);unit='minute';}else if(seconds<86400){amount=Math.round(seconds/3600);unit='hour';}else{amount=Math.round(seconds/86400);unit='day';}return future?`in ${amount} ${unit}${amount===1?'':'s'}`:`${amount} ${unit}${amount===1?'':'s'} ago`; }
-    document.querySelectorAll('.relative-time').forEach(node=>{node.textContent=formatRelative(node.dataset.time);node.title=node.dataset.time;});
-    const actorSelect=document.getElementById('actor-switcher'),auditNav=document.getElementById('audit-nav'); function syncActor(){if(auditNav)auditNav.href=`/audit?actor_id=${encodeURIComponent(window.WARRANT.actor)}`;} if(actorSelect){actorSelect.value=[...actorSelect.options].some(option=>option.value===window.WARRANT.actor)?window.WARRANT.actor:'admin-demo';window.WARRANT.actor=actorSelect.value;syncActor();actorSelect.addEventListener('change',()=>{window.WARRANT.actor=actorSelect.value;localStorage.setItem('warrant.actor',actorSelect.value);syncActor();window.dispatchEvent(new Event('warrant:actor'));});}
-    fetch('/healthz').then(response=>response.json()).then(health=>{if(health.status==='degraded'){const node=document.getElementById('health-mode');node.className='mode degraded';node.querySelector('b').textContent=`DEGRADED · ${health.degraded.join(', ')}`;}}).catch(()=>{});
-  </script>
-  {% block scripts %}{% endblock %}
+    function open(state){scrim.hidden=!state;if(state){input.value='';cursor=0;render();input.focus();}}
+    document.getElementById('open-palette').addEventListener('click',()=>open(true));
+    document.getElementById('close-palette').addEventListener('click',()=>open(false));
+    scrim.addEventListener('click',event=>{if(event.target===scrim)open(false);});
+    input.addEventListener('input',()=>{cursor=0;render();});
+    input.addEventListener('keydown',event=>{
+      if(event.key==='ArrowDown'){event.preventDefault();cursor=Math.min(cursor+1,matches.length-1);render();}
+      else if(event.key==='ArrowUp'){event.preventDefault();cursor=Math.max(cursor-1,0);render();}
+      else if(event.key==='Enter'){event.preventDefault();const command=matches[cursor];if(command){open(false);command.run();}}
+    });
+    document.addEventListener('keydown',event=>{
+      if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();open(scrim.hidden);return;}
+      if(event.key==='Escape'&&!scrim.hidden){open(false);return;}
+      if(event.metaKey||event.ctrlKey||event.altKey||!scrim.hidden)return;
+      const tag=(event.target.tagName||'').toLowerCase();
+      if(tag==='input'||tag==='textarea'||tag==='select'||event.target.isContentEditable)return;
+      const handler=window.WARRANT.shortcuts[event.key.toLowerCase()]||window.WARRANT.shortcuts[event.key];
+      if(handler){event.preventDefault();handler(event);}
+    });
+  })();
+</script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

@@ -1,6 +1,112 @@
 {% extends "base.html" %}
-{% block title %}Evaluation integrity · Warrant{% endblock %}
+{% block title %}Evaluation · Warrant{% endblock %}
+{% block view_title %}Evaluation{% endblock %}
+{% block view_count %}{{ report.targets|length }} targets · {{ report.dataset.cases if report.dataset else 0 }} cases{% endblock %}
+{% block head_tools %}
+<a class="chip" href="/v1/evaluations">Raw JSON</a>
+<span class="chip">{{ report.status }}</span>
+{% endblock %}
+
 {% block content %}
-<section class="shell detail-head"><a class="back" href="/">← Operator inbox</a><div class="detail-title"><div><p class="eyebrow">Measured, targeted, bounded</p><h1>Evaluation integrity</h1><p>{{ report.status }} · <time class="relative-time" data-time="{{ report.measured_at }}">{{ report.measured_at }}</time></p></div><a class="button-link" href="/v1/evaluations">Raw JSON</a></div></section>
-<section class="shell panel evaluation-panel"><div class="section-head"><div><h2>Metrics and proposed targets</h2><p>Only unsafe allows are build-blocking. Outside-target quality metrics remain visible.</p></div></div><div class="table-wrap"><table><thead><tr><th>Metric</th><th>Proposed target</th><th>Measured</th><th>Status</th></tr></thead><tbody>{% for key,target in report.targets.items() %}<tr class="target-{{ target.status|lower }}"><th><code>{{ key }}</code></th><td>{{ target.proposed_target }}</td><td><code>{{ target.measured_value }}</code></td><td><strong>{{ target.status }}</strong></td></tr>{% endfor %}</tbody></table></div><div class="integrity-copy"><h3>Interpretation boundary</h3><p><code>verdict_accuracy</code> is a policy-interpreter conformance check because the labelled cases use the interpreter's feature vocabulary. The fixture-backed E2E pipeline slice is the only end-to-end signal in this run.</p><h3>Limitations</h3><ul>{% for item in report.limitations %}<li>{{ item }}</li>{% endfor %}</ul></div></section>
+<div class="body">
+  <div class="doc">
+    <p class="crumb">Workspace <span>/</span> Measured, targeted, bounded</p>
+    <h1>What is measured, and what is not</h1>
+    <p class="doc-sub">{{ report.status }} · measured <span class="relative-time" data-time="{{ report.measured_at }}">{{ report.measured_at }}</span> · provider mode <code>{{ report.provider_mode }}</code></p>
+
+    <article class="card">
+      <h2>Safety gates <span class="aside">build-blocking</span></h2>
+      <div class="metric-strip" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+        {% for key in ['unsafe_allow_count','unsafe_allow_rate','fail_closed_correctness','adversarial_non_allow_rate','e2e_pipeline_safe_rate','operational_adversarial_non_allow_rate'] %}
+        <div><small>{{ key }}</small><strong>{{ report.metrics.get(key,'NOT_MEASURED') }}</strong></div>
+        {% endfor %}
+      </div>
+      <p class="note">Only unsafe allows are build-blocking. Everything else is visible whether or not it flatters the system.</p>
+    </article>
+
+    {% set burden = report.targets.get('approval_burden_standard_slice',{}) %}
+    <article class="card">
+      <h2>Approval burden <span class="aside">the metric that is currently failing</span></h2>
+      <dl class="verify fail">
+        <dt>Measured</dt><dd>{{ burden.get('measured_value','NOT_MEASURED') }}</dd>
+        <dt>Proposed target</dt><dd>{{ burden.get('proposed_target','—') }}</dd>
+        <dt>Status</dt><dd>{{ burden.get('status','NOT_MEASURED') }}</dd>
+      </dl>
+      <p class="note">This is left visible on purpose. On the standard slice the system asks for a human more often than the target allows, which is a real usability cost of the fail-closed design. Hiding it would make the rest of this page untrustworthy.</p>
+    </article>
+
+    <article class="card">
+      <h2>Metrics and proposed targets <span class="aside">{{ report.targets|length }} tracked</span></h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Metric</th><th>Proposed target</th><th>Measured</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for key, target in report.targets.items() %}
+            <tr class="target-{{ target.status|lower }}">
+              <th><code>{{ key }}</code></th>
+              <td>{{ target.proposed_target }}</td>
+              <td><code>{{ target.measured_value }}</code></td>
+              <td><strong>{{ target.status }}</strong></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2>Not yet measured <span class="aside">{{ not_measured|length }} metrics</span></h2>
+      <p>These need evidence this synthetic run does not have. They are reported as <code>NOT_MEASURED</code> rather than estimated.</p>
+      <ul class="plain">
+        {% for key in not_measured %}<li><code>{{ key }}</code> — NOT_MEASURED</li>{% endfor %}
+      </ul>
+      {% if not not_measured %}<p class="note">Every tracked metric in this run has a measured value.</p>{% endif %}
+    </article>
+
+    <article class="card">
+      <h2>Interpretation boundary</h2>
+      <p><code>verdict_accuracy</code> is a policy-interpreter conformance check, not an independent judgement: the labelled cases are written in the interpreter's own feature vocabulary. The fixture-backed end-to-end pipeline slice is the only end-to-end signal in this run.</p>
+      <h3>Limitations</h3>
+      <ul>{% for item in report.limitations %}<li>{{ item }}</li>{% else %}<li>No limitations were recorded in this report.</li>{% endfor %}</ul>
+    </article>
+  </div>
+
+  <aside class="rail" aria-label="Evaluation dataset">
+    <div class="rail-sec">
+      <p class="rail-h">Dataset</p>
+      {% if report.dataset %}
+      <dl class="kv">
+        <dt>Cases</dt><dd>{{ report.dataset.cases }}</dd>
+        <dt>Synthetic</dt><dd class="warn">{{ report.dataset.synthetic|lower }}</dd>
+        <dt>Retrieval</dt><dd>{{ report.dataset.retrieval_cases }}</dd>
+        <dt>Search</dt><dd>{{ report.dataset.search_cases }}</dd>
+        <dt>Brief</dt><dd>{{ report.dataset.brief_cases }}</dd>
+        <dt>Triage</dt><dd>{{ report.dataset.triage_cases }}</dd>
+        <dt>Path</dt><dd>{{ report.dataset.path }}</dd>
+      </dl>
+      {% else %}
+      <p class="note tight">No dataset has been recorded. The report status is <code>{{ report.status }}</code>.</p>
+      {% endif %}
+    </div>
+    {% if report.metrics.verdict_distribution %}
+    <div class="rail-sec">
+      <p class="rail-h">Verdict distribution</p>
+      <dl class="kv">
+        {% for verdict, count in report.metrics.verdict_distribution.items() %}
+        <dt>{{ verdict }}</dt><dd>{{ count }}</dd>
+        {% endfor %}
+      </dl>
+      <p class="note">Diagnostic only; there is no threshold on the distribution itself.</p>
+    </div>
+    {% endif %}
+    <div class="rail-sec">
+      <p class="rail-h">Quality metrics</p>
+      <div class="metric-strip">
+        {% for key in ['retrieval_recall_at_10','semantic_search_recall_at_10','triage_team_accuracy','brief_required_fact_coverage'] %}
+        <div><small>{{ key }}</small><strong>{{ report.metrics.get(key,'NOT_MEASURED') }}</strong></div>
+        {% endfor %}
+      </div>
+    </div>
+  </aside>
+</div>
 {% endblock %}

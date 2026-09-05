@@ -1,0 +1,28 @@
+{
+  "description": "Warrant control plane: lint after Python edits, restate the test standard on stop.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.codex/hooks/ruff_check.sh\"",
+            "statusMessage": "ruff check src tests",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.codex/hooks/stop_reminder.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

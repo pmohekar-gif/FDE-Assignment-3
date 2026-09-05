@@ -25,8 +25,7 @@ def test_search_uses_description_language_and_team_is_a_hard_filter(client):
     assert all(item["team"] == "Payments" for item in result.results)
     assert all(0 <= item["rrf_score"] <= 1 for item in result.results)
     assert all(
-        set(item["matched_by"]) <= {"exact_key", "lexical", "semantic"}
-        for item in result.results
+        set(item["matched_by"]) <= {"exact_key", "lexical", "semantic"} for item in result.results
     )
 
 

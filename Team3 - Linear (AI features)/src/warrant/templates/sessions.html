@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Coding sessions · Warrant{% endblock %}
+{% block view_title %}Coding sessions{% endblock %}
+{% block view_count %}{{ sessions|length }} sessions{% endblock %}
+{% block head_tools %}
+<button class="chip" type="button" id="refresh-caps">Reload capabilities</button>
+{% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="list">
+    <div class="group">
+      <span class="group-name">Governed execution</span><span class="group-ct">{{ sessions|length }}</span>
+      <span class="group-note">every session is bound to one active warrant</span>
+    </div>
+    {% for session in sessions %}
+    <a class="row" href="/coding-sessions/{{ session.id }}" data-session="{{ session.id }}">
+      <span class="pip {{ 'ok' if session.state == 'COMPLETED' else ('bad' if session.state in ['FAILED','CANCELLED'] else 'info') }}" aria-hidden="true"></span>
+      <span class="row-key">{{ session.external_key }}</span>
+      <span class="row-title">{{ session.title }}</span>
+      <span class="code-chip {{ 'allow' if session.state == 'COMPLETED' else ('deny' if session.state in ['FAILED','CANCELLED'] else 'hold') }}">{{ session.state }}</span>
+      <span class="provider-kind {{ session.provider_kind }}">{{ session.provider_kind|upper }}</span>
+      <span class="row-team">{{ session.provider }}</span>
+      <span class="suff">{{ session.diff_summary }}</span>
+      <span class="row-time relative-time" data-short data-time="{{ session.created_at }}">{{ session.created_at }}</span>
+    </a>
+    {% else %}
+    <div class="empty"><strong>No coding session has been started.</strong><span>Approve a delegation whose warrant grants <code>write_files</code>, then launch a session from its detail page.</span></div>
+    {% endfor %}
+    <div class="legend">
+      <span><span class="kbd">&crarr;</span> Open session</span>
+      <span class="spacer">A <span class="provider-kind mock">MOCK</span> run is visibly simulated and must never be read as real agent work.</span>
+    </div>
+  </div>
+
+  <aside class="rail" aria-label="Runner capabilities">
+    <div id="capabilities" aria-live="polite">
+      <div class="rail-sec">
+        <p class="rail-h">Runner capabilities</p>
+        <p class="loading">Reading <code>/v1/coding-sessions/capabilities</code>…</p>
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined&&text!==null)node.textContent=text;if(className)node.className=className;return node;}
+const host=document.getElementById('capabilities');
+
+function section(title){const node=el('div','','rail-sec');node.append(el('p',title,'rail-h'));host.append(node);return node;}
+function kvList(target,pairs){
+  const list=document.createElement('dl');list.className='kv';
+  pairs.forEach(([key,value])=>{list.append(el('dt',key));const dd=el('dd',value);
+    if(value==='false'||value==='disabled')dd.className='bad';if(value==='true'||value==='enabled')dd.className='ok';list.append(dd);});
+  target.append(list);
+}
+async function loadCapabilities(){
+  host.replaceChildren();
+  const loading=section('Runner capabilities');loading.append(el('p','Reading capabilities…','loading'));
+  try{
+    const caps=await api('/v1/coding-sessions/capabilities');
+    host.replaceChildren();
+    const runners=section('Runner capabilities');
+    Object.entries(caps.runners).forEach(([name,runner])=>{
+      const row=el('div','','runner'+(runner.available?'':' unavailable'));
+      row.append(el('code',name),el('span',runner.real?'REAL':'MOCK','provider-kind '+(runner.real?'real':'mock')),
+        el('span',`${runner.available?'available':'unavailable'} · ${runner.reason}`,'why'));
+      runners.append(row);
+    });
+    runners.append(el('p',`external_execution_enabled = ${caps.external_execution_enabled}. A runner marked MOCK produces visibly simulated output; a runner marked REAL invokes an external CLI.`,'note'));
+
+    const repo=section('Repository');
+    kvList(repo,[['Id',caps.repository.repository_id],['Revision',caps.repository.revision],
+      ['Git checkout',String(caps.git_checkout.available)],['Files',String(caps.repository.file_count)],
+      ['Ignore source',caps.repository.ignore_source]]);
+    if(!caps.git_checkout.available)repo.append(el('p',caps.git_checkout.reason,'note'));
+
+    const verify=section('Discovered verification');
+    verify.append(el('p',`source ${caps.verification.source} · discovery ${caps.verification.discovery_enabled?'enabled':'disabled'} · max ${caps.verification.max_checks} checks · ${caps.verification.timeout_seconds}s timeout`,'note tight'));
+    const checks=el('div','','tools');
+    caps.verification.checks.forEach(check=>checks.append(el('span',check.command.join(' '),'tool')));
+    caps.verification.skipped.forEach(item=>checks.append(el('span',item.command,'tool no')));
+    verify.append(checks);
+    if(caps.verification.skipped.length)verify.append(el('p',`Skipped: ${caps.verification.skipped.map(item=>`${item.name} — ${item.reason}`).join('; ')}`,'note'));
+    verify.append(el('p',`Fallback if nothing is discovered: ${caps.verification.configured_fallback.join(' ')}`,'note'));
+
+    const worktree=section('Isolation and publishing');
+    kvList(worktree,[['Worktrees',caps.worktrees.root],['Retained',String(caps.worktrees.retained_sessions)],
+      ['Protected',caps.worktrees.protected_branches.join(', ')],
+      ['PR publishing',caps.pr_publishing.enabled?'enabled':'disabled'],
+      ['Publisher',`${caps.pr_publishing.provider} · ${caps.pr_publishing.available?'available':'unavailable'}`],
+      ['PR base branch',caps.pr_publishing.base_branch],
+      ['Default reviewers',caps.pr_publishing.default_reviewers.length
+        ? caps.pr_publishing.default_reviewers.join(', ') : 'none configured']]);
+    worktree.append(el('p',caps.pr_publishing.reason,'note'));
+    if(caps.pr_publishing.enabled&&caps.pr_publishing.default_reviewers.length){
+      worktree.append(el('p','Reviewers are requested only if they are collaborators on the target repository. '
+        +'If GitHub refuses one, the draft PR still opens and the session timeline records that no review was requested.','note'));
+    }
+  }catch(error){
+    host.replaceChildren();
+    const failed=section('Runner capabilities');
+    const failure=el('div','','inline-error');failed.append(failure);renderError(failure,error,'capability read');
+  }
+}
+loadCapabilities();
+document.getElementById('refresh-caps').addEventListener('click',loadCapabilities);
+
+const rows=[...document.querySelectorAll('.row[data-session]')];
+let selected=rows[0]||null;
+rows.forEach(row=>row.addEventListener('focus',()=>{selected=row;rows.forEach(other=>other.setAttribute('aria-selected',String(other===row)));}));
+registerShortcut('enter',()=>{if(selected)location.href=`/coding-sessions/${selected.dataset.session}`;});
+registerCommand({group:'Execution',label:'Reload runner capabilities',run:loadCapabilities});
+</script>{% endblock %}

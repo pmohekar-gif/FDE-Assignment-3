@@ -19,6 +19,22 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL, code_owner_paths_json TEXT NOT NULL DEFAULT '[]',
   FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
 );
+-- Demo sign-in only. Passwords are never stored: only a per-user salt and a scrypt
+-- derivation of the configured DEMO_PASSWORD. This gate establishes identity; roles in
+-- `users` and the policy engine still decide authority.
+CREATE TABLE IF NOT EXISTS user_credentials (
+  user_id TEXT PRIMARY KEY, algorithm TEXT NOT NULL, salt TEXT NOT NULL,
+  password_hash TEXT NOT NULL, updated_at TEXT NOT NULL,
+  FOREIGN KEY(user_id) REFERENCES users(id)
+);
+-- Server-side sessions so sign-out and revocation are real. `token_hash` is a SHA-256
+-- digest of the full JWT; the bearer/cookie token itself is never persisted or logged.
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+  revoked_at TEXT, revoke_reason TEXT,
+  FOREIGN KEY(workspace_id) REFERENCES workspaces(id), FOREIGN KEY(user_id) REFERENCES users(id)
+);
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, vendor TEXT NOT NULL,
   status TEXT NOT NULL, verified_pass_rate REAL NOT NULL DEFAULT 0,
@@ -138,14 +154,6 @@ CREATE TABLE IF NOT EXISTS team_summaries (
   PRIMARY KEY (workspace_id, team),
   FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
 );
-CREATE INDEX IF NOT EXISTS idx_delegations_workspace ON delegations(workspace_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_warrants_workspace ON warrants(workspace_id, expires_at);
-CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_events(workspace_id, seq);
-CREATE INDEX IF NOT EXISTS idx_telemetry_name ON telemetry_events(workspace_id, name);
-CREATE INDEX IF NOT EXISTS idx_extraction_cache_issue ON extraction_cache(issue_id, issue_revision);
-CREATE INDEX IF NOT EXISTS idx_briefs_workspace ON delegation_briefs(workspace_id, generated_at);
-CREATE INDEX IF NOT EXISTS idx_team_summaries_generated
-  ON team_summaries(workspace_id, generated_at);
 CREATE TABLE IF NOT EXISTS linear_issue_links (
   issue_id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
@@ -161,10 +169,81 @@ CREATE TABLE IF NOT EXISTS linear_issue_links (
   imported_at TEXT NOT NULL,
   FOREIGN KEY(issue_id) REFERENCES issues(id)
 );
+CREATE TABLE IF NOT EXISTS repository_indexes (
+  repository_id TEXT NOT NULL, revision TEXT NOT NULL, root TEXT NOT NULL,
+  metadata_json TEXT NOT NULL, entries_json TEXT NOT NULL, indexed_at TEXT NOT NULL,
+  PRIMARY KEY(repository_id, revision)
+);
+CREATE TABLE IF NOT EXISTS agent_conversations (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, scope_json TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_messages (
+  id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
+  content TEXT NOT NULL, sources_json TEXT NOT NULL, created_at TEXT NOT NULL,
+  FOREIGN KEY(conversation_id) REFERENCES agent_conversations(id)
+);
+CREATE TABLE IF NOT EXISTS coding_sessions (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, delegation_id TEXT NOT NULL,
+  warrant_id TEXT NOT NULL, issue_id TEXT NOT NULL, requester_id TEXT NOT NULL,
+  source TEXT NOT NULL, provider TEXT NOT NULL, state TEXT NOT NULL,
+  repository_root TEXT NOT NULL, base_revision TEXT NOT NULL, branch_name TEXT,
+  worktree_path TEXT, contract_json TEXT NOT NULL, result_json TEXT,
+  error TEXT, created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT,
+  agent_pid INTEGER, host_pid INTEGER, worktree_removed_at TEXT,
+  UNIQUE(warrant_id)
+);
+-- The execution contract is the immutable snapshot of the authority a session runs under.
+-- Same append-only pattern as `audit_events`: enforcement lives in the database, so a
+-- future code path (or a hand-run statement) cannot quietly widen scope after the fact.
+CREATE TRIGGER IF NOT EXISTS coding_sessions_contract_immutable
+BEFORE UPDATE OF contract_json ON coding_sessions
+BEGIN SELECT RAISE(ABORT, 'coding-session execution contract is immutable'); END;
+CREATE TABLE IF NOT EXISTS verification_check_results (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL, seq INTEGER NOT NULL, name TEXT NOT NULL,
+  source TEXT NOT NULL, command_json TEXT NOT NULL, exit_code INTEGER, duration_ms INTEGER NOT NULL,
+  passed INTEGER NOT NULL, required INTEGER NOT NULL, summary TEXT NOT NULL,
+  output TEXT NOT NULL, created_at TEXT NOT NULL,
+  UNIQUE(session_id, seq), FOREIGN KEY(session_id) REFERENCES coding_sessions(id)
+);
+CREATE TABLE IF NOT EXISTS coding_session_events (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL, seq INTEGER NOT NULL,
+  event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL,
+  UNIQUE(session_id, seq), FOREIGN KEY(session_id) REFERENCES coding_sessions(id)
+);
+CREATE TABLE IF NOT EXISTS diff_artifacts (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL UNIQUE, base_revision TEXT NOT NULL,
+  head_revision TEXT, changed_files_json TEXT NOT NULL, additions INTEGER NOT NULL,
+  deletions INTEGER NOT NULL, unified_diff TEXT NOT NULL, created_at TEXT NOT NULL,
+  FOREIGN KEY(session_id) REFERENCES coding_sessions(id)
+);
+CREATE TABLE IF NOT EXISTS pull_request_artifacts (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL UNIQUE, provider TEXT NOT NULL,
+  number INTEGER, url TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL,
+  FOREIGN KEY(session_id) REFERENCES coding_sessions(id)
+);
+CREATE TABLE IF NOT EXISTS slack_events (
+  event_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, event_type TEXT NOT NULL,
+  response_json TEXT NOT NULL, received_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_delegations_workspace ON delegations(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_warrants_workspace ON warrants(workspace_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_events(workspace_id, seq);
+CREATE INDEX IF NOT EXISTS idx_telemetry_name ON telemetry_events(workspace_id, name);
+CREATE INDEX IF NOT EXISTS idx_extraction_cache_issue ON extraction_cache(issue_id, issue_revision);
+CREATE INDEX IF NOT EXISTS idx_briefs_workspace ON delegation_briefs(workspace_id, generated_at);
+CREATE INDEX IF NOT EXISTS idx_team_summaries_generated
+  ON team_summaries(workspace_id, generated_at);
 CREATE INDEX IF NOT EXISTS idx_linear_links_workspace
   ON linear_issue_links(workspace_id, external_key);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_linear_links_unique_external
   ON linear_issue_links(workspace_id, external_id);
+CREATE INDEX IF NOT EXISTS idx_agent_messages_conversation
+  ON agent_messages(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_coding_sessions_workspace
+  ON coding_sessions(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_coding_events_session ON coding_session_events(session_id, seq);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, expires_at);
 """
 
 
@@ -203,6 +282,20 @@ class Database:
                 connection.execute(
                     "ALTER TABLE issues ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'"
                 )
+            session_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(coding_sessions)").fetchall()
+            }
+            session_additions = {
+                "agent_pid": "INTEGER",
+                "host_pid": "INTEGER",
+                "worktree_removed_at": "TEXT",
+            }
+            for name, definition in session_additions.items():
+                if name not in session_columns:
+                    connection.execute(
+                        f"ALTER TABLE coding_sessions ADD COLUMN {name} {definition}"
+                    )
             usage_columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(model_usage)").fetchall()
@@ -218,18 +311,13 @@ class Database:
             for name, definition in usage_additions.items():
                 if name not in usage_columns:
                     connection.execute(f"ALTER TABLE model_usage ADD COLUMN {name} {definition}")
-                    
             summary_columns = {
                 row["name"]
-                for row in connection.execute(
-                    "PRAGMA table_info(team_summaries)"
-                ).fetchall()
+                for row in connection.execute("PRAGMA table_info(team_summaries)").fetchall()
             }
             for name in ("provider", "model"):
                 if name not in summary_columns:
                     connection.execute(f"ALTER TABLE team_summaries ADD COLUMN {name} TEXT")
-                    
-            # linear_issue_links is created via SCHEMA above; no ALTER needed
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

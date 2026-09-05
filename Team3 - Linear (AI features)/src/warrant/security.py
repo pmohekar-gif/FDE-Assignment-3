@@ -8,7 +8,33 @@ import re
 import time
 from dataclasses import dataclass
 
+SECRET_NAME_ALTERNATIVES = (
+    r"passwd|password|secret|api[_-]?key|apikey|access[_-]?key|private[_-]?key"
+    r"|credentials?|client[_-]?secret|auth[_-]?token|token"
+)
+# Ordered: structural/high-confidence shapes first so that a broader pattern
+# (email, card PAN) cannot consume part of a credential before it is classified.
 SECRET_PATTERNS = [
+    (
+        "pem_block",
+        re.compile(r"-----BEGIN [A-Z0-9 ]{2,40}-----[\s\S]{0,8000}?-----END [A-Z0-9 ]{2,40}-----"),
+    ),
+    (
+        "connection_string",
+        re.compile(
+            r"\b[a-z][a-z0-9+.-]{1,20}://[^\s:@/'\"]{1,64}:[^\s:@/'\"]{1,128}@[^\s/'\"]{1,255}"
+        ),
+    ),
+    ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}")),
+    (
+        "secret_assignment",
+        re.compile(
+            r"\b[A-Za-z0-9_.-]{0,40}(?:" + SECRET_NAME_ALTERNATIVES + r")"
+            r"\s*(?:=>|:=|=|:)\s*"
+            r"(?:\"[^\"\n]{4,200}\"|'[^'\n]{4,200}'|`[^`\n]{4,200}`|[^\s,;)\]}]{8,200})",
+            re.I,
+        ),
+    ),
     ("email", re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)),
     ("bearer", re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{12,}", re.I)),
     ("api_key", re.compile(r"\b(?:sk|ghp|lin_api)_[A-Za-z0-9_-]{12,}\b")),
@@ -29,6 +55,13 @@ class NormalisedContent:
     redactions: list[dict[str, str | int]]
     injection_score: float
     injection_matches: list[str]
+
+
+def redact_secrets(text: str) -> str:
+    """Redact every known credential shape in place, keeping the surrounding text citable."""
+    for name, pattern in SECRET_PATTERNS:
+        text = pattern.sub(f"[REDACTED:{name.upper()}]", text)
+    return text
 
 
 def normalise_untrusted(title: str, body: str) -> NormalisedContent:
