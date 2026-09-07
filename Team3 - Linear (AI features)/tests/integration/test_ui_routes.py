@@ -612,3 +612,27 @@ def test_audit_filters_cursor_and_actor_identity_boundary(client, headers):
         json={"action": "approve", "approver_id": "admin-demo"},
     )
     assert mismatch.status_code == 403
+
+
+def test_github_evidence_page_renders_with_correct_disclaimers(client):
+    page = client.get("/integrations/github")
+    assert page.status_code == 200
+    
+    # 1. Page title and UI route
+    assert "GitHub Evidence Viewer" in page.text
+    
+    # 2. Disclaimer about read-only and no authorization
+    assert "read-only evidence" in page.text.lower()
+    assert "does not authorize work" in page.text.lower()
+    
+    # 3. Sidebar link presence
+    assert 'href="/integrations/github"' in page.text
+    assert "GitHub" in page.text
+    
+    # 4. JavaScript contains the adapter calls and the correct variable contract
+    assert "/v1/adapters/github/status" in page.text
+    assert "/v1/adapters/github/pull-request?" in page.text
+    assert "/v1/adapters/github/pull-request/files?" in page.text
+    assert "/v1/adapters/github/pull-request/checks?" in page.text
+    assert "checksRes.checks" in page.text
+    assert "checksRes.check_runs" not in page.text

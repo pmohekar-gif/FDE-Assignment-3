@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Linear Updates · Warrant{% endblock %}
+{% block view_title %}Linear{% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="doc">
+    <p class="crumb">Workspace <span>/</span> Integrations <span>/</span> Linear</p>
+    <h1>Linear Updates</h1>
+    <p class="doc-sub">Explicit, bounded picker for importing issues from Linear. Warrant does not auto-sync.</p>
+
+    <article class="card">
+      <h2>Sync Status <span class="aside" id="adapter-mode-label">loading...</span></h2>
+      <dl class="verify">
+        <dt>Imported issues</dt><dd id="imported-count">...</dd>
+        <dt>Latest update</dt><dd id="max-updated">...</dd>
+      </dl>
+      <div style="margin-top: 1rem;">
+        <button class="btn" id="check-updates-btn">Check for Linear updates</button>
+      </div>
+      <div class="inline-error" id="updates-error" hidden></div>
+    </article>
+
+    <article class="card" id="updates-container" hidden>
+      <h2>Candidates for Import</h2>
+      <table class="table" style="margin-top: 1rem; width: 100%; text-align: left;">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Title</th>
+            <th>State</th>
+            <th>Assignee</th>
+            <th>Team</th>
+            <th>Updated</th>
+            <th>Import status</th>
+            <th>Source</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="candidates-body">
+        </tbody>
+      </table>
+    </article>
+
+    <article class="card">
+      <h2>Manual Import</h2>
+      <p class="note" style="margin-bottom: 0.5rem;">Import a specific issue by its identifier (e.g. ENG-123).</p>
+      <form id="manual-import-form" style="display: flex; gap: 0.5rem; align-items: center;">
+        <input type="text" id="manual-ref" placeholder="Issue key" required class="inp" style="max-width: 150px;">
+        <button type="submit" class="btn">Import</button>
+        <span id="manual-import-status" style="margin-left: 0.5rem; font-size: 0.9em;"></span>
+      </form>
+    </article>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+async function fetchStatus() {
+  try {
+    const res = await api('/v1/adapters/linear/status');
+    document.getElementById('adapter-mode-label').textContent = `mode: ${res.adapter_mode}`;
+    document.getElementById('imported-count').textContent = res.imported_issue_count;
+    document.getElementById('max-updated').textContent = res.max_external_updated_at || 'Never';
+  } catch (err) {
+    document.getElementById('adapter-mode-label').textContent = 'error';
+    console.error(err);
+  }
+}
+
+document.getElementById('check-updates-btn').addEventListener('click', async (e) => {
+  const btn = e.target;
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  document.getElementById('updates-error').hidden = true;
+  
+  try {
+    const res = await api('/v1/adapters/linear/updates?limit=25');
+    const tbody = document.getElementById('candidates-body');
+    tbody.replaceChildren();
+    
+    if (!res.issues || res.issues.length === 0) {
+      const tr = el('tr');
+      const td = el('td', 'No recent updates found.');
+      td.colSpan = 9;
+      tr.append(td);
+      tbody.append(tr);
+    } else {
+      res.issues.forEach(issue => {
+        const tr = el('tr');
+        tr.append(el('td', issue.identifier));
+        tr.append(el('td', issue.title));
+        tr.append(el('td', issue.state ? issue.state.name : ''));
+        tr.append(el('td', issue.assignee ? issue.assignee.name : ''));
+        tr.append(el('td', issue.team ? issue.team.key : ''));
+        tr.append(el('td', new Date(issue.updated_at).toLocaleString()));
+        tr.append(el('td', issue.import_status || 'new'));
+        tr.append(el('td', issue.source || res.source || 'linear'));
+
+        const actionTd = el('td');
+        const actionLabel = issue.import_status === 'update_available' ? 'Update import'
+          : issue.import_status === 'already_imported' ? 'Re-import'
+          : 'Import';
+        const importBtn = el('button', actionLabel, 'btn');
+        importBtn.style.padding = '0.2rem 0.5rem';
+        importBtn.style.fontSize = '0.85em';
+        importBtn.onclick = () => doImport(issue.identifier, importBtn);
+        actionTd.append(importBtn);
+        tr.append(actionTd);
+        
+        tbody.append(tr);
+      });
+    }
+    
+    document.getElementById('updates-container').hidden = false;
+  } catch (err) {
+    const errBox = document.getElementById('updates-error');
+    errBox.hidden = false;
+    errBox.textContent = `Failed to fetch updates: ${err.message || err}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Check for Linear updates';
+  }
+});
+
+document.getElementById('manual-import-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const ref = document.getElementById('manual-ref').value.trim();
+  if (!ref) return;
+  const statusSpan = document.getElementById('manual-import-status');
+  const btn = e.target.querySelector('button');
+  
+  btn.disabled = true;
+  statusSpan.textContent = 'Importing...';
+  statusSpan.className = '';
+  
+  try {
+    await doImport(ref);
+    statusSpan.textContent = 'Success!';
+    statusSpan.className = 'ok';
+    document.getElementById('manual-ref').value = '';
+    fetchStatus(); // refresh counts
+  } catch (err) {
+    statusSpan.textContent = `Error: ${err.message || err}`;
+    statusSpan.className = 'bad';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+async function doImport(ref, btnElement) {
+  if (btnElement) {
+    btnElement.disabled = true;
+    btnElement.textContent = 'Importing...';
+  }
+  try {
+    const res = await api('/v1/adapters/linear/import-issue', {
+      method: 'POST',
+      body: JSON.stringify({ ref: ref })
+    });
+    if (btnElement) {
+      btnElement.textContent = res.outcome === 'unchanged' ? 'Unchanged' : 'Imported';
+      btnElement.classList.add('ok');
+    }
+    return res;
+  } catch (err) {
+    if (btnElement) {
+      btnElement.textContent = 'Failed';
+      btnElement.classList.add('bad');
+      btnElement.disabled = false;
+    }
+    throw err;
+  }
+}
+
+// Initial load
+fetchStatus();
+</script>
+{% endblock %}

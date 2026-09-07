@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}GitHub Evidence · Warrant{% endblock %}
+{% block view_title %}GitHub{% endblock %}
+
+{% block content %}
+<div class="body">
+  <div class="doc">
+    <p class="crumb">Workspace <span>/</span> Integrations <span>/</span> GitHub</p>
+    <h1>GitHub Evidence Viewer</h1>
+    <p class="doc-sub">Read-only proxy to fetch pull request metadata, changed files, and checks.</p>
+
+    <div class="alert warning" style="margin-bottom: 2rem;">
+      <svg class="ico" viewBox="0 0 16 16"><path d="M8 1L1 14h14L8 1z" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="11" r="1" fill="currentColor"/><path d="M8 5v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      This viewer provides read-only evidence retrieval only. It does not authorize work, modify repositories, or persist GitHub data in Warrant.
+    </div>
+
+    {% if not is_admin %}
+    <div class="alert deny" style="margin-bottom: 2rem;">
+      <svg class="ico" viewBox="0 0 16 16"><path d="M8 1L1 14h14L8 1z" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="11" r="1" fill="currentColor"/><path d="M8 5v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <strong>Admin-only evidence viewer.</strong> Your current role is not authorized to retrieve evidence from the GitHub adapter APIs.
+    </div>
+    {% else %}
+    <article class="card">
+      <h2>Connection Status <span class="aside" id="adapter-mode-label">loading...</span></h2>
+      <dl class="verify">
+        <dt>Mode</dt><dd id="status-mode">...</dd>
+        <dt>Endpoint</dt><dd>GET /v1/adapters/github/status</dd>
+      </dl>
+    </article>
+
+    <article class="card">
+      <h2>Query Pull Request</h2>
+      <form id="pr-query-form" style="display: flex; gap: 0.5rem; align-items: center; margin-top: 1rem;">
+        <input type="text" id="pr-owner" placeholder="Owner" required class="inp" style="max-width: 150px;">
+        <span class="dim">/</span>
+        <input type="text" id="pr-repo" placeholder="Repo" required class="inp" style="max-width: 150px;">
+        <span class="dim">#</span>
+        <input type="number" id="pr-number" placeholder="PR number" required class="inp" style="max-width: 100px;">
+        <button type="submit" class="btn">Fetch Evidence</button>
+      </form>
+      <div class="inline-error" id="query-error" hidden></div>
+    </article>
+
+    <div id="results-container" hidden>
+      <article class="card">
+        <h2>Pull Request Metadata <span class="aside" id="pr-source-label"></span></h2>
+        <dl class="verify">
+          <dt>Title</dt><dd id="pr-title"></dd>
+          <dt>State</dt><dd id="pr-state"></dd>
+          <dt>Draft</dt><dd id="pr-draft"></dd>
+          <dt>Merged</dt><dd id="pr-merged"></dd>
+          <dt>Base Ref</dt><dd id="pr-base"></dd>
+          <dt>Head SHA</dt><dd id="pr-head"></dd>
+          <dt>URL</dt><dd><a id="pr-url" href="#" target="_blank" rel="noopener noreferrer">View on GitHub</a></dd>
+        </dl>
+      </article>
+
+      <article class="card">
+        <h2>Changed Files <span class="aside" id="files-source-label"></span></h2>
+        <table class="table" style="width: 100%; text-align: left;">
+          <thead>
+            <tr>
+              <th>Filename</th>
+              <th>Status</th>
+              <th>Additions</th>
+              <th>Deletions</th>
+            </tr>
+          </thead>
+          <tbody id="files-body">
+          </tbody>
+        </table>
+      </article>
+
+      <article class="card">
+        <h2>Check Runs <span class="aside" id="checks-source-label"></span></h2>
+        <table class="table" style="width: 100%; text-align: left;">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Status</th>
+              <th>Conclusion</th>
+              <th>Started At</th>
+              <th>Completed At</th>
+              <th>URL</th>
+            </tr>
+          </thead>
+          <tbody id="checks-body">
+          </tbody>
+        </table>
+      </article>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+async function fetchStatus() {
+  try {
+    const res = await api('/v1/adapters/github/status');
+    document.getElementById('adapter-mode-label').textContent = `mode: ${res.adapter_mode}`;
+    document.getElementById('status-mode').textContent = res.adapter_mode;
+  } catch (err) {
+    document.getElementById('adapter-mode-label').textContent = 'error';
+    document.getElementById('status-mode').textContent = 'error';
+    console.error(err);
+  }
+}
+
+document.getElementById('pr-query-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const owner = document.getElementById('pr-owner').value.trim();
+  const repo = document.getElementById('pr-repo').value.trim();
+  const number = document.getElementById('pr-number').value.trim();
+  
+  if (!owner || !repo || !number) return;
+  
+  const btn = e.target.querySelector('button');
+  const errBox = document.getElementById('query-error');
+  const resultsContainer = document.getElementById('results-container');
+  
+  btn.disabled = true;
+  btn.textContent = 'Fetching...';
+  errBox.hidden = true;
+  resultsContainer.hidden = true;
+  
+  try {
+    const prRes = await api(`/v1/adapters/github/pull-request?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(number)}`);
+    
+    document.getElementById('pr-title').textContent = prRes.pull_request.title;
+    document.getElementById('pr-state').textContent = prRes.pull_request.state;
+    document.getElementById('pr-draft').textContent = prRes.pull_request.draft ? 'Yes' : 'No';
+    document.getElementById('pr-merged').textContent = prRes.pull_request.merged ? 'Yes' : 'No';
+    document.getElementById('pr-base').textContent = prRes.pull_request.base_ref;
+    document.getElementById('pr-head').textContent = prRes.pull_request.head_sha;
+    document.getElementById('pr-url').href = prRes.pull_request.html_url;
+    document.getElementById('pr-source-label').textContent = `source: ${prRes.source}`;
+
+    const filesRes = await api(`/v1/adapters/github/pull-request/files?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(number)}`);
+    
+    const filesBody = document.getElementById('files-body');
+    filesBody.replaceChildren();
+    if (!filesRes.files || filesRes.files.length === 0) {
+      const tr = el('tr');
+      const td = el('td', 'No files changed.');
+      td.colSpan = 4;
+      tr.append(td);
+      filesBody.append(tr);
+    } else {
+      filesRes.files.forEach(f => {
+        const tr = el('tr');
+        tr.append(el('td', f.filename));
+        tr.append(el('td', f.status));
+        tr.append(el('td', f.additions > 0 ? `+${f.additions}` : '0'));
+        tr.append(el('td', f.deletions > 0 ? `-${f.deletions}` : '0'));
+        filesBody.append(tr);
+      });
+    }
+    document.getElementById('files-source-label').textContent = `source: ${filesRes.source}`;
+
+    const headSha = prRes.pull_request.head_sha;
+    const checksRes = await api(`/v1/adapters/github/pull-request/checks?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&ref=${encodeURIComponent(headSha)}`);
+
+    const checksBody = document.getElementById('checks-body');
+    checksBody.replaceChildren();
+    if (!checksRes.checks || checksRes.checks.length === 0) {
+      const tr = el('tr');
+      const td = el('td', 'No checks found.');
+      td.colSpan = 6;
+      tr.append(td);
+      checksBody.append(tr);
+    } else {
+      checksRes.checks.forEach(c => {
+        const tr = el('tr');
+        tr.append(el('td', c.name));
+        tr.append(el('td', c.status));
+        tr.append(el('td', c.conclusion || '-'));
+        tr.append(el('td', new Date(c.started_at).toLocaleString()));
+        tr.append(el('td', c.completed_at ? new Date(c.completed_at).toLocaleString() : '-'));
+        
+        const actionTd = el('td');
+        const link = el('a', 'View', 'link');
+        link.href = c.html_url;
+        link.target = '_blank';
+        actionTd.append(link);
+        tr.append(actionTd);
+        
+        checksBody.append(tr);
+      });
+    }
+    document.getElementById('checks-source-label').textContent = `source: ${checksRes.source}`;
+
+    resultsContainer.hidden = false;
+  } catch (err) {
+    errBox.hidden = false;
+    errBox.textContent = `Failed to fetch evidence: ${err.message || err}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Fetch Evidence';
+  }
+});
+
+// Initial load
+fetchStatus();
+</script>
+{% endblock %}

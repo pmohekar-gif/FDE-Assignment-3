@@ -49,6 +49,24 @@ query WarrantImportIssueById($id: String!) {
 }
 """
 
+_QUERY_UPDATED_ISSUES = """
+query WarrantIssuesUpdatedSince($limit: Int, $filter: IssueFilter) {
+  issues(
+    first: $limit,
+    orderBy: {field: updatedAt, direction: DESC},
+    filter: $filter
+  ) {
+    nodes {
+      id identifier title url priority updatedAt createdAt
+      team { id name key }
+      labels { nodes { id name color } }
+      state { id name type }
+      assignee { id name }
+    }
+  }
+}
+"""
+
 _REQUEST_TIMEOUT = 15.0  # seconds
 
 
@@ -146,6 +164,33 @@ class LinearAdapter:
             f"Unknown LINEAR_MODE={mode!r}. Must be 'off', 'stub', or 'live'."
         )
 
+    def fetch_updated_issues(
+        self, since: datetime | None = None, limit: int = 25, team_key: str | None = None
+    ) -> list[LinearIssueDTO]:
+        """
+        Fetch recently updated Linear issues.
+
+        Raises:
+            AdapterConfigError: if mode is "off" or "live" without an API key.
+        """
+        mode = self._settings.linear_mode
+        if mode == "off":
+            raise AdapterConfigError(
+                "Linear adapter is not configured. "
+                "Set LINEAR_MODE=stub or LINEAR_MODE=live."
+            )
+        if mode == "stub":
+            return self._fetch_updated_stub(since, limit, team_key)
+        if mode == "live":
+            if not self._settings.linear_api_key:
+                raise AdapterConfigError(
+                    "LINEAR_MODE=live requires LINEAR_API_KEY to be set."
+                )
+            return self._fetch_updated_live(since, limit, team_key)
+        raise AdapterConfigError(
+            f"Unknown LINEAR_MODE={mode!r}. Must be 'off', 'stub', or 'live'."
+        )
+
     # ------------------------------------------------------------------
     # Stub mode
     # ------------------------------------------------------------------
@@ -164,6 +209,17 @@ class LinearAdapter:
         if not stub["title"].startswith("[SIMULATED]"):
             stub["title"] = f"[SIMULATED] {stub['title']}"
         return _parse_dto(stub, source_label="linear-stub")
+
+    def _fetch_updated_stub(
+        self, since: datetime | None, limit: int, team_key: str | None
+    ) -> list[LinearIssueDTO]:
+        """Return simulated updated issues in stub mode."""
+        candidates = [self._fetch_stub("ENG-101"), self._fetch_stub("ENG-102")]
+        if team_key:
+            candidates = [issue for issue in candidates if issue.team.key == team_key]
+        if since:
+            candidates = [issue for issue in candidates if issue.updated_at > since]
+        return candidates[:limit]
 
     # ------------------------------------------------------------------
     # Live mode
@@ -206,3 +262,47 @@ class LinearAdapter:
             )
 
         return _parse_dto(node, source_label="linear")
+
+    def _fetch_updated_live(
+        self, since: datetime | None, limit: int, team_key: str | None
+    ) -> list[LinearIssueDTO]:
+        """Fetch real updated Linear issues via the GraphQL API."""
+        query = _QUERY_UPDATED_ISSUES
+        variables: dict[str, Any] = {"limit": limit}
+
+        filter_obj: dict[str, Any] = {}
+        if since:
+            filter_obj["updatedAt"] = {"gt": since.isoformat().replace("+00:00", "Z")}
+        if team_key:
+            filter_obj["team"] = {"key": {"eq": team_key}}
+
+        if filter_obj:
+            variables["filter"] = filter_obj
+
+        try:
+            response = httpx.post(
+                self._settings.linear_api_base_url,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": self._settings.linear_api_key or "",
+                },
+                json={"query": query, "variables": variables},
+                timeout=_REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise AdapterConfigError(
+                f"Linear API request failed: {type(exc).__name__}: {exc}"
+            ) from exc
+
+        payload = response.json()
+        errors = payload.get("errors")
+        if errors:
+            raise AdapterConfigError(
+                f"Linear GraphQL errors: {errors[0].get('message', errors)}"
+            )
+
+        data = payload.get("data") or {}
+        nodes = (data.get("issues") or {}).get("nodes") or []
+
+        return [_parse_dto(node, source_label="linear") for node in nodes]

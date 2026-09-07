@@ -2095,6 +2095,44 @@ class WarrantService:
     # Linear adapter import
     # ------------------------------------------------------------------
 
+    def get_linear_sync_status(self, workspace_id: str) -> dict[str, Any]:
+        """Return the current sync status for Linear imports."""
+        count_row = self.db.one(
+            "SELECT COUNT(*) as count FROM linear_issue_links "
+            "WHERE workspace_id=? AND source IN ('linear', 'linear-stub')",
+            (workspace_id,),
+        )
+        count = count_row["count"] if count_row else 0
+
+        max_ts_row = self.db.one(
+            "SELECT MAX(external_updated_at) as max_updated "
+            "FROM linear_issue_links "
+            "WHERE workspace_id=? AND source IN ('linear', 'linear-stub')",
+            (workspace_id,),
+        )
+        max_ts = max_ts_row["max_updated"] if max_ts_row else None
+
+        return {
+            "imported_issue_count": count,
+            "max_external_updated_at": max_ts,
+            "adapter_mode": self.settings.linear_mode,
+        }
+
+    def linear_candidate_import_status(
+        self, workspace_id: str, external_id: str, external_key: str, external_updated_at: str
+    ) -> str:
+        """Classify a Linear update candidate without mutating local state."""
+        row = self.db.one(
+            "SELECT external_updated_at FROM linear_issue_links "
+            "WHERE workspace_id=? AND (external_id=? OR external_key=?)",
+            (workspace_id, external_id, external_key),
+        )
+        if row is None:
+            return "new"
+        if (row["external_updated_at"] or "") < external_updated_at:
+            return "update_available"
+        return "already_imported"
+
     def import_linear_issue(
         self,
         workspace_id: str,
@@ -2179,8 +2217,8 @@ class WarrantService:
                 conn.execute(
                     "INSERT INTO linear_issue_links "
                     "(issue_id,workspace_id,external_id,external_key,source,url,"
-                    "external_created_at,description_sha256,state,assignee,team_key,imported_at)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "external_created_at,external_updated_at,description_sha256,state,assignee,team_key,imported_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         issue_id,
                         workspace_id,
@@ -2189,6 +2227,7 @@ class WarrantService:
                         source_label,
                         meta["url"],
                         meta["external_created_at"],
+                        meta["external_updated_at"],
                         meta["description_sha256"],
                         meta["state"],
                         meta["assignee"],
@@ -2317,13 +2356,14 @@ class WarrantService:
             # Update adapter metadata link
             conn.execute(
                 "UPDATE linear_issue_links SET "
-                "source=?,url=?,external_created_at=?,description_sha256=?,"
+                "source=?,url=?,external_created_at=?,external_updated_at=?,description_sha256=?,"
                 "state=?,assignee=?,team_key=?,imported_at=? "
                 "WHERE issue_id=?",
                 (
                     source_label,
                     meta["url"],
                     meta["external_created_at"],
+                    meta["external_updated_at"],
                     meta["description_sha256"],
                     meta["state"],
                     meta["assignee"],

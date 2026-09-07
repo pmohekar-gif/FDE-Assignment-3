@@ -163,6 +163,67 @@ def test_collision_same_external_id(stub_client):
     assert "already linked to a different key" in res2.json()["error"]
 
 
+def test_status_endpoint(stub_client):
+    headers = {"X-Actor-Id": "admin-demo"}
+    response = stub_client.get("/v1/adapters/linear/status", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["adapter_mode"] == "stub"
+    assert data["imported_issue_count"] == 0
+    assert data["max_external_updated_at"] is None
+    
+    # Import one issue
+    stub_client.post(
+        "/v1/adapters/linear/import-issue",
+        headers={"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"},
+        json={"ref": "ENG-999"},
+    )
+    
+    response2 = stub_client.get("/v1/adapters/linear/status", headers=headers)
+    assert response2.status_code == 200
+    data2 = response2.json()
+    assert data2["imported_issue_count"] == 1
+    assert data2["max_external_updated_at"] is not None
+
+
+def test_updates_endpoint_stub(stub_client):
+    headers = {"X-Actor-Id": "admin-demo"}
+    response = stub_client.get("/v1/adapters/linear/updates", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["adapter_mode"] == "stub"
+    assert data["source"] == "linear-stub"
+    assert len(data["issues"]) > 0
+    assert data["issues"][0]["identifier"] == "ENG-101"
+    assert data["issues"][0]["source"] == "linear-stub"
+    assert data["issues"][0]["import_status"] == "new"
+    assert "description" not in data["issues"][0]
+
+    import_response = stub_client.post(
+        "/v1/adapters/linear/import-issue",
+        headers={"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"},
+        json={"ref": "ENG-101"},
+    )
+    assert import_response.status_code == 201
+
+    response_after_import = stub_client.get("/v1/adapters/linear/updates", headers=headers)
+    assert response_after_import.status_code == 200
+    imported = {
+        issue["identifier"]: issue for issue in response_after_import.json()["issues"]
+    }
+    assert imported["ENG-101"]["import_status"] == "already_imported"
+
+
+def test_linear_updates_page_renders_picker(stub_client):
+    page = stub_client.get("/integrations/linear")
+    assert page.status_code == 200
+    assert "Explicit, bounded picker" in page.text
+    assert "/v1/adapters/linear/status" in page.text
+    assert "/v1/adapters/linear/updates?limit=25" in page.text
+    assert "Import status" in page.text
+    assert "Manual Import" in page.text
+
+
 def test_collision_different_external_id(stub_client):
     from unittest.mock import patch
 
@@ -255,6 +316,14 @@ def test_config_off(tmp_path):
     reset_and_seed(settings)
     client = TestClient(create_app(settings))
     
+    status = client.get("/v1/adapters/linear/status", headers={"X-Actor-Id": "admin-demo"})
+    assert status.status_code == 200
+    assert status.json()["adapter_mode"] == "off"
+
+    updates = client.get("/v1/adapters/linear/updates", headers={"X-Actor-Id": "admin-demo"})
+    assert updates.status_code == 503
+    assert "not configured" in updates.json()["error"]
+
     headers = {"X-CSRF-Token": "test", "X-Actor-Id": "admin-demo"}
     response = client.post(
         "/v1/adapters/linear/import-issue",

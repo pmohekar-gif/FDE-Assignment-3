@@ -68,6 +68,7 @@ def test_to_adapter_metadata():
     assert meta["assignee"] == "Alice"
     assert meta["team_key"] == "ENG"
     assert meta["external_created_at"] == "2024-08-28T09:00:00+00:00"
+    assert meta["external_updated_at"] == "2024-09-01T12:00:00+00:00"
     
     # Raw description MUST NOT be stored, only SHA-256
     assert "description" not in meta

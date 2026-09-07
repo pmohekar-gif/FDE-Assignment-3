@@ -512,10 +512,10 @@ def test_team_summary_openrouter_block(client_factory):
     db.execute(
         "INSERT OR IGNORE INTO linear_issue_links "
         "(issue_id, workspace_id, external_id, external_key, source, url, "
-        "external_created_at, description_sha256, state, team_key, "
+        "external_created_at, external_updated_at, description_sha256, state, team_key, "
         "imported_at) "
         "VALUES (?, ?, 'ext-1', 'WEB-4519', 'linear', 'url', "
-        "'now', 'hash', 'open', 'WEB', 'now')",
+        "'now', 'now', 'hash', 'open', 'WEB', 'now')",
         (issue["id"], issue["workspace_id"])
     )
     

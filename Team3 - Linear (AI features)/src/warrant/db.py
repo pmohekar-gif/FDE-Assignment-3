@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS linear_issue_links (
   source TEXT NOT NULL DEFAULT 'linear',
   url TEXT NOT NULL,
   external_created_at TEXT NOT NULL,
+  external_updated_at TEXT NOT NULL,
   description_sha256 TEXT NOT NULL,
   state TEXT NOT NULL,
   assignee TEXT,
@@ -318,6 +319,28 @@ class Database:
             for name in ("provider", "model"):
                 if name not in summary_columns:
                     connection.execute(f"ALTER TABLE team_summaries ADD COLUMN {name} TEXT")
+            linear_links_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(linear_issue_links)").fetchall()
+            }
+            if "external_updated_at" not in linear_links_columns:
+                connection.execute(
+                    "ALTER TABLE linear_issue_links ADD COLUMN external_updated_at TEXT "
+                    "NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'"
+                )
+                connection.execute(
+                    """
+                    UPDATE linear_issue_links
+                    SET external_updated_at = (
+                        SELECT updated_at FROM issues
+                        WHERE id = linear_issue_links.issue_id
+                    )
+                    WHERE (
+                        SELECT updated_at FROM issues
+                        WHERE id = linear_issue_links.issue_id
+                    ) IS NOT NULL
+                    """
+                )
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

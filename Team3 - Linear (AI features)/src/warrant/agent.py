@@ -10,7 +10,7 @@ from uuid import uuid4
 from .db import Database
 from .providers import ProviderError
 from .repository import CodeIntelligenceService, RepositoryError
-from .schemas import AgentQuery
+from .schemas import AgentQuery, AnswerResult
 from .service import NotFound, WarrantService
 
 
@@ -571,10 +571,11 @@ class AgentService:
         except ProviderError:
             pass
         else:
-            candidate = response.value.answer.strip()
-            if candidate:
-                answer = candidate
-                synthesized = True
+            if isinstance(response.value, AnswerResult):
+                candidate = response.value.answer.strip()
+                if candidate:
+                    answer = candidate
+                    synthesized = True
         sources_truncated = len(sources) > self.MAX_SOURCES
         sources = sources[: self.MAX_SOURCES]
         answer_truncated = len(answer) > self.MAX_ANSWER_CHARS

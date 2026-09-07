@@ -102,6 +102,7 @@ class LinearIssueDTO(BaseModel):
             "source": "linear",
             "url": self.url,
             "external_created_at": self.created_at.isoformat(),
+            "external_updated_at": self.updated_at.isoformat(),
             "description_sha256": hashlib.sha256(description_bytes).hexdigest(),
             "state": self.state.name,
             "assignee": self.assignee.name if self.assignee else None,

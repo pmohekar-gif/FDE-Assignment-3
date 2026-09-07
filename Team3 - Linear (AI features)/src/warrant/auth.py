@@ -63,7 +63,7 @@ HTML_PATHS = frozenset(
         "/integrations",
     }
 )
-HTML_PREFIXES = ("/delegations/", "/coding-sessions/")
+HTML_PREFIXES = ("/delegations/", "/coding-sessions/", "/integrations/")
 
 
 def _now() -> datetime:

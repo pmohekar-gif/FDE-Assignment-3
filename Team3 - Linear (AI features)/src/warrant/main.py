@@ -5,6 +5,7 @@ import io
 import json
 import math
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 from urllib.parse import parse_qsl, quote
 
@@ -21,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
+from .adapters.github import GitHubAdapter
 from .adapters.linear import AdapterConfigError, LinearAdapter
 from .agent import AgentService
 from .auth import AuthService, is_html_path, is_open_path, safe_next_path, session_actor_id
@@ -726,6 +728,34 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             },
         )
 
+    @app.get("/integrations/linear", response_class=HTMLResponse)
+    async def linear_updates_page(request: Request) -> HTMLResponse:
+        """Linear updates interface."""
+        return templates.TemplateResponse(
+            request,
+            "linear_updates.html",
+            {**page_context(settings.workspace_id, request)},
+        )
+
+    @app.get("/integrations/github", response_class=HTMLResponse)
+    async def github_evidence_page(request: Request) -> HTMLResponse:
+        """GitHub evidence interface."""
+        actor_id = acting_id(request, None)
+        actor = db.one(
+            "SELECT role FROM users WHERE id=? AND workspace_id=?", 
+            (actor_id, settings.workspace_id)
+        )
+        is_admin = bool(actor and actor["role"] in {"admin", "owner"})
+        
+        ctx = page_context(settings.workspace_id, request)
+        ctx["is_admin"] = is_admin
+
+        return templates.TemplateResponse(
+            request,
+            "github.html",
+            ctx,
+        )
+
     @app.get("/delegations/{delegation_id}", response_class=HTMLResponse)
     async def delegation_page(request: Request, delegation_id: str) -> HTMLResponse:
         workspace_id = settings.workspace_id
@@ -1425,6 +1455,68 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "next_cursor": events[-1]["seq"] if len(events) == limit else None,
         }
 
+    @app.get("/v1/adapters/linear/status")
+    async def linear_status_endpoint(
+        request: Request,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+    ) -> Any:
+        """Read-only check for Linear sync status."""
+        workspace_id = workspace(x_workspace_id)
+        actor_id = acting_id(request, x_actor_id)
+        service.require_admin(workspace_id, actor_id)
+        
+        return service.get_linear_sync_status(workspace_id)
+
+    @app.get("/v1/adapters/linear/updates")
+    async def linear_updates_endpoint(
+        request: Request,
+        team_key: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=50)] = 25,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+    ) -> Any:
+        """Fetch newly created/updated Linear issues, taking the sync status watermark."""
+        workspace_id = workspace(x_workspace_id)
+        actor_id = acting_id(request, x_actor_id)
+        service.require_admin(workspace_id, actor_id)
+        
+        status = service.get_linear_sync_status(workspace_id)
+        since_str = status.get("max_external_updated_at")
+        since = None
+        if since_str:
+            try:
+                dt = datetime.fromisoformat(str(since_str))
+            except ValueError:
+                dt = None
+            if dt is not None:
+                if not dt.tzinfo:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                # Subtract 2 minutes for overlap; import idempotency handles duplicates.
+                since = dt - timedelta(minutes=2)
+
+        adapter = LinearAdapter(settings)
+        issues = adapter.fetch_updated_issues(since=since, limit=limit, team_key=team_key)
+        source = "linear-stub" if settings.linear_stub_mode else "linear"
+        return {
+            "adapter_mode": settings.linear_mode,
+            "source": source,
+            "since": since.isoformat() if since else None,
+            "issues": [
+                {
+                    **issue.model_dump(exclude={"description"}),
+                    "source": source,
+                    "import_status": service.linear_candidate_import_status(
+                        workspace_id,
+                        issue.id,
+                        issue.identifier,
+                        issue.updated_at.isoformat(),
+                    ),
+                }
+                for issue in issues
+            ],
+        }
+
     @app.post("/v1/adapters/linear/import-issue", status_code=201)
     async def linear_import_endpoint(
         request: Request,
@@ -1551,6 +1643,99 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
                 f'{metric}{{provider="{provider_label}",model="{model_label}"}} {rate:.4f}'
             )
         return "\n".join(lines) + "\n"
+
+    @app.get("/v1/adapters/github/status")
+    async def github_status_endpoint(
+        request: Request,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+    ) -> Any:
+        workspace_id = workspace(x_workspace_id)
+        actor_id = acting_id(request, x_actor_id)
+        service.require_admin(workspace_id, actor_id)
+
+        source = "github-stub" if settings.github_stub_mode else "github"
+        if settings.github_mode == "off":
+            source = "none"
+
+        return JSONResponse(
+            {
+                "adapter_mode": settings.github_mode,
+                "source": source,
+                "api_base_url": settings.github_api_base_url,
+            }
+        )
+
+    @app.get("/v1/adapters/github/pull-request")
+    async def github_pull_request_endpoint(
+        request: Request,
+        owner: str,
+        repo: str,
+        number: Annotated[int, Query(ge=1)],
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+    ) -> Any:
+        workspace_id = workspace(x_workspace_id)
+        actor_id = acting_id(request, x_actor_id)
+        service.require_admin(workspace_id, actor_id)
+
+        adapter = GitHubAdapter(settings)
+        dto = adapter.get_pull_request(owner, repo, number)
+        return JSONResponse(
+            {
+                "adapter_mode": settings.github_mode,
+                "source": adapter.source,
+                "pull_request": dto.model_dump(),
+            }
+        )
+
+    @app.get("/v1/adapters/github/pull-request/files")
+    async def github_pull_request_files_endpoint(
+        request: Request,
+        owner: str,
+        repo: str,
+        number: Annotated[int, Query(ge=1)],
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+    ) -> Any:
+        workspace_id = workspace(x_workspace_id)
+        actor_id = acting_id(request, x_actor_id)
+        service.require_admin(workspace_id, actor_id)
+
+        adapter = GitHubAdapter(settings)
+        dtos = adapter.get_pull_request_files(owner, repo, number, limit)
+        return JSONResponse(
+            {
+                "adapter_mode": settings.github_mode,
+                "source": adapter.source,
+                "files": [dto.model_dump() for dto in dtos],
+            }
+        )
+
+    @app.get("/v1/adapters/github/pull-request/checks")
+    async def github_pull_request_checks_endpoint(
+        request: Request,
+        owner: str,
+        repo: str,
+        ref: str,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+    ) -> Any:
+        workspace_id = workspace(x_workspace_id)
+        actor_id = acting_id(request, x_actor_id)
+        service.require_admin(workspace_id, actor_id)
+
+        adapter = GitHubAdapter(settings)
+        dtos = adapter.get_pull_request_checks(owner, repo, ref, limit)
+        return JSONResponse(
+            {
+                "adapter_mode": settings.github_mode,
+                "source": adapter.source,
+                "checks": [dto.model_dump() for dto in dtos],
+            }
+        )
 
     @app.get("/healthz")
     async def health() -> dict:

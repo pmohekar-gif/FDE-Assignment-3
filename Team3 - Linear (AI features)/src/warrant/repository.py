@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 from .db import Database
 from .providers import LLMProvider, ProviderError
+from .schemas import AnswerResult
 from .security import redact_secrets
 
 
@@ -1080,10 +1081,11 @@ class CodeIntelligenceService:
             except ProviderError:
                 pass
             else:
-                candidate = response.value.answer.strip()
-                if candidate:
-                    answer = candidate
-                    synthesized = True
+                if isinstance(response.value, AnswerResult):
+                    llm_answer = response.value.answer.strip()
+                    if llm_answer:
+                        answer = llm_answer
+                        synthesized = True
         return CodeAnswer(
             answer=answer,
             repository_id=self.provider.repository_id,

@@ -121,6 +121,12 @@ was not executed in this environment because the Docker daemon was unavailable.
 | `FIXTURE_FAILURE` | unset | Failure injection: `extract`, `judge`, `embedding`, `malformed`, or `all`. |
 | `AI_FALLBACK_PROVIDER` | unset | Optional `fixture` fallback after retry/repair exhaustion. |
 | `PROVIDER_RETRY_BASE_MS` | `25` | Base delay for two exponential-backoff retries with jitter. |
+| `LINEAR_MODE` | `off` | Optional read-only Linear picker/import mode: `off`, `stub`, or `live`. |
+| `LINEAR_API_KEY` | unset | Required only for `LINEAR_MODE=live`; never committed or logged. |
+| `LINEAR_API_BASE_URL` | Linear GraphQL API | Override for authorized Linear test workspaces. |
+| `GITHUB_MODE` | `off` | Optional read-only GitHub evidence lookup mode: `off`, `stub`, or `live`. |
+| `GITHUB_TOKEN` | unset | Required only for `GITHUB_MODE=live`; read-only fine-grained PAT recommended for MVP. |
+| `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub REST API base URL; live mode requires HTTPS and rejects local/private targets. |
 | `AGENT_CHAT_ENABLED` | `true` | Enables evidence-grounded, non-authorising Agent Q&A. |
 | `CODE_INTELLIGENCE_ENABLED` | `true` | Enables repository indexing and code Q&A. |
 | `REPOSITORY_ROOT` | project root | Repository the code index and coding-session service may inspect. Coding sessions need a Git checkout: `make demo-repo` creates one at `.runtime/demo-repo`. |

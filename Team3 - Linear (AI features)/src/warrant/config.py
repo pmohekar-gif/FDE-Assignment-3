@@ -110,6 +110,10 @@ class Settings:
     linear_mode: str = "off"  # "off" | "stub" | "live"
     linear_api_key: str | None = None
     linear_api_base_url: str = "https://api.linear.app/graphql"
+    # GitHub read-only proxy adapter (optional).
+    github_mode: str = "off"  # "off" | "stub" | "live"
+    github_token: str | None = None
+    github_api_base_url: str = "https://api.github.com"
     agent_chat_enabled: bool = True
     code_intelligence_enabled: bool = True
     external_coding_agent_enabled: bool = False
@@ -194,6 +198,11 @@ class Settings:
             linear_api_base_url=os.getenv(
                 "LINEAR_API_BASE_URL", "https://api.linear.app/graphql"
             ),
+            github_mode=os.getenv("GITHUB_MODE", "off").lower(),
+            github_token=os.getenv("GITHUB_TOKEN") or None,
+            github_api_base_url=os.getenv(
+                "GITHUB_API_BASE_URL", "https://api.github.com"
+            ),
             agent_chat_enabled=_env_bool("AGENT_CHAT_ENABLED", True),
             code_intelligence_enabled=_env_bool("CODE_INTELLIGENCE_ENABLED", True),
             external_coding_agent_enabled=_env_bool("EXTERNAL_CODING_AGENT_ENABLED", False),
@@ -244,6 +253,10 @@ class Settings:
     @property
     def linear_stub_mode(self) -> bool:
         return self.linear_mode == "stub"
+
+    @property
+    def github_stub_mode(self) -> bool:
+        return self.github_mode == "stub"
 
     @property
     def live_model(self) -> str:
