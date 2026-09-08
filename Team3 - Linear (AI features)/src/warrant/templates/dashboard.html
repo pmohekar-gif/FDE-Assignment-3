@@ -58,6 +58,7 @@
         {% if issue.matched_by %}<span class="code-chip">{{ issue.matched_by|join('+') }} {{ issue.semantic_score }}</span>{% endif %}
         <span class="row-team">{{ issue.team }}</span>
         <span class="row-act">
+          <a class="mini" href="/issues/{{ issue.external_key }}">Discuss</a>
           <button class="mini triage-trigger" type="button" data-issue="{{ issue.external_key }}" aria-expanded="false">AI triage</button>
           <button class="mini related-trigger" type="button" data-issue="{{ issue.external_key }}" aria-expanded="false">Related</button>
           <button class="mini pri delegate" type="button" data-issue="{{ issue.external_key }}">Delegate</button>

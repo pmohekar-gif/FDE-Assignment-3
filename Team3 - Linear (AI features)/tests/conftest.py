@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,7 +12,11 @@ from warrant.seed import reset_and_seed
 
 @pytest.fixture
 def client_factory(tmp_path):
-    def factory(failure: str | None = None) -> TestClient:
+    def factory(
+        failure: str | None = None,
+        repository_root: Path | None = None,
+        code_intelligence_enabled: bool = True,
+    ) -> TestClient:
         settings = Settings(
             database_path=tmp_path / f"warrant-{failure or 'healthy'}.db",
             ai_provider="fixture",
@@ -23,6 +29,8 @@ def client_factory(tmp_path):
             allow_sufficiency_threshold=0.70,
             fixture_failure=failure,
             debug=False,
+            repository_root=repository_root or Settings.repository_root,
+            code_intelligence_enabled=code_intelligence_enabled,
         )
         reset_and_seed(settings)
         return TestClient(create_app(settings))

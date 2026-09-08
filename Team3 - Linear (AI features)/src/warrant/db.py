@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# ruff: noqa: E501
 import json
 import sqlite3
 from contextlib import contextmanager
@@ -48,6 +49,11 @@ CREATE TABLE IF NOT EXISTS issues (
   revision INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL,
   demo_note TEXT NOT NULL DEFAULT '', is_demo_path INTEGER NOT NULL DEFAULT 0,
   UNIQUE(workspace_id, external_key), FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+);
+CREATE TABLE IF NOT EXISTS issue_creation_requests (
+  workspace_id TEXT NOT NULL, client_request_id TEXT NOT NULL, issue_id TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL, PRIMARY KEY(workspace_id, client_request_id),
+  FOREIGN KEY(issue_id) REFERENCES issues(id)
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS issues_fts USING fts5(
   issue_id UNINDEXED, workspace_id UNINDEXED, title, body, tokenize='porter unicode61'
@@ -204,6 +210,33 @@ CREATE TABLE IF NOT EXISTS slack_events (
   event_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, event_type TEXT NOT NULL,
   response_json TEXT NOT NULL, received_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS agent_settings (
+  workspace_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1,
+  workspace_guidance TEXT NOT NULL DEFAULT '', monthly_budget_cents INTEGER,
+  per_user_budget_cents INTEGER, updated_by TEXT, updated_at TEXT NOT NULL,
+  FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+);
+CREATE TABLE IF NOT EXISTS agent_preferences (
+  workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, guidance TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL,
+  PRIMARY KEY(workspace_id,user_id), FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+);
+CREATE TABLE IF NOT EXISTS comments (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, issue_id TEXT NOT NULL,
+  parent_comment_id TEXT, author_type TEXT NOT NULL CHECK(author_type IN ('user','agent')),
+  author_id TEXT NOT NULL, body_normalised TEXT NOT NULL, status TEXT NOT NULL,
+  client_request_id TEXT, context_revision INTEGER, created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL, deleted_at TEXT,
+  UNIQUE(workspace_id,client_request_id), FOREIGN KEY(issue_id) REFERENCES issues(id)
+);
+CREATE TABLE IF NOT EXISTS comment_mentions (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, comment_id TEXT NOT NULL UNIQUE,
+  invoking_user_id TEXT NOT NULL, mentioned_identity TEXT NOT NULL, requested_text TEXT NOT NULL,
+  state TEXT NOT NULL, assistant_comment_id TEXT UNIQUE, idempotency_key TEXT NOT NULL,
+  provider TEXT, model TEXT, citations_json TEXT NOT NULL DEFAULT '[]', uncertainty_json TEXT NOT NULL DEFAULT '[]',
+  failure_reason TEXT, created_at TEXT NOT NULL, completed_at TEXT,
+  UNIQUE(workspace_id,idempotency_key), FOREIGN KEY(comment_id) REFERENCES comments(id)
+);
 CREATE INDEX IF NOT EXISTS idx_delegations_workspace ON delegations(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_warrants_workspace ON warrants(workspace_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_events(workspace_id, seq);
@@ -216,6 +249,8 @@ CREATE INDEX IF NOT EXISTS idx_coding_sessions_workspace
   ON coding_sessions(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_coding_events_session ON coding_session_events(session_id, seq);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(workspace_id, issue_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_mentions_workspace ON comment_mentions(workspace_id, created_at);
 """
 
 

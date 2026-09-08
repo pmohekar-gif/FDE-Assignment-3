@@ -247,6 +247,29 @@ def test_issue_inbox_discloses_retrieval_mode_and_completeness(client):
     assert "Key, title, or describe the problem" in page.text
 
 
+def test_issue_discussion_exposes_a_live_comment_history(client):
+    page = client.get("/issues/PAY-4471")
+
+    assert page.status_code == 200
+    assert 'class="card discussion-card"' in page.text
+    assert 'id="comment-list" class="comment-list" role="log"' in page.text
+    assert "pageshow" in page.text
+    assert "visibilitychange" in page.text
+    assert "addEventListener('load',load,{once:true})" in page.text
+
+
+def test_new_ticket_page_replaces_the_sidebar_issues_destination(client):
+    page = client.get("/issues/new")
+
+    assert page.status_code == 200
+    assert "Create a ticket" in page.text
+    assert 'id="new-issue-form"' in page.text
+    assert "Creating a ticket does not start AI" in page.text
+    assert "api('/v1/issues'" in page.text
+    assert 'href="/issues/new"' in page.text
+    assert 'href="/#issue-inbox"' not in page.text
+
+
 def test_triage_rail_surfaces_measured_and_failing_evaluation_metrics(client):
     page = client.get("/")
     assert page.status_code == 200
@@ -522,6 +545,32 @@ def test_code_intelligence_page_exposes_index_status_and_refresh(client):
     assert "authorising" in page.text
     assert 'id="refresh-index"' in page.text
     assert "start_line" in page.text and "end_line" in page.text
+    assert "/v1/code/impact" in page.text
+    assert "Impact preflight" in page.text
+    assert "/v1/telemetry/code-intelligence" in page.text
+    assert "AI synthesis fallback" in page.text
+    assert "Deterministic repository answer" in page.text
+    assert "Searching the configured repository" in page.text
+    assert "Modules cited · choose a module to inspect or plan" in page.text
+    assert "Ask about module" not in page.text
+    assert "Asking about module" not in page.text
+    assert "Module answer" not in page.text
+    assert "Where is the policy verdict computed?" in page.text
+    assert "Where is an active warrant re-checked before execution?" in page.text
+    assert "How is the audit chain hashed?" in page.text
+    assert "How does the authentication system work?" in page.text
+    assert "Who wrote the payment processing logic?" in page.text
+    assert "When was the search feature added?" in page.text
+    assert "Impact-preflight prompts for current issues" in page.text
+    assert "payment retry idempotency" in page.text
+    assert "authentication signing keys" in page.text
+    assert "export notification delivery" in page.text
+    assert "code-action-result" in page.text
+    assert "File explorer" not in page.text
+    assert "Symbol search" not in page.text
+    assert "repository-unavailable" in page.text
+    assert "Stale" in page.text
+    assert "renderError" in page.text
 
 
 def test_integrations_page_reports_feature_flags_and_slack_state(client):

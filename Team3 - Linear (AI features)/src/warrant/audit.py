@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -28,10 +29,11 @@ class AuditLedger:
         subject_type: str,
         subject_id: str,
         payload: dict[str, Any],
+        connection: sqlite3.Connection | None = None,
     ) -> dict[str, Any]:
         created_at = datetime.now(timezone.utc).isoformat()
-        with self.db.transaction() as connection:
-            prior = connection.execute(
+        def write(event_connection: sqlite3.Connection) -> dict[str, Any]:
+            prior = event_connection.execute(
                 "SELECT seq,hash FROM audit_events WHERE workspace_id=? ORDER BY seq DESC LIMIT 1",
                 (workspace_id,),
             ).fetchone()
@@ -50,7 +52,7 @@ class AuditLedger:
             }
             digest = hashlib.sha256((prev_hash + _canonical(content)).encode()).hexdigest()
             event_id = f"ae_{uuid4().hex[:16]}"
-            connection.execute(
+            event_connection.execute(
                 "INSERT INTO audit_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     event_id,
@@ -67,7 +69,12 @@ class AuditLedger:
                     created_at,
                 ),
             )
-        return {"id": event_id, "seq": seq, "hash": digest, **content}
+            return {"id": event_id, "seq": seq, "hash": digest, **content}
+
+        if connection is not None:
+            return write(connection)
+        with self.db.transaction() as event_connection:
+            return write(event_connection)
 
     def verify_detail(self, workspace_id: str) -> dict[str, Any]:
         previous = GENESIS

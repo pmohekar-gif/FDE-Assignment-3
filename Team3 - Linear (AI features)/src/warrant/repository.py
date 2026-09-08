@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
@@ -18,6 +18,17 @@ from .security import redact_secrets
 class RepositoryError(RuntimeError):
     """A typed, user-safe repository capability failure."""
 
+
+class RepositorySourceNotFound(RepositoryError):
+    """A requested path or symbol is not available from the current safe index."""
+
+
+REPOSITORY_UNAVAILABLE_CODE = "REPOSITORY_UNAVAILABLE"
+REPOSITORY_UNAVAILABLE_TITLE = "Repository unavailable"
+REPOSITORY_UNAVAILABLE_MESSAGE = (
+    "Code Intelligence cannot access its configured repository. Set REPOSITORY_ROOT to an "
+    "available local checkout, then refresh the index."
+)
 
 @dataclass(frozen=True)
 class RepositoryFile:
@@ -40,6 +51,7 @@ class CodeSource:
     score: float = 0.0
     module: str = ""
     edge: str = "text"
+    rank_tier: str = "generic_text"
 
 
 @dataclass(frozen=True)
@@ -71,16 +83,7 @@ class ContextBudget:
 
 
 def replace_snippet(source: CodeSource, snippet: str) -> CodeSource:
-    return CodeSource(
-        path=source.path,
-        start_line=source.start_line,
-        end_line=source.end_line,
-        reason=source.reason,
-        snippet=snippet,
-        score=source.score,
-        module=source.module,
-        edge=source.edge,
-    )
+    return replace(source, snippet=snippet)
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,9 @@ class CodeAnswer:
     dependency_resolved: bool | None = None
     modules: tuple[str, ...] = field(default_factory=tuple)
     synthesized: bool = False
+    synthesis_provider: str | None = None
+    synthesis_model: str | None = None
+    synthesis_degraded: bool = False
 
 
 class RepositoryProvider(Protocol):
@@ -167,6 +173,10 @@ IGNORE_FILE = ".gitignore"
 SNIPPET_CONTEXT_BEFORE = 2
 SNIPPET_CONTEXT_AFTER = 3
 MAX_SNIPPET_CHARS = 3_000
+MAX_SOURCE_PREVIEW_LINES = 120
+MAX_SOURCE_PREVIEW_CHARS = 12_000
+MAX_SOURCE_METADATA_ITEMS = 50
+MAX_IMPACT_SYMBOLS = 12
 PYTHON_SUFFIXES = {".py", ".pyi"}
 SCRIPT_SUFFIXES = {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"}
 
@@ -370,8 +380,11 @@ class LocalRepositoryProvider:
         self.max_results = max_results
         self._is_git: bool | None = None
         self._ignore_cache: dict[tuple[str, int], tuple[IgnoreRule, ...]] = {}
-        if not self.root.is_dir():
-            raise RepositoryError("configured repository root is unavailable")
+        self.available = self.root.is_dir()
+
+    def _require_available(self) -> None:
+        if not self.available:
+            raise RepositoryError(REPOSITORY_UNAVAILABLE_MESSAGE)
 
     @staticmethod
     def _git(args: list[str], cwd: Path, timeout: int = 10) -> subprocess.CompletedProcess[str]:
@@ -389,6 +402,7 @@ class LocalRepositoryProvider:
             raise RepositoryError(f"git unavailable: {type(exc).__name__}") from exc
 
     def is_git_repository(self) -> bool:
+        self._require_available()
         if self._is_git is None:
             result = self._git(["rev-parse", "--is-inside-work-tree"], self.root)
             self._is_git = result.returncode == 0 and result.stdout.strip() == "true"
@@ -454,6 +468,7 @@ class LocalRepositoryProvider:
         return False
 
     def get_repository_metadata(self) -> dict[str, Any]:
+        self._require_available()
         return {
             "repository_id": self.repository_id,
             "root": str(self.root),
@@ -464,6 +479,7 @@ class LocalRepositoryProvider:
         }
 
     def get_current_revision(self) -> str:
+        self._require_available()
         result = self._git(["rev-parse", "HEAD"], self.root)
         if result.returncode == 0:
             return result.stdout.strip()
@@ -494,6 +510,7 @@ class LocalRepositoryProvider:
         }
 
     def _resolve(self, value: str) -> Path:
+        self._require_available()
         relative = Path(value)
         if relative.is_absolute() or ".." in relative.parts:
             raise RepositoryError("repository path traversal is not allowed")
@@ -513,6 +530,7 @@ class LocalRepositoryProvider:
         return candidate
 
     def list_files(self) -> list[str]:
+        self._require_available()
         candidates: list[str]
         if self.is_git_repository():
             result = self._git(
@@ -617,6 +635,7 @@ class LocalRepositoryProvider:
                         ),
                         module=module_for_path(relative),
                         edge="text",
+                        rank_tier="generic_text",
                     )
                 )
         matches.sort(key=lambda item: (-item.score, item.path, item.start_line))
@@ -632,6 +651,7 @@ class LocalRepositoryProvider:
         return diverse
 
     def get_diff(self, base_revision: str, worktree: Path | None = None) -> str:
+        self._require_available()
         target = (worktree or self.root).resolve()
         result = self._git(["diff", "--no-ext-diff", "--binary", base_revision, "--"], target, 30)
         if result.returncode not in {0, 1}:
@@ -675,6 +695,14 @@ class CodeIntelligenceService:
         "call sites",
         "blast radius",
     )
+    DOCUMENTATION_TERMS = ("docs", "document", "documentation", "guide", "readme")
+    CODE_LOCATION_TERMS = ("where", "implemented", "implementation", "definition", "located")
+    RANK_TIER_PRIORITY = {
+        "exact_definition": 4,
+        "resolved_dependency": 3,
+        "generic_text": 2,
+        "metadata_match": 1,
+    }
     SYMBOL_TARGET_PATTERNS = (
         r"depends?\s+(?:up)?on\s+([A-Za-z_][\w.]*)",
         r"dependents?\s+of\s+([A-Za-z_][\w.]*)",
@@ -695,6 +723,22 @@ class CodeIntelligenceService:
         self.db = db
         self.provider = provider
         self.llm = llm
+
+    def availability(self) -> dict[str, Any]:
+        """Return a browser-safe capability state without exposing a filesystem path."""
+        if not bool(getattr(self.provider, "available", True)):
+            return {
+                "available": False,
+                "code": REPOSITORY_UNAVAILABLE_CODE,
+                "title": REPOSITORY_UNAVAILABLE_TITLE,
+                "message": REPOSITORY_UNAVAILABLE_MESSAGE,
+            }
+        return {"available": True}
+
+    def _require_available(self) -> None:
+        availability = self.availability()
+        if not availability["available"]:
+            raise RepositoryError(str(availability["message"]))
 
     def _ignore_source(self) -> str:
         resolver = getattr(self.provider, "ignore_source", None)
@@ -738,6 +782,7 @@ class CodeIntelligenceService:
         return tuple(dict.fromkeys(values))
 
     def refresh(self, force: bool = False) -> dict[str, Any]:
+        self._require_available()
         revision = self.provider.get_current_revision()
         cached = self.db.one(
             "SELECT * FROM repository_indexes WHERE repository_id=? AND revision=?",
@@ -830,6 +875,18 @@ class CodeIntelligenceService:
         return entries, dependents
 
     def status(self) -> dict[str, Any]:
+        availability = self.availability()
+        if not availability["available"]:
+            return {
+                "repository_id": self.provider.repository_id,
+                "indexed": False,
+                "stale": False,
+                "availability": availability,
+                "context_budget": {
+                    "max_snippets": self.BUDGET.max_snippets,
+                    "max_total_chars": self.BUDGET.max_total_chars,
+                },
+            }
         revision = self.provider.get_current_revision()
         row = self.db.one(
             "SELECT * FROM repository_indexes WHERE repository_id=? AND revision=?",
@@ -867,6 +924,217 @@ class CodeIntelligenceService:
     def wants_dependency_graph(self, query: str) -> bool:
         lowered = query.casefold()
         return any(term in lowered for term in self.IMPACT_TERMS)
+
+    def browse_files(self, query: str = "", limit: int = 100) -> dict[str, Any]:
+        """Return bounded, metadata-only file records from the current revision's index."""
+        self._require_available()
+        status = self.status()
+        if not status["indexed"]:
+            return {"indexed": False, "files": []}
+        entries, _ = self._load_index(str(status["revision"]))
+        needle = query.strip().casefold()
+        files = [
+            {
+                "path": str(entry["path"]),
+                "language": str(entry.get("language") or "Text"),
+                "module": str(entry.get("module") or ""),
+                "symbol_count": len(entry.get("symbols") or []),
+            }
+            for entry in entries
+            if not needle or needle in str(entry["path"]).casefold()
+        ]
+        return {"indexed": True, "files": sorted(files, key=lambda item: item["path"])[:limit]}
+
+    def search_symbols(self, query: str = "", limit: int = 100) -> dict[str, Any]:
+        """Search indexed definition names without returning file body text."""
+        self._require_available()
+        status = self.status()
+        if not status["indexed"]:
+            return {"indexed": False, "symbols": []}
+        needle = query.strip().casefold()
+        entries, _ = self._load_index(str(status["revision"]))
+        symbols = [
+            {
+                "name": str(name),
+                "path": str(entry["path"]),
+                "language": str(entry.get("language") or "Text"),
+                "module": str(entry.get("module") or ""),
+            }
+            for entry in entries
+            for name in entry.get("symbols") or []
+            if not needle or needle in str(name).casefold()
+        ]
+        return {
+            "indexed": True,
+            "symbols": sorted(symbols, key=lambda item: (item["name"], item["path"]))[:limit],
+        }
+
+    def _indexed_entry(
+        self, path: str
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, list[str]]]:
+        """Resolve an exact, current index entry; never use a browser-supplied filesystem path."""
+        self._require_available()
+        status = self.status()
+        if not status["indexed"]:
+            raise RepositorySourceNotFound("repository index is unavailable")
+        entries, dependents = self._load_index(str(status["revision"]))
+        entry = next((item for item in entries if item.get("path") == path), None)
+        if entry is None:
+            raise RepositorySourceNotFound("indexed source not found")
+        return entry, status, dependents
+
+    def source_preview(
+        self, path: str, start_line: int = 1, line_count: int = 80
+    ) -> dict[str, Any]:
+        """Return a bounded, redacted source window and metadata from the current index."""
+        entry, status, dependents = self._indexed_entry(path)
+        lines = self._read_lines(path)
+        if not lines:
+            raise RepositorySourceNotFound("indexed source is no longer readable")
+        start = min(max(start_line, 1), len(lines))
+        count = min(max(line_count, 1), MAX_SOURCE_PREVIEW_LINES)
+        end = min(len(lines), start + count - 1)
+        rendered = "\n".join(f"{number}: {lines[number - 1]}" for number in range(start, end + 1))
+        content = redact_secrets(rendered)[:MAX_SOURCE_PREVIEW_CHARS]
+        module = str(entry.get("module") or "")
+        return {
+            "indexed": True,
+            "read_only": True,
+            "path": str(entry["path"]),
+            "language": str(entry.get("language") or "Text"),
+            "module": module,
+            "revision": str(status["revision"]),
+            "stale": bool(status.get("stale", False)),
+            "start_line": start,
+            "end_line": end,
+            "content": content,
+            "truncated": end < len(lines) or len(rendered) > MAX_SOURCE_PREVIEW_CHARS,
+            "symbols": list(entry.get("symbols") or [])[:MAX_SOURCE_METADATA_ITEMS],
+            "imports": list(entry.get("imports") or [])[:MAX_SOURCE_METADATA_ITEMS],
+            "dependents": dependents.get(module, [])[:MAX_SOURCE_METADATA_ITEMS],
+        }
+
+    def scoped_query(self, query: str, path: str | None, symbol: str | None) -> str:
+        """Validate an indexed UI shortcut without accepting browser-supplied source content."""
+        if path is None and symbol is None:
+            return query
+        if path is None:
+            raise RepositorySourceNotFound("an indexed source is required for a symbol scope")
+        entry, _, _ = self._indexed_entry(path)
+        if symbol is not None and symbol not in entry.get("symbols", []):
+            raise RepositorySourceNotFound("indexed symbol not found in source")
+        scope = f" Focus on indexed file {entry['path']}"
+        if symbol is not None:
+            scope += f" and indexed symbol {symbol}"
+        return f"{query.strip()}.{scope}."
+
+    def impact_preflight(self, path: str, symbol: str | None = None) -> dict[str, Any]:
+        """Create a deterministic, read-only planning brief from the current index."""
+        entry, status, dependents = self._indexed_entry(path)
+        symbols = [str(item) for item in entry.get("symbols", [])]
+        if symbol is not None:
+            if symbol not in symbols:
+                raise RepositorySourceNotFound("indexed symbol not found in source")
+            targets = [symbol]
+        else:
+            targets = symbols[:MAX_IMPACT_SYMBOLS]
+        entries, _ = self._load_index(str(status["revision"]))
+        definitions: list[CodeSource] = []
+        for target in targets:
+            target_definitions, _ = self.dependency_sources(target, entries, {})
+            definitions.extend(item for item in target_definitions if item.edge == "definition")
+        citations, truncated = self.BUDGET.apply(self.rank_sources(definitions, path, symbol))
+        module = str(entry.get("module") or "")
+        direct_dependents = dependents.get(module, [])[:MAX_SOURCE_METADATA_ITEMS]
+        module_paths: dict[str, list[str]] = {}
+        for candidate in entries:
+            candidate_module = str(candidate.get("module") or "")
+            if candidate_module:
+                module_paths.setdefault(candidate_module, []).append(str(candidate["path"]))
+        related: list[dict[str, str]] = [
+            {"path": dependent, "relation": "direct dependent"}
+            for dependent in direct_dependents
+        ]
+        for imported in entry.get("imports", [])[:MAX_SOURCE_METADATA_ITEMS]:
+            resolved = resolve_import(str(imported), module, set(module_paths))
+            for imported_path in module_paths.get(resolved or "", []):
+                if imported_path != path and all(item["path"] != imported_path for item in related):
+                    related.append({"path": imported_path, "relation": "resolved import"})
+        stem = Path(path).stem.casefold()
+        indexed_tests = [
+            str(candidate["path"])
+            for candidate in entries
+            if str(candidate["path"]).startswith("tests/")
+            and (stem in Path(str(candidate["path"])).stem.casefold() or any(
+                target.casefold() in Path(str(candidate["path"])).stem.casefold()
+                for target in targets
+            ))
+        ][:MAX_SOURCE_METADATA_ITEMS]
+        verification_areas: list[dict[str, Any]] = [
+            {
+                "kind": "definition",
+                "label": "Review the cited definition before changing behavior.",
+                "paths": [path],
+            }
+        ]
+        if direct_dependents:
+            verification_areas.append(
+                {
+                    "kind": "direct_dependents",
+                    "label": "Review direct indexed dependents for caller impact.",
+                    "paths": direct_dependents,
+                }
+            )
+        if indexed_tests:
+            verification_areas.append(
+                {
+                    "kind": "indexed_tests",
+                    "label": "Review indexed tests whose names match this source or target.",
+                    "paths": indexed_tests,
+                }
+            )
+        citation_labels = [f"{item.path}:{item.start_line}-{item.end_line}" for item in citations]
+        handoff = "\n".join(
+            [
+                "Repository impact preflight (advisory; no action has been taken)",
+                f"Revision: {status['revision']}",
+                f"Source: {path}" + (f" · symbol: {symbol}" if symbol else ""),
+                "Citations: " + (", ".join(citation_labels) if citation_labels else "none"),
+                "Direct dependents: "
+                + (", ".join(direct_dependents) if direct_dependents else "none indexed"),
+                "Related paths: "
+                + (", ".join(item["path"] for item in related) if related else "none indexed"),
+                "Verification areas: " + "; ".join(item["label"] for item in verification_areas),
+                "Human review is required before creating a comment, issue, delegation, "
+                "or code change.",
+            ]
+        )
+        return {
+            "read_only": True,
+            "advisory": True,
+            "authoritative": False,
+            "authorising": False,
+            "repository_id": self.provider.repository_id,
+            "revision": str(status["revision"]),
+            "stale": bool(status.get("stale", False)),
+            "path": path,
+            "symbol": symbol,
+            "definition_resolved": bool(citations),
+            "definitions": [
+                {
+                    "path": item.path,
+                    "start_line": item.start_line,
+                    "end_line": item.end_line,
+                    "reason": item.reason,
+                }
+                for item in citations
+            ],
+            "direct_dependents": direct_dependents,
+            "related_paths": related[:MAX_SOURCE_METADATA_ITEMS],
+            "verification_areas": verification_areas,
+            "truncated": truncated,
+            "handoff": handoff,
+        }
 
     def target_symbol(self, query: str, entries: Sequence[dict[str, Any]]) -> str | None:
         """Resolve the question's subject to a symbol that really exists in the index."""
@@ -937,6 +1205,7 @@ class CodeIntelligenceService:
                         score=100.0,
                         module=module,
                         edge="definition",
+                        rank_tier="exact_definition",
                     )
                 )
                 break
@@ -999,6 +1268,7 @@ class CodeIntelligenceService:
                         score=score,
                         module=module,
                         edge=edge,
+                        rank_tier="resolved_dependency",
                     )
                 )
         return sources, importers
@@ -1012,6 +1282,62 @@ class CodeIntelligenceService:
                 f"{source.path}:{source.start_line}-{source.end_line}"
             )
         return "; ".join(f"{key} ({', '.join(value)})" for key, value in grouped.items())
+
+    def _prefer_code_evidence(self, query: str, symbol: str | None) -> bool:
+        lowered = query.casefold()
+        return bool(symbol) or any(term in lowered for term in self.CODE_LOCATION_TERMS)
+
+    def _documentation_query(self, query: str) -> bool:
+        lowered = query.casefold()
+        return any(term in lowered for term in self.DOCUMENTATION_TERMS)
+
+    def rank_sources(
+        self, sources: Sequence[CodeSource], query: str, symbol: str | None
+    ) -> list[CodeSource]:
+        """Rank deterministic evidence, with code locations ahead of UI/example copy."""
+        prefer_code = self._prefer_code_evidence(query, symbol)
+        documentation_query = self._documentation_query(query)
+        ranked: list[CodeSource] = []
+        for source in sources:
+            adjusted = source
+            path = source.path.casefold()
+            if prefer_code and not documentation_query and source.rank_tier == "generic_text":
+                if "/templates/" in f"/{path}" or path.startswith("tests/"):
+                    adjusted = replace(source, score=source.score - 30.0)
+                elif path.startswith("docs/") or path.endswith("readme.md"):
+                    adjusted = replace(source, score=source.score - 20.0)
+            ranked.append(adjusted)
+        return sorted(
+            ranked,
+            key=lambda item: (
+                -self.RANK_TIER_PRIORITY.get(item.rank_tier, 0),
+                -item.score,
+                item.path,
+                item.start_line,
+            ),
+        )
+
+    def filter_unresolved_location_sources(
+        self, sources: Sequence[CodeSource], query: str, symbol: str | None
+    ) -> list[CodeSource]:
+        """Do not cite a generic location word as evidence for an unknown symbol."""
+        if symbol or not self._prefer_code_evidence(query, symbol):
+            return list(sources)
+        location_words = set(self.CODE_LOCATION_TERMS) | {"code", "file", "function", "class"}
+        meaningful = [
+            token.casefold()
+            for token in re.findall(r"[A-Za-z_][A-Za-z0-9_./-]*", query)
+            if len(token) > 3 and token.casefold() not in self.STOP_WORDS | location_words
+        ]
+        if not meaningful:
+            return list(sources)
+        return [
+            source
+            for source in sources
+            if any(
+                token in f"{source.path}\n{source.snippet}".casefold() for token in meaningful
+            )
+        ]
 
     def query(self, query: str, limit: int = 8) -> CodeAnswer:
         status = self.refresh()
@@ -1032,14 +1358,15 @@ class CodeIntelligenceService:
         entries, dependents = self._load_index(status["revision"])
         graph_sources: list[CodeSource] = []
         importers: list[str] = []
-        symbol: str | None = None
+        symbol = self.target_symbol(query, entries)
         dependency_resolved: bool | None = None
         if self.wants_dependency_graph(query):
             dependency_resolved = False
-            symbol = self.target_symbol(query, entries)
             if symbol:
                 graph_sources, importers = self.dependency_sources(symbol, entries, dependents)
                 dependency_resolved = bool(graph_sources)
+        elif symbol:
+            graph_sources, _ = self.dependency_sources(symbol, entries, {})
         symbol_matches: list[str] = []
         for entry in entries:
             haystack = " ".join(
@@ -1066,14 +1393,19 @@ class CodeIntelligenceService:
                 score=1.0,
                 module=module_for_path(path),
                 edge="text",
+                rank_tier="metadata_match",
             )
             if (candidate.path, candidate.start_line) not in source_keys:
                 sources.append(candidate)
                 source_keys.add((candidate.path, candidate.start_line))
-        ranked = sorted(sources, key=lambda item: (-item.score, item.path, item.start_line))[:limit]
+        sources = self.filter_unresolved_location_sources(sources, query, symbol)
+        ranked = self.rank_sources(sources, query, symbol)[:limit]
         budgeted, truncated = self.BUDGET.apply(ranked)
         answer = self._compose_answer(budgeted, symbol, importers, dependency_resolved, truncated)
         synthesized = False
+        synthesis_provider: str | None = None
+        synthesis_model: str | None = None
+        synthesis_degraded = False
         if self.llm is not None:
             try:
                 response = self.llm.answer(query, [answer])
@@ -1084,6 +1416,9 @@ class CodeIntelligenceService:
                 if candidate:
                     answer = candidate
                     synthesized = True
+                    synthesis_provider = response.provider
+                    synthesis_model = response.model
+                    synthesis_degraded = response.degraded
         return CodeAnswer(
             answer=answer,
             repository_id=self.provider.repository_id,
@@ -1095,6 +1430,9 @@ class CodeIntelligenceService:
             dependency_resolved=dependency_resolved,
             modules=tuple(dict.fromkeys(item.module for item in budgeted if item.module)),
             synthesized=synthesized,
+            synthesis_provider=synthesis_provider,
+            synthesis_model=synthesis_model,
+            synthesis_degraded=synthesis_degraded,
         )
 
     def _compose_answer(

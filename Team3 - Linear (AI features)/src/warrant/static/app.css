@@ -415,6 +415,12 @@ pre.raw{margin:0;padding:10px 11px;border:1px solid var(--line);border-radius:5p
 .citation-top b{color:var(--accent);font-weight:500;overflow-wrap:anywhere}
 .citation-top .aside{margin-left:auto;color:var(--faint)}
 .citation pre{margin:0;padding:8px 10px;overflow-x:auto;font:400 11px/1.6 var(--mono);color:var(--ink-dim);white-space:pre}
+.source-preview{margin-top:12px}
+.source-preview pre{margin:9px 0;padding:9px;max-height:480px;overflow:auto;border:1px solid var(--line-soft);border-radius:4px;background:var(--raised);font:400 11px/1.6 var(--mono);color:var(--ink-dim);white-space:pre}
+.code-browser-list li .btn-row{margin-top:6px}
+.impact-handoff{width:100%;min-height:120px;margin:9px 0;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--raised);color:var(--ink-dim);font:400 11px/1.5 var(--mono);resize:vertical}
+.module-actions{display:grid;gap:7px;margin-top:6px}.module-action{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px;border:1px solid var(--line-soft);border-radius:4px;background:var(--raised)}.module-action .btn-row{margin-left:auto}
+.code-action-result{margin:12px 0}.citation-results{display:grid;gap:7px}
 
 /* ---- forms ---- */
 .form-grid{display:grid;gap:9px}
@@ -531,6 +537,7 @@ details.disclosure .inner pre{margin:0;overflow-x:auto;font:400 11px/1.55 var(--
   padding:8px 14px;border-radius:5px;background:var(--raised);border:1px solid var(--line);
   box-shadow:var(--shadow);font-size:12.5px;transition:opacity .18s,transform .18s;z-index:60;max-width:90vw}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+.issue-thread{max-width:860px;margin:0 auto;padding:22px;display:grid;gap:14px}.issue-summary h2{margin:0 0 8px}.issue-summary p,.comment p{white-space:pre-wrap;overflow-wrap:anywhere}.comment-list{display:grid;gap:10px;margin:14px 0}.comment{border:1px solid var(--line-soft);border-radius:5px;padding:11px;background:var(--raised)}.comment header,.comment-form>div{display:flex;justify-content:space-between;gap:10px;align-items:center}.comment header small,.comment footer,.comment em,.mention-suggestion b{font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--faint)}.agent-comment{border-left:3px solid var(--accent)}.agent-comment em,.mention-suggestion b{color:var(--accent);font-style:normal}.comment footer{margin-top:8px;overflow-wrap:anywhere}.comment-form{display:grid;gap:8px}.comment-form textarea{min-height:100px;resize:vertical;padding:10px;border:1px solid var(--line);border-radius:5px;background:var(--ground);color:var(--ink);font:inherit}.mention-suggestion[hidden]{display:none!important}.mention-suggestion{justify-self:start;min-width:230px;border:1px solid var(--accent);border-radius:5px;background:var(--raised);box-shadow:var(--shadow);overflow:hidden}.mention-option{display:grid;grid-template-columns:auto auto 1fr;gap:8px;align-items:center;width:100%;padding:9px 10px;cursor:pointer;text-align:left;color:var(--ink);background:transparent;border:0}.mention-option:hover,.mention-option:focus{background:var(--hover);outline:none}.mention-option span{font-weight:600}.mention-option small{justify-self:end;color:var(--faint)}.comment-form small{color:var(--faint)}
 
 /* ---- command palette ---- */
 .scrim{position:fixed;inset:0;background:rgba(6,9,12,.62);display:grid;place-items:start center;
@@ -558,3 +565,5 @@ details.disclosure .inner pre{margin:0;overflow-x:auto;font:400 11px/1.55 var(--
 .auth h1{font:500 24px/1.2 var(--cond);margin:0 0 8px}
 .auth .card p{max-width:74ch}
 .auth-form{display:grid;gap:9px;max-width:330px;margin-top:12px}
+/* Issue pages scroll as one outer content pane, rather than trapping comments in a nested panel. */
+.main:has(.issue-thread){overflow-y:auto}.discussion-card{min-height:0}
