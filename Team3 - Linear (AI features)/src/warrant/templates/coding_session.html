@@ -4,7 +4,7 @@
 {% set terminals = ['COMPLETED','FAILED','CANCELLED'] %}
 {% set reached = flow.index(s.state) if s.state in flow else flow|length %}
 {% block title %}{{ s.id }} · Coding session{% endblock %}
-{% block view_title %}<a href="/coding-sessions">Coding sessions</a> / {{ contract.issue.external_key }}{% endblock %}
+{% block view_title %}<a href="/coding-sessions">Coding sessions</a> / {% if s.session_kind == 'github_pr_review' %}{{ contract.pr_review.issue_ref }}{% else %}{{ contract.issue.external_key }}{% endif %}{% endblock %}
 {% block view_count %}{{ s.id }}{% endblock %}
 {% block head_tools %}
 <span class="chip"><span class="provider-kind {{ s.provider_kind }}">{{ s.provider_kind|upper }}</span> {{ s.provider }}</span>
@@ -15,11 +15,15 @@
 {% block content %}
 <div class="body">
   <div class="doc">
-    <p class="crumb"><a href="/">Triage</a> <span>/</span> <a href="/delegations/{{ s.delegation_id }}">{{ contract.issue.external_key }}</a> <span>/</span> {{ s.id }}</p>
-    <h1>{{ contract.issue.title }}</h1>
+    <p class="crumb"><a href="/">Triage</a> <span>/</span> {% if s.delegation_id %}<a href="/delegations/{{ s.delegation_id }}">{% endif %}{% if s.session_kind == 'github_pr_review' %}{{ contract.pr_review.issue_ref }}{% else %}{{ contract.issue.external_key }}{% endif %}{% if s.delegation_id %}</a>{% endif %} <span>/</span> {{ s.id }}</p>
+    <h1>{% if s.session_kind == 'github_pr_review' %}GitHub PR {{ contract.pr_review.owner }}/{{ contract.pr_review.repo }}#{{ contract.pr_review.pull_request_number }}{% else %}{{ contract.issue.title }}{% endif %}</h1>
     <p class="doc-sub">
       Runner <strong>{{ s.provider }}</strong> · <span class="provider-kind {{ s.provider_kind }}">{{ s.provider_kind|upper }}</span>
+      {% if s.session_kind == 'github_pr_review' %}
+      · GitHub PR review (Warrant did not launch this agent)
+      {% else %}
       {{ 'real external CLI execution in an isolated Git worktree' if s.provider_kind == 'real' else 'visibly simulated execution — this run wrote no real agent output' }}
+      {% endif %}
       · created <span class="relative-time" data-time="{{ s.created_at }}">{{ s.created_at }}</span>
       {% if s.started_at %}· started <span class="relative-time" data-time="{{ s.started_at }}">{{ s.started_at }}</span>{% endif %}
       {% if s.finished_at %}· finished <span class="relative-time" data-time="{{ s.finished_at }}">{{ s.finished_at }}</span>{% endif %}
@@ -42,6 +46,51 @@
       <h2>Typed failure <span class="aside">state {{ s.state }}</span></h2>
       <p style="color:var(--deny)">{{ s.error }}</p>
       <p class="note">The session failed closed. No diff was accepted and no warrant authority was extended.</p>
+    </article>
+    {% endif %}
+
+    {% if s.session_kind == 'github_pr_review' and s.result %}
+    <article class="card">
+      <h2>GitHub PR Governance Verdict <span class="aside">{% if s.result.governance.verdict == 'PASS' %}<span style="color:var(--ok)">PASS</span>{% elif s.result.governance.verdict == 'FAIL' %}<span style="color:var(--deny)">FAIL</span>{% else %}<span style="color:var(--warn)">{{ s.result.governance.verdict }}</span>{% endif %}</span></h2>
+      <dl class="verify">
+        <dt>Pre-authorized</dt><dd>{{ s.result.pre_authorized|lower }}</dd>
+        <dt>Authorization gap</dt><dd>{{ s.result.governance.gap|lower }}</dd>
+        <dt>Warrant status</dt><dd>{{ s.result.governance.warrant_status }}</dd>
+        <dt>Scope violation</dt><dd>{{ s.result.governance.scope_violation|lower }}</dd>
+        <dt>Checks state</dt><dd>{{ s.result.governance.checks_state }}</dd>
+        <dt>Protected surfaces</dt><dd>{{ s.result.governance.protected_surfaces_detected|lower }}</dd>
+      </dl>
+      {% if s.result.governance.allowed_scope %}
+      <h3>Allowed warrant scope</h3>
+      <div class="tools">{% for path in s.result.governance.allowed_scope %}<span class="tool">{{ path }}</span>{% endfor %}</div>
+      {% endif %}
+      <h3>Changed files</h3>
+      <div class="tools">{% for path in s.result.governance.changed_files %}<span class="tool neutral">{{ path }}</span>{% else %}<span class="tool no">none reported by GitHub</span>{% endfor %}</div>
+      <h3>Outside scope</h3>
+      {% if s.result.governance.scope_evaluated %}
+        {% if s.result.governance.outside_scope_files %}
+        <div class="tools">{% for path in s.result.governance.outside_scope_files %}<span class="tool bad">{{ path }}</span>{% endfor %}</div>
+        {% else %}
+        <p class="note tight">All changed files are within the Warrant scope.</p>
+        {% endif %}
+      {% elif s.result.governance.warrant_status == 'missing' %}
+      <p class="note tight">Not evaluated: no valid Warrant scope was found for this ticket.</p>
+      {% else %}
+      <p class="note tight">Not evaluated: the Warrant scope is missing or invalid.</p>
+      {% endif %}
+      {% if s.result.governance.protected_surface_matches %}
+      <h3>Protected/security-sensitive surface matches</h3>
+      <ul class="missing">{% for match in s.result.governance.protected_surface_matches %}<li><code>{{ match.path }}</code> matched <code>{{ match.glob }}</code> — {{ match.label }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if s.result.governance.human_review_checklist %}
+      <h3>Human review checklist</h3>
+      <ul class="missing">{% for item in s.result.governance.human_review_checklist %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% endif %}
+      <h2 style="margin-top: 1rem;">AI Alignment</h2>
+      <dl class="verify">
+        <dt>Verdict</dt><dd>{{ s.result.alignment.verdict }}</dd>
+        <dt>Summary</dt><dd>{{ s.result.alignment.summary }}</dd>
+      </dl>
     </article>
     {% endif %}
 
@@ -68,6 +117,7 @@
       </div>
     </article>
 
+    {% if s.session_kind != 'github_pr_review' %}
     <article class="card">
       <h2>Verification <span class="aside">{{ s.verification_checks|length }} discovered checks · source {{ contract.verification_source }}</span></h2>
       {% if s.verification_checks %}
@@ -100,6 +150,7 @@
       {% endif %}
       <p class="note">A session reaches COMPLETED only when the runner exits cleanly, a diff exists, every changed path is inside the warrant scope, and every required check passes. An exit code alone is not success.</p>
     </article>
+    {% endif %}
 
     {% if s.result and s.result.runner %}
     <article class="card">
@@ -153,18 +204,29 @@
       <dl class="kv">
         <dt>Runner</dt><dd>{{ s.provider }}</dd>
         <dt>Kind</dt><dd class="{{ 'ok' if s.provider_kind == 'real' else 'warn' }}">{{ s.provider_kind }}</dd>
-        <dt>Isolation</dt><dd>git worktree</dd>
+        <dt>Isolation</dt><dd>{{ 'none (external PR)' if s.session_kind == 'github_pr_review' else 'git worktree' }}</dd>
+        {% if s.session_kind != 'github_pr_review' %}
         <dt>Worktree</dt><dd class="{{ 'ok' if s.worktree_available else 'none' }}">{{ 'present' if s.worktree_available else 'removed' }}</dd>
         <dt>Orphaned</dt><dd>{{ s.orphaned|lower }}</dd>
         <dt>Host pid</dt><dd>{{ s.host_pid or '—' }}</dd>
+        {% endif %}
       </dl>
       {% if s.provider_kind == 'mock' %}<p class="note"><strong>Mock run.</strong> The output is generated by the built-in simulated runner and must never be read as real agent work.</p>{% endif %}
+      {% if s.session_kind == 'github_pr_review' %}<p class="note"><strong>GitHub PR.</strong> Warrant evaluated this external PR but did not launch an agent.</p>{% endif %}
     </div>
 
     <div class="rail-sec">
       <p class="rail-h">Immutable execution contract</p>
+      {% if s.session_kind == 'github_pr_review' %}
       <dl class="kv">
-        <dt>Delegation</dt><dd><a href="/delegations/{{ s.delegation_id }}" style="color:var(--accent)">{{ s.delegation_id }}</a></dd>
+        <dt>Issue Ref</dt><dd>{{ contract.pr_review.issue_ref }}</dd>
+        <dt>PR Owner</dt><dd>{{ contract.pr_review.owner }}</dd>
+        <dt>PR Repo</dt><dd>{{ contract.pr_review.repo }}</dd>
+        <dt>PR Number</dt><dd>{{ contract.pr_review.pull_request_number }}</dd>
+      </dl>
+      {% else %}
+      <dl class="kv">
+        <dt>Delegation</dt><dd>{% if s.delegation_id %}<a href="/delegations/{{ s.delegation_id }}" style="color:var(--accent)">{{ s.delegation_id }}</a>{% else %}<span style="color:var(--text-light)">None</span>{% endif %}</dd>
         <dt>Warrant</dt><dd>{{ contract.warrant.id }} · {{ contract.warrant.status }}</dd>
         <dt>Base revision</dt><dd>{{ contract.base_revision }}</dd>
         <dt>Branch</dt><dd>{{ s.branch_name or '—' }}</dd>
@@ -182,6 +244,7 @@
       <p class="rail-h tight">Denied tools</p>
       <div class="tools">{% for tool in contract.warrant.denied_tools %}<span class="tool no">{{ tool }}</span>{% endfor %}</div>
       <p class="note">This contract was frozen when the session was created. Nothing in the running session can widen it.</p>
+      {% endif %}
     </div>
 
     <div class="rail-sec">
@@ -209,7 +272,7 @@
         {% if s.state not in terminals %}
         <button class="btn danger" type="button" id="cancel-session-rail">Cancel session</button>
         {% else %}
-        <a class="btn" href="/delegations/{{ s.delegation_id }}">Back to delegation</a>
+        {% if s.delegation_id %}<a class="btn" href="/delegations/{{ s.delegation_id }}">Back to delegation</a>{% endif %}
         {% endif %}
       </div>
       <div class="inline-error" id="session-error" hidden></div>

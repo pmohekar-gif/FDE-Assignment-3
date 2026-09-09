@@ -50,7 +50,6 @@ TRANSITIONS = {
 }
 
 
-
 class CodingAgentError(RuntimeError):
     pass
 
@@ -1604,7 +1603,11 @@ class CodingSessionService:
             raise NotFound("coding session not found")
         row["contract"] = Database.loads(row.pop("contract_json"), {})
         row["result"] = Database.loads(row.pop("result_json"), None)
-        row["provider_kind"] = "real" if self.runners[row["provider"]].real else "mock"
+        runner = self.runners.get(row["provider"])
+        if row.get("session_kind") == "github_pr_review":
+            row["provider_kind"] = "external_review"
+        else:
+            row["provider_kind"] = "real" if runner and runner.real else "mock"
         row["worktree_available"] = bool(
             row.get("worktree_path")
             and not row.get("worktree_removed_at")
@@ -1677,9 +1680,7 @@ class CodingSessionService:
             raise CodingAgentError(availability.reason)
         # Nothing is committed, pushed or published under a warrant that has since been
         # revoked or expired.
-        self._assert_warrant_live(
-            session_id, session["warrant_id"], workspace_id, "pr_publish"
-        )
+        self._assert_warrant_live(session_id, session["warrant_id"], workspace_id, "pr_publish")
         paths = [item["path"] for item in session["diff"]["changed_files"]]
         staged = LocalRepositoryProvider._git(["add", "--", *paths], worktree, 30)
         if staged.returncode != 0:

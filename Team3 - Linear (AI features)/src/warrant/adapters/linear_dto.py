@@ -61,9 +61,7 @@ class LinearIssueDTO(BaseModel):
 
     @property
     def priority_label(self) -> str:
-        return {0: "none", 1: "urgent", 2: "high", 3: "medium", 4: "low"}.get(
-            self.priority, "none"
-        )
+        return {0: "none", 1: "urgent", 2: "high", 3: "medium", 4: "low"}.get(self.priority, "none")
 
     def to_warrant_fields(self, body_normalised: str) -> dict:
         """
@@ -115,7 +113,5 @@ class LinearIssueDTO(BaseModel):
         Used to detect whether a re-import carries any changes worth bumping revision for.
         """
         warrant = self.to_warrant_fields(body_normalised)
-        canonical = "|".join(
-            f"{k}={warrant[k]!r}" for k in sorted(warrant) if k != "updated_at"
-        )
+        canonical = "|".join(f"{k}={warrant[k]!r}" for k in sorted(warrant) if k != "updated_at")
         return hashlib.sha256(canonical.encode()).hexdigest()

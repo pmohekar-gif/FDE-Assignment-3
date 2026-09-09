@@ -185,14 +185,19 @@ CREATE TABLE IF NOT EXISTS agent_messages (
   FOREIGN KEY(conversation_id) REFERENCES agent_conversations(id)
 );
 CREATE TABLE IF NOT EXISTS coding_sessions (
-  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, delegation_id TEXT NOT NULL,
-  warrant_id TEXT NOT NULL, issue_id TEXT NOT NULL, requester_id TEXT NOT NULL,
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, delegation_id TEXT,
+  warrant_id TEXT, issue_id TEXT NOT NULL, requester_id TEXT NOT NULL,
   source TEXT NOT NULL, provider TEXT NOT NULL, state TEXT NOT NULL,
   repository_root TEXT NOT NULL, base_revision TEXT NOT NULL, branch_name TEXT,
   worktree_path TEXT, contract_json TEXT NOT NULL, result_json TEXT,
   error TEXT, created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT,
   agent_pid INTEGER, host_pid INTEGER, worktree_removed_at TEXT,
-  UNIQUE(warrant_id)
+  session_kind TEXT NOT NULL DEFAULT 'agent_execution',
+  CHECK (session_kind IN ('agent_execution', 'github_pr_review')),
+  CHECK (
+    session_kind = 'github_pr_review'
+    OR (delegation_id IS NOT NULL AND warrant_id IS NOT NULL)
+  )
 );
 -- The execution contract is the immutable snapshot of the authority a session runs under.
 -- Same append-only pattern as `audit_events`: enforcement lives in the database, so a
@@ -227,6 +232,41 @@ CREATE TABLE IF NOT EXISTS slack_events (
   event_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, event_type TEXT NOT NULL,
   response_json TEXT NOT NULL, received_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS github_evidence_snapshots (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, warrant_id TEXT NOT NULL,
+  evidence_bundle_id TEXT, owner TEXT NOT NULL, repo TEXT NOT NULL,
+  pull_request_number INTEGER NOT NULL, pr_url TEXT NOT NULL,
+  pr_state TEXT NOT NULL, pr_draft INTEGER NOT NULL, pr_merged INTEGER NOT NULL,
+  base_ref TEXT NOT NULL, head_sha TEXT NOT NULL, changed_files_json TEXT NOT NULL,
+  checks_json TEXT NOT NULL, scope_result_json TEXT NOT NULL, fetched_at TEXT NOT NULL,
+  FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
+  FOREIGN KEY(warrant_id) REFERENCES warrants(id)
+);
+CREATE TABLE IF NOT EXISTS github_pr_links (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, issue_id TEXT NOT NULL,
+  owner TEXT NOT NULL, repo TEXT NOT NULL, pull_request_number INTEGER NOT NULL,
+  pr_url TEXT NOT NULL, head_sha TEXT NOT NULL, selected_by TEXT NOT NULL,
+  selected_at TEXT NOT NULL, source TEXT NOT NULL, latest_snapshot_id TEXT,
+  UNIQUE(workspace_id, owner, repo, pull_request_number),
+  FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
+  FOREIGN KEY(issue_id) REFERENCES issues(id)
+);
+CREATE TRIGGER IF NOT EXISTS github_snapshot_no_delete
+BEFORE DELETE ON github_evidence_snapshots
+BEGIN SELECT RAISE(ABORT, 'github evidence snapshots cannot be deleted'); END;
+CREATE TRIGGER IF NOT EXISTS github_snapshot_immutable_cols
+BEFORE UPDATE OF
+  id, workspace_id, warrant_id, owner, repo, pull_request_number, pr_url,
+  pr_state, pr_draft, pr_merged, base_ref, head_sha, changed_files_json,
+  checks_json, scope_result_json, fetched_at
+ON github_evidence_snapshots
+BEGIN SELECT RAISE(ABORT, 'github evidence snapshots are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS github_snapshot_bundle_once
+BEFORE UPDATE OF evidence_bundle_id ON github_evidence_snapshots
+WHEN OLD.evidence_bundle_id IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'github evidence snapshot bundle_id can only be set once'); END;
+CREATE INDEX IF NOT EXISTS idx_github_evidence_warrant
+  ON github_evidence_snapshots(workspace_id, warrant_id, fetched_at DESC);
 CREATE INDEX IF NOT EXISTS idx_delegations_workspace ON delegations(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_warrants_workspace ON warrants(workspace_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_events(workspace_id, seq);
@@ -283,20 +323,86 @@ class Database:
                 connection.execute(
                     "ALTER TABLE issues ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'"
                 )
-            session_columns = {
-                row["name"]
-                for row in connection.execute("PRAGMA table_info(coding_sessions)").fetchall()
-            }
+            session_columns_raw = connection.execute(
+                "PRAGMA table_info(coding_sessions)"
+            ).fetchall()
+            session_columns = {row["name"] for row in session_columns_raw}
             session_additions = {
                 "agent_pid": "INTEGER",
                 "host_pid": "INTEGER",
                 "worktree_removed_at": "TEXT",
+                "session_kind": "TEXT NOT NULL DEFAULT 'agent_execution'",
             }
             for name, definition in session_additions.items():
                 if name not in session_columns:
                     connection.execute(
                         f"ALTER TABLE coding_sessions ADD COLUMN {name} {definition}"
                     )
+            
+            table_row = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='coding_sessions'"
+            ).fetchone()
+            table_sql = str(table_row["sql"] if table_row else "")
+            needs_migration = (
+                any(
+                    row["name"] in {"delegation_id", "warrant_id"} and row["notnull"] == 1
+                    for row in session_columns_raw
+                )
+                or "UNIQUE(warrant_id)" in table_sql
+                or "CHECK (session_kind IN" not in table_sql
+            )
+            if needs_migration:
+                connection.execute("PRAGMA foreign_keys=OFF")
+                connection.executescript(
+                    """
+                    CREATE TABLE coding_sessions_new (
+                      id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, delegation_id TEXT,
+                      warrant_id TEXT, issue_id TEXT NOT NULL, requester_id TEXT NOT NULL,
+                      source TEXT NOT NULL, provider TEXT NOT NULL, state TEXT NOT NULL,
+                      repository_root TEXT NOT NULL, base_revision TEXT NOT NULL, branch_name TEXT,
+                      worktree_path TEXT, contract_json TEXT NOT NULL, result_json TEXT,
+                      error TEXT, created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT,
+                      agent_pid INTEGER, host_pid INTEGER, worktree_removed_at TEXT,
+                      session_kind TEXT NOT NULL DEFAULT 'agent_execution',
+                      CHECK (session_kind IN ('agent_execution', 'github_pr_review')),
+                      CHECK (
+                          session_kind = 'github_pr_review'
+                          OR (delegation_id IS NOT NULL AND warrant_id IS NOT NULL)
+                      )
+                    );
+                    INSERT INTO coding_sessions_new SELECT * FROM coding_sessions;
+                    DROP TABLE coding_sessions;
+                    ALTER TABLE coding_sessions_new RENAME TO coding_sessions;
+                    CREATE INDEX idx_coding_sessions_workspace
+                      ON coding_sessions(workspace_id, created_at DESC);
+                    CREATE UNIQUE INDEX idx_coding_sessions_unique_agent_warrant
+                      ON coding_sessions(warrant_id)
+                      WHERE session_kind='agent_execution' AND warrant_id IS NOT NULL;
+                    CREATE TRIGGER IF NOT EXISTS coding_sessions_contract_immutable
+                      BEFORE UPDATE OF contract_json ON coding_sessions
+                      BEGIN
+                        SELECT RAISE(
+                          ABORT,
+                          'coding-session execution contract is immutable'
+                        );
+                      END;
+                    """
+                )
+                connection.execute("PRAGMA foreign_keys=ON")
+
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "idx_coding_sessions_unique_agent_warrant "
+                "ON coding_sessions(warrant_id) "
+                "WHERE session_kind='agent_execution' AND warrant_id IS NOT NULL"
+            )
+            connection.execute(
+                "CREATE TRIGGER IF NOT EXISTS coding_sessions_contract_immutable "
+                "BEFORE UPDATE OF contract_json ON coding_sessions "
+                "BEGIN SELECT RAISE(ABORT, "
+                "'coding-session execution contract is immutable'); END"
+            )
+
             usage_columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(model_usage)").fetchall()

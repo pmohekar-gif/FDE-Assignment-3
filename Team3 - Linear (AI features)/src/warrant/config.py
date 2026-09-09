@@ -114,6 +114,7 @@ class Settings:
     github_mode: str = "off"  # "off" | "stub" | "live"
     github_token: str | None = None
     github_api_base_url: str = "https://api.github.com"
+    github_pr_review_enabled: bool = False
     agent_chat_enabled: bool = True
     code_intelligence_enabled: bool = True
     external_coding_agent_enabled: bool = False
@@ -195,14 +196,11 @@ class Settings:
             ),
             linear_mode=os.getenv("LINEAR_MODE", "off").lower(),
             linear_api_key=os.getenv("LINEAR_API_KEY") or None,
-            linear_api_base_url=os.getenv(
-                "LINEAR_API_BASE_URL", "https://api.linear.app/graphql"
-            ),
+            linear_api_base_url=os.getenv("LINEAR_API_BASE_URL", "https://api.linear.app/graphql"),
             github_mode=os.getenv("GITHUB_MODE", "off").lower(),
             github_token=os.getenv("GITHUB_TOKEN") or None,
-            github_api_base_url=os.getenv(
-                "GITHUB_API_BASE_URL", "https://api.github.com"
-            ),
+            github_api_base_url=os.getenv("GITHUB_API_BASE_URL", "https://api.github.com"),
+            github_pr_review_enabled=_env_bool("GITHUB_PR_REVIEW_ENABLED", False),
             agent_chat_enabled=_env_bool("AGENT_CHAT_ENABLED", True),
             code_intelligence_enabled=_env_bool("CODE_INTELLIGENCE_ENABLED", True),
             external_coding_agent_enabled=_env_bool("EXTERNAL_CODING_AGENT_ENABLED", False),
@@ -240,9 +238,7 @@ class Settings:
             application_base_url=os.getenv("APPLICATION_BASE_URL", "http://127.0.0.1:8000"),
             auth_enabled=_env_bool("AUTH_ENABLED", False),
             demo_password=os.getenv("DEMO_PASSWORD", "warrant-demo"),
-            session_secret=os.getenv(
-                "SESSION_SECRET", "demo-session-secret-change-me-32-bytes"
-            ),
+            session_secret=os.getenv("SESSION_SECRET", "demo-session-secret-change-me-32-bytes"),
             session_ttl_minutes=int(os.getenv("SESSION_TTL_MINUTES", "720")),
         )
 

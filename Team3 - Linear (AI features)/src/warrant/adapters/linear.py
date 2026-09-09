@@ -32,9 +32,7 @@ from .linear_dto import (
 from .linear_fixture import STUB_LINEAR_ISSUE
 
 # UUID pattern — matches Linear's internal UUID format
-_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
-)
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 # GraphQL query: fetch by internal UUID or human-readable key (e.g. "ENG-123")
 _QUERY_BY_ID = """
@@ -94,12 +92,8 @@ def _parse_dto(raw: dict[str, Any], source_label: str) -> LinearIssueDTO:
         description=raw.get("description"),
         url=raw["url"],
         priority=int(raw.get("priority") or 0),
-        updated_at=datetime.fromisoformat(
-            raw["updatedAt"].replace("Z", "+00:00")
-        ),
-        created_at=datetime.fromisoformat(
-            raw["createdAt"].replace("Z", "+00:00")
-        ),
+        updated_at=datetime.fromisoformat(raw["updatedAt"].replace("Z", "+00:00")),
+        created_at=datetime.fromisoformat(raw["createdAt"].replace("Z", "+00:00")),
         team=LinearTeamDTO(
             id=team_raw.get("id", ""),
             name=team_raw.get("name", ""),
@@ -149,20 +143,15 @@ class LinearAdapter:
         mode = self._settings.linear_mode
         if mode == "off":
             raise AdapterConfigError(
-                "Linear adapter is not configured. "
-                "Set LINEAR_MODE=stub or LINEAR_MODE=live."
+                "Linear adapter is not configured. Set LINEAR_MODE=stub or LINEAR_MODE=live."
             )
         if mode == "stub":
             return self._fetch_stub(ref)
         if mode == "live":
             if not self._settings.linear_api_key:
-                raise AdapterConfigError(
-                    "LINEAR_MODE=live requires LINEAR_API_KEY to be set."
-                )
+                raise AdapterConfigError("LINEAR_MODE=live requires LINEAR_API_KEY to be set.")
             return self._fetch_live(ref)
-        raise AdapterConfigError(
-            f"Unknown LINEAR_MODE={mode!r}. Must be 'off', 'stub', or 'live'."
-        )
+        raise AdapterConfigError(f"Unknown LINEAR_MODE={mode!r}. Must be 'off', 'stub', or 'live'.")
 
     def fetch_updated_issues(
         self, since: datetime | None = None, limit: int = 25, team_key: str | None = None
@@ -176,20 +165,15 @@ class LinearAdapter:
         mode = self._settings.linear_mode
         if mode == "off":
             raise AdapterConfigError(
-                "Linear adapter is not configured. "
-                "Set LINEAR_MODE=stub or LINEAR_MODE=live."
+                "Linear adapter is not configured. Set LINEAR_MODE=stub or LINEAR_MODE=live."
             )
         if mode == "stub":
             return self._fetch_updated_stub(since, limit, team_key)
         if mode == "live":
             if not self._settings.linear_api_key:
-                raise AdapterConfigError(
-                    "LINEAR_MODE=live requires LINEAR_API_KEY to be set."
-                )
+                raise AdapterConfigError("LINEAR_MODE=live requires LINEAR_API_KEY to be set.")
             return self._fetch_updated_live(since, limit, team_key)
-        raise AdapterConfigError(
-            f"Unknown LINEAR_MODE={mode!r}. Must be 'off', 'stub', or 'live'."
-        )
+        raise AdapterConfigError(f"Unknown LINEAR_MODE={mode!r}. Must be 'off', 'stub', or 'live'.")
 
     # ------------------------------------------------------------------
     # Stub mode
@@ -250,16 +234,12 @@ class LinearAdapter:
         payload = response.json()
         errors = payload.get("errors")
         if errors:
-            raise AdapterConfigError(
-                f"Linear GraphQL errors: {errors[0].get('message', errors)}"
-            )
+            raise AdapterConfigError(f"Linear GraphQL errors: {errors[0].get('message', errors)}")
 
         data = payload.get("data") or {}
         node = data.get("issue")
         if not node:
-            raise LinearIssueNotFoundError(
-                f"Linear issue {ref!r} was not found."
-            )
+            raise LinearIssueNotFoundError(f"Linear issue {ref!r} was not found.")
 
         return _parse_dto(node, source_label="linear")
 
@@ -298,9 +278,7 @@ class LinearAdapter:
         payload = response.json()
         errors = payload.get("errors")
         if errors:
-            raise AdapterConfigError(
-                f"Linear GraphQL errors: {errors[0].get('message', errors)}"
-            )
+            raise AdapterConfigError(f"Linear GraphQL errors: {errors[0].get('message', errors)}")
 
         data = payload.get("data") or {}
         nodes = (data.get("issues") or {}).get("nodes") or []

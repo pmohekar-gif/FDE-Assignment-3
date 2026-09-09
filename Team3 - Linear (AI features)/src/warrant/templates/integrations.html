@@ -17,7 +17,7 @@
     <article class="card">
       <h2>Feature flags <span class="aside" id="health-status">reading /healthz…</span></h2>
       <div class="feature-list" id="feature-list">
-        {% for key, label in [('agent_chat','Contextual Ask Agent'),('code_intelligence','Code intelligence'),('external_coding_agent','External coding agent'),('slack','Slack adapter'),('pr_publishing','Draft PR publishing')] %}
+        {% for key, label in [('agent_chat','Contextual Ask Agent'),('code_intelligence','Code intelligence'),('external_coding_agent','External coding agent'),('slack','Slack adapter'),('pr_publishing','Draft PR publishing'),('github_pr_review','GitHub PR Governance')] %}
         <div><code>{{ key }}</code><span class="dim">{{ label }}</span><span class="state {{ 'on' if features_enabled.get(key) else 'off' }}">{{ 'ENABLED' if features_enabled.get(key) else 'DISABLED' }}</span></div>
         {% endfor %}
       </div>

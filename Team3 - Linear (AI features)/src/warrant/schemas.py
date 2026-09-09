@@ -166,6 +166,12 @@ class EvidenceArtifact(BaseModel):
     digest: str | None = Field(default=None, max_length=128)
 
 
+class GitHubEvidenceRef(BaseModel):
+    owner: str = Field(min_length=1, max_length=120)
+    repo: str = Field(min_length=1, max_length=120)
+    pull_request_number: int = Field(ge=1)
+
+
 class EvidenceSubmission(BaseModel):
     nonce: str = Field(min_length=16, max_length=200)
     files: list[str] = Field(max_length=100)
@@ -173,6 +179,7 @@ class EvidenceSubmission(BaseModel):
     test_output: str = Field(max_length=20_000)
     claimed_criteria: list[str] = Field(max_length=20)
     notes: str | None = Field(default=None, max_length=4000)
+    github_pr: GitHubEvidenceRef | None = None
 
 
 class CriterionJudgement(BaseModel):
@@ -324,3 +331,22 @@ class PullRequestCreate(BaseModel):
     # An explicit empty list means "open it with no reviewers", which is not the same thing.
     reviewers: list[str] | None = Field(default=None, max_length=25)
     base: str | None = Field(default=None, max_length=240)
+
+
+class GitHubPRLinkCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    owner: str = Field(min_length=1, max_length=120)
+    repo: str = Field(min_length=1, max_length=120)
+    pull_request_number: int = Field(ge=1)
+    issue_ref: str = Field(min_length=1, max_length=120)
+
+
+class GitHubPRReviewSessionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    owner: str = Field(min_length=1, max_length=120)
+    repo: str = Field(min_length=1, max_length=120)
+    pull_request_number: int = Field(ge=1)
+    issue_ref: str = Field(min_length=1, max_length=120)
+    source: Literal["ui", "api"] = "api"

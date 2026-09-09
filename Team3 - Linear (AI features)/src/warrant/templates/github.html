@@ -14,7 +14,7 @@
       This viewer provides read-only evidence retrieval only. It does not authorize work, modify repositories, or persist GitHub data in Warrant.
     </div>
 
-    {% if not is_admin %}
+    {% if auth_enabled and not is_admin %}
     <div class="alert deny" style="margin-bottom: 2rem;">
       <svg class="ico" viewBox="0 0 16 16"><path d="M8 1L1 14h14L8 1z" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="11" r="1" fill="currentColor"/><path d="M8 5v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       <strong>Admin-only evidence viewer.</strong> Your current role is not authorized to retrieve evidence from the GitHub adapter APIs.
@@ -31,11 +31,7 @@
     <article class="card">
       <h2>Query Pull Request</h2>
       <form id="pr-query-form" style="display: flex; gap: 0.5rem; align-items: center; margin-top: 1rem;">
-        <input type="text" id="pr-owner" placeholder="Owner" required class="inp" style="max-width: 150px;">
-        <span class="dim">/</span>
-        <input type="text" id="pr-repo" placeholder="Repo" required class="inp" style="max-width: 150px;">
-        <span class="dim">#</span>
-        <input type="number" id="pr-number" placeholder="PR number" required class="inp" style="max-width: 100px;">
+        <input type="url" id="pr-url-input" placeholder="https://github.com/owner/repo/pull/123" required class="inp" style="max-width: 400px; width: 100%;">
         <button type="submit" class="btn">Fetch Evidence</button>
       </form>
       <div class="inline-error" id="query-error" hidden></div>
@@ -89,6 +85,29 @@
         </table>
       </article>
     </div>
+
+    {% if features_enabled.get('github_pr_review') %}
+    <div id="review-container" hidden style="margin-top: 2rem;">
+      <article class="card">
+        <h2>Link PR and Start Governance Review</h2>
+        <div style="margin-top: 1rem;">
+          <form id="pr-review-form" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <input type="search" id="issue-search" list="issue-options" placeholder="Type ticket key or title..." class="inp" style="max-width: 360px; width: 100%;" autocomplete="off">
+            <datalist id="issue-options">
+              {% for issue in issues %}
+              <option value="{{ issue.external_key }}" label="{{ issue.title }}"></option>
+              {% endfor %}
+            </datalist>
+            <input type="hidden" id="review-issue-ref">
+            <button type="submit" class="btn primary">Start GitHub PR Review Session</button>
+          </form>
+          <div id="issue-suggestions" class="tools" style="margin-top:10px"></div>
+          <p class="note tight" id="issue-selection-note">Type a ticket key such as <code>PAY-4471</code>, or choose one of the suggested tickets.</p>
+          <div class="inline-error" id="review-error" hidden></div>
+        </div>
+      </article>
+    </div>
+    {% endif %}
     {% endif %}
   </div>
 </div>
@@ -106,31 +125,49 @@ function el(tag, text, className) {
 async function fetchStatus() {
   try {
     const res = await api('/v1/adapters/github/status');
-    document.getElementById('adapter-mode-label').textContent = `mode: ${res.adapter_mode}`;
-    document.getElementById('status-mode').textContent = res.adapter_mode;
+    const label = document.getElementById('adapter-mode-label');
+    const status = document.getElementById('status-mode');
+    if (label) label.textContent = `mode: ${res.adapter_mode}`;
+    if (status) status.textContent = res.adapter_mode;
   } catch (err) {
-    document.getElementById('adapter-mode-label').textContent = 'error';
-    document.getElementById('status-mode').textContent = 'error';
+    const label = document.getElementById('adapter-mode-label');
+    const status = document.getElementById('status-mode');
+    if (label) label.textContent = 'error';
+    if (status) status.textContent = 'error';
     console.error(err);
   }
 }
 
-document.getElementById('pr-query-form').addEventListener('submit', async (e) => {
+const queryForm = document.getElementById('pr-query-form');
+if (queryForm) {
+  queryForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const owner = document.getElementById('pr-owner').value.trim();
-  const repo = document.getElementById('pr-repo').value.trim();
-  const number = document.getElementById('pr-number').value.trim();
-  
-  if (!owner || !repo || !number) return;
+  const prUrl = document.getElementById('pr-url-input').value.trim();
+  if (!prUrl) return;
   
   const btn = e.target.querySelector('button');
   const errBox = document.getElementById('query-error');
   const resultsContainer = document.getElementById('results-container');
+  const reviewContainer = document.getElementById('review-container');
+
+  const match = prUrl.match(/github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
+  if (!match) {
+    errBox.hidden = false;
+    errBox.textContent = 'Invalid GitHub PR URL. Expected format: https://github.com/owner/repo/pull/number';
+    resultsContainer.hidden = true;
+    if (reviewContainer) reviewContainer.hidden = true;
+    return;
+  }
+  
+  const owner = match[1];
+  const repo = match[2];
+  const number = match[3];
   
   btn.disabled = true;
   btn.textContent = 'Fetching...';
   errBox.hidden = true;
   resultsContainer.hidden = true;
+  if (reviewContainer) reviewContainer.hidden = true;
   
   try {
     const prRes = await api(`/v1/adapters/github/pull-request?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(number)}`);
@@ -199,6 +236,14 @@ document.getElementById('pr-query-form').addEventListener('submit', async (e) =>
     document.getElementById('checks-source-label').textContent = `source: ${checksRes.source}`;
 
     resultsContainer.hidden = false;
+    if (reviewContainer) reviewContainer.hidden = false;
+
+    // Attach data for review session
+    if (reviewContainer) {
+      reviewContainer.dataset.owner = owner;
+      reviewContainer.dataset.repo = repo;
+      reviewContainer.dataset.number = number;
+    }
   } catch (err) {
     errBox.hidden = false;
     errBox.textContent = `Failed to fetch evidence: ${err.message || err}`;
@@ -207,6 +252,119 @@ document.getElementById('pr-query-form').addEventListener('submit', async (e) =>
     btn.textContent = 'Fetch Evidence';
   }
 });
+}
+
+const issueCatalog = {{ issues|tojson }};
+const issueSearch = document.getElementById('issue-search');
+const issueRefInput = document.getElementById('review-issue-ref');
+const issueNote = document.getElementById('issue-selection-note');
+const issueSuggestions = document.getElementById('issue-suggestions');
+function issueLabel(issue) {
+  return `${issue.external_key}: ${issue.title}`;
+}
+function setSelectedIssue(issue) {
+  if (!issueSearch || !issueRefInput) return '';
+  issueSearch.value = issue.external_key;
+  issueRefInput.value = issue.external_key;
+  if (issueNote) issueNote.textContent = `Selected ${issueLabel(issue)}`;
+  if (issueSuggestions) issueSuggestions.replaceChildren();
+  return issueRefInput.value;
+}
+function matchingIssues(value) {
+  const query = value.trim().toLowerCase();
+  if (!query) return [];
+  return issueCatalog
+    .filter(issue => `${issue.external_key} ${issue.title}`.toLowerCase().includes(query))
+    .slice(0, 8);
+}
+function renderIssueSuggestions(value) {
+  if (!issueSuggestions) return;
+  issueSuggestions.replaceChildren();
+  matchingIssues(value).forEach(issue => {
+    const button = el('button', issueLabel(issue), 'tool neutral');
+    button.type = 'button';
+    button.addEventListener('click', () => setSelectedIssue(issue));
+    issueSuggestions.append(button);
+  });
+}
+function syncSelectedIssue({ allowTyped = false } = {}) {
+  if (!issueSearch || !issueRefInput) return '';
+  const value = issueSearch.value.trim();
+  const exact = issueCatalog.find(issue => issue.external_key.toLowerCase() === value.toLowerCase());
+  if (exact) return setSelectedIssue(exact);
+  issueRefInput.value = allowTyped ? value : '';
+  if (issueNote) {
+    issueNote.innerHTML = allowTyped && value
+      ? `Using typed ticket <code>${value}</code>; the server will verify it exists.`
+      : 'Type a ticket key such as <code>PAY-4471</code>, or choose one of the suggested tickets.';
+  }
+  return issueRefInput.value;
+}
+if (issueSearch) {
+  issueSearch.addEventListener('input', () => {
+    syncSelectedIssue();
+    renderIssueSuggestions(issueSearch.value);
+  });
+  issueSearch.addEventListener('change', () => syncSelectedIssue());
+}
+
+const reviewForm = document.getElementById('pr-review-form');
+if (reviewForm) {
+  reviewForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const issueRef = syncSelectedIssue({allowTyped: true});
+
+    const reviewContainer = document.getElementById('review-container');
+    const owner = reviewContainer.dataset.owner;
+    const repo = reviewContainer.dataset.repo;
+    const number = parseInt(reviewContainer.dataset.number, 10);
+    const btn = e.target.querySelector('button');
+    const errBox = document.getElementById('review-error');
+
+    errBox.hidden = true;
+    if (!issueRef) {
+      errBox.hidden = false;
+      errBox.textContent = 'Type a ticket key or select a suggested ticket before starting the PR review.';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+
+    try {
+      // First link
+      await api('/v1/integrations/github/pr-link', {
+        method: 'POST',
+        body: JSON.stringify({
+          owner: owner,
+          repo: repo,
+          pull_request_number: number,
+          issue_ref: issueRef
+        })
+      });
+
+      // Then create session
+      const res = await api('/v1/coding-sessions/github-pr-review', {
+        method: 'POST',
+        body: JSON.stringify({
+          owner: owner,
+          repo: repo,
+          pull_request_number: number,
+          issue_ref: issueRef,
+          source: 'ui'
+        })
+      });
+
+      location.href = `/coding-sessions/${res.session_id}`;
+    } catch (err) {
+      errBox.hidden = false;
+      errBox.textContent = `Failed to start review: ${err.message || err}`;
+      btn.disabled = false;
+      btn.textContent = 'Start GitHub PR Review Session';
+    }
+  });
+}
+
 
 // Initial load
 fetchStatus();

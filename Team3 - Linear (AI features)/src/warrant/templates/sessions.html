@@ -19,9 +19,15 @@
       <span class="row-key">{{ session.external_key }}</span>
       <span class="row-title">{{ session.title }}</span>
       <span class="code-chip {{ 'allow' if session.state == 'COMPLETED' else ('deny' if session.state in ['FAILED','CANCELLED'] else 'hold') }}">{{ session.state }}</span>
+      {% if session.session_kind == 'github_pr_review' %}
+      <span class="provider-kind mock" style="background-color: var(--accent); color: var(--bg);">GITHUB PR REVIEW</span>
+      <span class="row-team">External PR</span>
+      <span class="suff">Governance Check</span>
+      {% else %}
       <span class="provider-kind {{ session.provider_kind }}">{{ session.provider_kind|upper }}</span>
       <span class="row-team">{{ session.provider }}</span>
       <span class="suff">{{ session.diff_summary }}</span>
+      {% endif %}
       <span class="row-time relative-time" data-short data-time="{{ session.created_at }}">{{ session.created_at }}</span>
     </a>
     {% else %}

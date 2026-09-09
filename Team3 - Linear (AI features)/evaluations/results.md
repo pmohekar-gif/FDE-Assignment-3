@@ -2,7 +2,7 @@
 
 Status: **MEASURED_SYNTHETIC_POLICY_E2E_AND_RETRIEVAL**
 
-Measured: 2026-09-03T11:43:42.215055+00:00
+Measured: 2026-09-09T10:50:37.700071+00:00
 
 ## Metrics and proposed targets
 

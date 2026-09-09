@@ -247,6 +247,8 @@ body.shell{height:100vh;display:flex;flex-direction:column;overflow:hidden}
 .tool{padding:3px 7px;border-radius:3px;font:400 10.5px/1.4 var(--mono);overflow-wrap:anywhere;
   background:var(--allow-bg);border:1px solid var(--allow-line);color:var(--allow)}
 .tool.no{background:var(--deny-bg);border-color:var(--deny-line);color:var(--deny);text-decoration:line-through}
+.tool.warn{background:var(--hold-bg);border-color:var(--hold-line);color:var(--hold);text-decoration:none}
+.tool.bad{background:var(--deny-bg);border-color:var(--deny-line);color:var(--deny);text-decoration:none}
 .tool.neutral{background:var(--raised);border-color:var(--line);color:var(--muted);text-decoration:none}
 .rail-actions{display:grid;gap:6px;margin-top:12px}
 .note{margin:10px 0 0;font-size:11.5px;line-height:1.45;color:var(--faint)}

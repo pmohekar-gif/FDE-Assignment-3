@@ -160,6 +160,47 @@
     </article>
     {% endif %}
 
+    {% if d.github_evidence %}
+    <article class="card">
+      <h2>GitHub PR Evidence <span class="aside"><a href="{{ d.github_evidence.pr_url }}" target="_blank" style="color:inherit;text-decoration:none">{{ d.github_evidence.owner }}/{{ d.github_evidence.repo }}#{{ d.github_evidence.pull_request_number }}</a></span></h2>
+      <div class="feat" style="margin-top:12px">
+        <div><small>Status</small><b class="{{ 'ok' if d.github_evidence.pr_merged else ('neutral' if d.github_evidence.pr_state == 'open' else 'bad') }}">{{ 'Merged' if d.github_evidence.pr_merged else d.github_evidence.pr_state|title }}</b></div>
+        <div><small>Draft</small><b class="{{ 'warn' if d.github_evidence.pr_draft else 'off' }}">{{ 'true' if d.github_evidence.pr_draft else 'false' }}</b></div>
+        <div><small>Changed Files</small><b>{{ d.github_evidence.changed_files|length }}</b></div>
+        <div><small>Checks Found</small><b>{{ d.github_evidence.checks|length }}</b></div>
+        <div><small>Head SHA</small><code>{{ d.github_evidence.head_sha[:8] }}</code></div>
+      </div>
+      
+      {% if d.github_evidence.scope_result.outside %}
+      <div class="inline-error error-409" style="margin-top:16px;margin-bottom:0">
+        <strong>Scope Violation Detected</strong>
+        <p>The PR modifies files outside the permitted warrant scope:</p>
+        <ul class="missing" style="margin-top:8px;margin-bottom:0">{% for f in d.github_evidence.scope_result.outside %}<li>{{ f }}</li>{% endfor %}</ul>
+      </div>
+      {% endif %}
+      
+      {% if d.github_evidence.checks %}
+      <h3 style="margin-top:16px">Check Runs</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Status</th><th>Conclusion</th><th>Time</th></tr></thead>
+          <tbody>
+            {% for check in d.github_evidence.checks %}
+            <tr>
+              <td><a href="{{ check.html_url }}" target="_blank">{{ check.name }}</a></td>
+              <td>{{ check.status }}</td>
+              <td class="{{ 'bad' if check.conclusion in ('failure','cancelled','timed_out','action_required') else ('ok' if check.conclusion == 'success' else 'neutral') }}">{{ check.conclusion or 'pending' }}</td>
+              <td><span class="relative-time" data-time="{{ check.started_at }}">{{ check.started_at }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      <p class="note">GitHub evidence is an optional supplement. It does not replace code intelligence, test generation, or the verification judge. Missing checks degrade verification to human review.</p>
+    </article>
+    {% endif %}
+
     <article class="card" id="sessions-card">
       <h2>Coding sessions <span class="aside">{{ coding_sessions|length }} for this delegation</span></h2>
       {% if coding_sessions %}
@@ -275,9 +316,12 @@
           <div class="form-grid">
             <label><span>Files, one per line</span><textarea id="evidence-files">{{ d.warrant.scope_surfaces|join('\n') }}</textarea></label>
             <label><span>Test output</span><textarea id="test-output">SIMULATED: 14 passed, 0 failed. Regression test verifies requested behaviour and existing behaviour remains stable.</textarea></label>
+            <label><span>GitHub owner (optional)</span><input id="github-owner" placeholder="pmohekar-gif"></label>
+            <label><span>GitHub repo (optional)</span><input id="github-repo" placeholder="FDE-Assignment-3"></label>
+            <label><span>GitHub PR number (optional)</span><input id="github-pr-number" inputmode="numeric" placeholder="1"></label>
             <button class="btn pri center" type="button" id="evidence">Submit evidence bundle</button>
           </div>
-          <p class="note">The single-use nonce is consumed only when Gate 1 passes.</p>
+          <p class="note">Optional GitHub evidence is fetched read-only by Warrant during Gate 1. The single-use nonce is consumed only when Gate 1 passes.</p>
         </div>
       </details>
       <div class="inline-error" id="evidence-error" hidden></div>
@@ -379,9 +423,17 @@ document.getElementById('evidence')?.addEventListener('click',async()=>{
   errorNode.hidden=true;
   try{
     const files=document.getElementById('evidence-files').value.split('\n').map(value=>value.trim()).filter(Boolean);
-    const response=await api(`/v1/warrants/${warrant.id}/evidence`,{method:'POST',body:JSON.stringify({
+    const githubOwner=document.getElementById('github-owner')?.value.trim();
+    const githubRepo=document.getElementById('github-repo')?.value.trim();
+    const githubPrNumber=Number(document.getElementById('github-pr-number')?.value.trim());
+    const body={
       nonce:warrant.demo_nonce,files,artifacts:[{type:'test',ref:'ci://northstar/simulated-run'}],
-      test_output:document.getElementById('test-output').value,claimed_criteria:claimedCriteria,notes:'Synthetic evidence from UI.'})});
+      test_output:document.getElementById('test-output').value,claimed_criteria:claimedCriteria,notes:'Synthetic evidence from UI.'};
+    if(githubOwner&&githubRepo&&Number.isInteger(githubPrNumber)&&githubPrNumber>0){
+      body.github_pr={owner:githubOwner,repo:githubRepo,pull_request_number:githubPrNumber};
+      body.notes='Synthetic evidence from UI with GitHub PR evidence attached.';
+    }
+    const response=await api(`/v1/warrants/${warrant.id}/evidence`,{method:'POST',body:JSON.stringify(body)});
     resultRegion.innerHTML=`<div class="success-panel"><strong>Evidence ${response.verdict}</strong><p>The single-use nonce is now consumed.</p></div>`;
     setTimeout(()=>location.reload(),700);
   }catch(error){

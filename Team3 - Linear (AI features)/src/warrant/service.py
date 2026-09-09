@@ -1167,14 +1167,149 @@ class WarrantService:
             if not any(fnmatch.fnmatch(path, allowed) for allowed in scope)
         ]
         contract = Database.loads(warrant["evidence_contract_json"], [])
-        gate1 = {
+        gate1: dict[str, Any] = {
             "nonce_valid": True,
             "warrant_unexpired": True,
             "files_within_scope": not outside,
             "outside_scope_files": outside,
             "artifacts_present": bool(evidence.artifacts),
             "test_output_present": bool(evidence.test_output.strip()),
+            "github_pr_attached": False,
         }
+
+        github_fetch_failed = False
+        github_human_checks: list[str] = []
+        snapshot_id = None
+        if evidence.github_pr:
+            gate1["github_pr_attached"] = True
+            import httpx
+
+            from .adapters.github import (
+                AdapterConfigError,
+                GitHubAdapter,
+                GitHubNotFoundError,
+                GitHubRequestError,
+            )
+
+            gh = GitHubAdapter(self.settings)
+            owner = evidence.github_pr.owner
+            repo = evidence.github_pr.repo
+            pr_num = evidence.github_pr.pull_request_number
+            try:
+                pr = gh.get_pull_request(owner, repo, pr_num)
+                files = gh.get_pull_request_files(owner, repo, pr_num)
+                checks = gh.get_pull_request_checks(owner, repo, pr.head_sha)
+
+                gate1["github_pr_found"] = True
+                gate1["github_pr_url"] = pr.html_url
+                gate1["github_head_sha"] = pr.head_sha
+                gate1["github_changed_file_count"] = len(files)
+
+                gh_outside = [
+                    f.filename
+                    for f in files
+                    if not any(fnmatch.fnmatch(f.filename, allowed) for allowed in scope)
+                ]
+                gate1["github_files_within_scope"] = not gh_outside
+                gate1["github_outside_scope_files"] = gh_outside
+                gate1["github_checks_found"] = len(checks)
+
+                if gh_outside:
+                    gate1["github_checks_state"] = "unverified"
+                    outside.extend(gh_outside)
+                    gate1["files_within_scope"] = False
+                    gate1["outside_scope_files"] = list(set(outside))
+                else:
+                    if not checks:
+                        gate1["github_checks_state"] = "none_found"
+                        github_human_checks.append(
+                            "No GitHub check runs were available for this PR."
+                        )
+                    elif any(c.status != "completed" for c in checks):
+                        gate1["github_checks_state"] = "pending"
+                        github_human_checks.append("GitHub checks are pending or in progress.")
+                    elif any(
+                        c.conclusion in ("failure", "cancelled", "timed_out", "action_required")
+                        for c in checks
+                    ):
+                        gate1["github_checks_state"] = "failed"
+                    else:
+                        gate1["github_checks_state"] = "passed"
+
+                snapshot_id = self.new_id("ghs")
+                self.db.execute(
+                    "INSERT INTO github_evidence_snapshots VALUES "
+                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        snapshot_id,
+                        workspace_id,
+                        warrant_id,
+                        None,
+                        owner,
+                        repo,
+                        pr_num,
+                        pr.html_url,
+                        pr.state,
+                        1 if pr.draft else 0,
+                        1 if pr.merged else 0,
+                        pr.base_ref,
+                        pr.head_sha,
+                        Database.dumps([f.model_dump() for f in files]),
+                        Database.dumps([c.model_dump() for c in checks]),
+                        Database.dumps({"outside": gh_outside}),
+                        self.now(),
+                    ),
+                )
+
+                self.audit.append(
+                    workspace_id,
+                    "github_evidence_attached",
+                    "system",
+                    "verification-service",
+                    "warrant",
+                    warrant_id,
+                    {
+                        "delegation_id": warrant["delegation_id"],
+                        "pr": f"{owner}/{repo}#{pr_num}",
+                        "head_sha": pr.head_sha,
+                        "changed_file_count": len(files),
+                        "out_of_scope_files": gh_outside,
+                        "checks_found": len(checks),
+                        "checks_state": gate1["github_checks_state"],
+                    },
+                )
+                if gh_outside:
+                    self.audit.append(
+                        workspace_id,
+                        "github_scope_violation_detected",
+                        "system",
+                        "verification-service",
+                        "warrant",
+                        warrant_id,
+                        {"out_of_scope_files": gh_outside},
+                    )
+
+            except (
+                httpx.HTTPError,
+                AdapterConfigError,
+                GitHubRequestError,
+                GitHubNotFoundError,
+            ) as e:
+                github_fetch_failed = True
+                gate1["github_pr_found"] = False
+                github_human_checks.append(
+                    "GitHub evidence could not be fetched; human review required."
+                )
+                self.audit.append(
+                    workspace_id,
+                    "github_evidence_unavailable",
+                    "system",
+                    "verification-service",
+                    "warrant",
+                    warrant_id,
+                    {"error": str(e)},
+                )
+
         if outside or not evidence.artifacts or not evidence.test_output.strip():
             self.db.execute(
                 "UPDATE delegations SET status='verification_failed',updated_at=? WHERE id=?",
@@ -1198,34 +1333,69 @@ class WarrantService:
             "INSERT INTO evidence_bundles VALUES (?,?,?,?,?)",
             (bundle_id, warrant_id, bundle_json, bundle_hash, self.now()),
         )
+        if evidence.github_pr and not github_fetch_failed and snapshot_id:
+            self.db.execute(
+                "UPDATE github_evidence_snapshots SET evidence_bundle_id=? "
+                "WHERE id=? AND evidence_bundle_id IS NULL",
+                (bundle_id, snapshot_id),
+            )
         started = time.perf_counter()
         gate2: dict[str, Any] | None = None
         human_checks: list[str] = []
         response = None
         error: Exception | None = None
         try:
-            response = self.provider.judge(contract[:-2], evidence)
-            gate2 = response.value.model_dump()
-            statuses = [item["status"] for item in gate2["criteria"]]
-            if "not_satisfied" in statuses:
+            if github_fetch_failed:
+                verdict = VerificationValue.INCONCLUSIVE
+                human_checks.extend(github_human_checks)
+            elif gate1.get("github_checks_state") == "failed":
                 verdict = VerificationValue.FAIL
-            elif "inconclusive" in statuses:
-                verdict = VerificationValue.PASS_WITH_EXCEPTIONS
-                human_checks.extend(
-                    item["criterion"]
-                    for item in gate2["criteria"]
-                    if item["status"] == "inconclusive"
-                )
+                gate2 = None
+                human_checks.extend(github_human_checks)
             else:
-                verdict = VerificationValue.PASS
-            if response.degraded and verdict == VerificationValue.PASS:
-                verdict = VerificationValue.PASS_WITH_EXCEPTIONS
-                human_checks.append("Fallback judge used after primary provider failure.")
+                response = self.provider.judge(contract[:-2], evidence)
+                gate2 = response.value.model_dump()
+                statuses = [item["status"] for item in gate2["criteria"]]
+                if "not_satisfied" in statuses:
+                    verdict = VerificationValue.FAIL
+                    human_checks.extend(github_human_checks)
+                elif "inconclusive" in statuses:
+                    verdict = VerificationValue.PASS_WITH_EXCEPTIONS
+                    human_checks.extend(github_human_checks)
+                    human_checks.extend(
+                        item["criterion"]
+                        for item in gate2["criteria"]
+                        if item["status"] == "inconclusive"
+                    )
+                else:
+                    if gate1.get("github_checks_state") in ("none_found", "pending"):
+                        verdict = VerificationValue.PASS_WITH_EXCEPTIONS
+                        human_checks.extend(github_human_checks)
+                    else:
+                        verdict = VerificationValue.PASS
+                        human_checks.extend(github_human_checks)
+                if response.degraded and verdict == VerificationValue.PASS:
+                    verdict = VerificationValue.PASS_WITH_EXCEPTIONS
+                    human_checks.append("Fallback judge used after primary provider failure.")
         except (ProviderError, ProviderMalformed) as exc:
             error = exc
             verdict = VerificationValue.INCONCLUSIVE
+            human_checks.extend(github_human_checks)
             human_checks.append("Judge unavailable; a human must review gate-1 evidence.")
-        self.record_usage(workspace_id, warrant["delegation_id"], "judge_evidence", response, error)
+        judge_attempted = response is not None or error is not None
+        if judge_attempted:
+            self.record_usage(
+                workspace_id,
+                warrant["delegation_id"],
+                "judge_evidence",
+                response,
+                error,
+            )
+
+        provider_name = (
+            getattr(response, "provider", self.provider.name) if judge_attempted else "not_run"
+        )
+
         latency = int((time.perf_counter() - started) * 1000)
         self.db.execute(
             "INSERT INTO verification_verdicts VALUES (?,?,?,?,?,?,?,?)",
@@ -1235,7 +1405,7 @@ class WarrantService:
                 Database.dumps(gate1),
                 Database.dumps(gate2) if gate2 is not None else None,
                 Database.dumps(human_checks),
-                getattr(response, "provider", self.provider.name),
+                provider_name,
                 latency,
                 self.now(),
             ),
@@ -1418,6 +1588,34 @@ class WarrantService:
             }
         else:
             result["verification"] = None
+
+        if warrant:
+            github_snapshot = self.db.one(
+                "SELECT * FROM github_evidence_snapshots WHERE warrant_id=? "
+                "ORDER BY fetched_at DESC LIMIT 1",
+                (warrant["id"],),
+            )
+            if github_snapshot:
+                result["github_evidence"] = {
+                    "owner": github_snapshot["owner"],
+                    "repo": github_snapshot["repo"],
+                    "pull_request_number": github_snapshot["pull_request_number"],
+                    "pr_url": github_snapshot["pr_url"],
+                    "pr_state": github_snapshot["pr_state"],
+                    "pr_draft": bool(github_snapshot["pr_draft"]),
+                    "pr_merged": bool(github_snapshot["pr_merged"]),
+                    "base_ref": github_snapshot["base_ref"],
+                    "head_sha": github_snapshot["head_sha"],
+                    "changed_files": Database.loads(github_snapshot["changed_files_json"], []),
+                    "checks": Database.loads(github_snapshot["checks_json"], []),
+                    "scope_result": Database.loads(github_snapshot["scope_result_json"], {}),
+                    "fetched_at": github_snapshot["fetched_at"],
+                }
+            else:
+                result["github_evidence"] = None
+        else:
+            result["github_evidence"] = None
+
         return result
 
     def delegation_brief(
@@ -1902,9 +2100,7 @@ class WarrantService:
 
         # ── Get facts and hash ───────────────────────────────────────────
         facts = self._team_accountability_facts(workspace_id, team)
-        facts_hash = hashlib.sha256(
-            Database.dumps(facts).encode("utf-8")
-        ).hexdigest()
+        facts_hash = hashlib.sha256(Database.dumps(facts).encode("utf-8")).hexdigest()
 
         # ── Fetch cache ──────────────────────────────────────────────────
         cache_row = self.db.one(
@@ -1961,18 +2157,14 @@ class WarrantService:
             "model": model,
         }
 
-    def refresh_team_summary(
-        self, workspace_id: str, team: str, actor_id: str
-    ) -> dict[str, Any]:
+    def refresh_team_summary(self, workspace_id: str, team: str, actor_id: str) -> dict[str, Any]:
         """Regenerate deterministic prose for the team summary and update the cache."""
         # ── Auth gate ────────────────────────────────────────────────────
         self.require_admin(workspace_id, actor_id)
 
         # ── Get facts and hash ───────────────────────────────────────────
         facts = self._team_accountability_facts(workspace_id, team)
-        facts_hash = hashlib.sha256(
-            Database.dumps(facts).encode("utf-8")
-        ).hexdigest()
+        facts_hash = hashlib.sha256(Database.dumps(facts).encode("utf-8")).hexdigest()
 
         # ── OpenRouter Safety Guard ──────────────────────────────────────
         block_provider = False
@@ -1982,7 +2174,7 @@ class WarrantService:
                 "JOIN linear_issue_links l ON i.id = l.issue_id "
                 "WHERE i.workspace_id = ? AND i.team = ? AND l.source = 'linear' "
                 "LIMIT 1",
-                (workspace_id, team)
+                (workspace_id, team),
             )
             if has_linear:
                 block_provider = True
@@ -1999,18 +2191,19 @@ class WarrantService:
             f"with {facts['active_warrants']} active warrants "
             f"and {facts['pending_human_approvals']} pending approvals."
         )
-        if facts['failed_verifications'] > 0:
+        if facts["failed_verifications"] > 0:
             prose_parts.append(f"Note: {facts['failed_verifications']} verifications have failed.")
-        
+
         fallback_prose = "\n".join(prose_parts)
         prose = fallback_prose
         prose_source = "structured_fallback"
         provider: str | None = None
         model: str | None = None
-        
+
         if not block_provider:
             from .providers import ProviderError, ProviderMalformed
             from .schemas import TeamSummaryProse
+
             try:
                 response = self.provider.team_summary(facts)
                 if isinstance(response.value, TeamSummaryProse):
@@ -2018,7 +2211,7 @@ class WarrantService:
                     prose_source = "model"
                     provider = response.provider
                     model = response.model
-                    
+
                     self.record_usage(
                         workspace_id,
                         f"team_summary:{team}",
@@ -2210,8 +2403,7 @@ class WarrantService:
                     ),
                 )
                 conn.execute(
-                    "INSERT INTO issues_fts(issue_id,workspace_id,title,body) "
-                    "VALUES (?,?,?,?)",
+                    "INSERT INTO issues_fts(issue_id,workspace_id,title,body) VALUES (?,?,?,?)",
                     (issue_id, workspace_id, dto.title, body_normalised),
                 )
                 conn.execute(
@@ -2278,13 +2470,9 @@ class WarrantService:
             (existing_issue["id"],),
         )
         if existing_link is None:
-            raise Conflict(
-                f"Issue {dto.identifier} already exists and is not a Linear import."
-            )
+            raise Conflict(f"Issue {dto.identifier} already exists and is not a Linear import.")
         if existing_link["external_id"] != meta["external_id"]:
-            raise Conflict(
-                f"Issue {dto.identifier} is linked to a different Linear issue ID."
-            )
+            raise Conflict(f"Issue {dto.identifier} is linked to a different Linear issue ID.")
 
         title_changed = existing_issue["title"] != dto.title
 
@@ -2298,9 +2486,7 @@ class WarrantService:
             "priority": existing_issue["priority"],
             "path_hints": Database.loads(existing_issue["path_hints_json"], []),
         }
-        new_warrant_comparable = {
-            k: warrant_fields[k] for k in existing_warrant
-        }
+        new_warrant_comparable = {k: warrant_fields[k] for k in existing_warrant}
         changed = existing_warrant != new_warrant_comparable
 
         if not changed:
@@ -2349,8 +2535,7 @@ class WarrantService:
                 (existing_issue["id"],),
             )
             conn.execute(
-                "INSERT INTO issues_fts(issue_id,workspace_id,title,body) "
-                "VALUES (?,?,?,?)",
+                "INSERT INTO issues_fts(issue_id,workspace_id,title,body) VALUES (?,?,?,?)",
                 (existing_issue["id"], workspace_id, dto.title, body_normalised),
             )
             # Update adapter metadata link

@@ -27,6 +27,7 @@ Issue trackers and coding agents provide delegation mechanics, OAuth scopes, and
 - Scoped four-hour warrant, policy-derived tool grants, expiry/revocation lifecycle,
   evidence contract, and single-use nonce.
 - Deterministic verification gate followed by a schema-bound evidence judge that may abstain.
+- GitHub Pull Request fetching and metadata attachment for evidence submission with deterministic scope-violation enforcement (Gate 1).
 - Hash-chained append-only audit ledger, integrity check, CSV export, persisted product telemetry, and model-usage records.
 - Provider retry/repair/optional fallback, embedding circuit breaker, extraction cache,
   team-filtered precedents, and non-authorising narrative briefs.
@@ -127,6 +128,7 @@ was not executed in this environment because the Docker daemon was unavailable.
 | `GITHUB_MODE` | `off` | Optional read-only GitHub evidence lookup mode: `off`, `stub`, or `live`. |
 | `GITHUB_TOKEN` | unset | Required only for `GITHUB_MODE=live`; read-only fine-grained PAT recommended for MVP. |
 | `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub REST API base URL; live mode requires HTTPS and rejects local/private targets. |
+| `GITHUB_PR_REVIEW_ENABLED` | `false` | Enables GitHub PR-first review sessions from `/integrations/github`; these review external PR evidence and do not launch an agent. |
 | `AGENT_CHAT_ENABLED` | `true` | Enables evidence-grounded, non-authorising Agent Q&A. |
 | `CODE_INTELLIGENCE_ENABLED` | `true` | Enables repository indexing and code Q&A. |
 | `REPOSITORY_ROOT` | project root | Repository the code index and coding-session service may inspect. Coding sessions need a Git checkout: `make demo-repo` creates one at `.runtime/demo-repo`. |

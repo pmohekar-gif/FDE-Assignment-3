@@ -30,6 +30,7 @@ from .coding import CodingAgentError, CodingSessionService
 from .config import PROJECT_ROOT, Settings
 from .db import Database
 from .policy import PolicyValidationError, granted_tools, load_policy
+from .pr_review import GitHubPRReviewService
 from .providers import ProviderError, build_provider
 from .repository import CodeIntelligenceService, LocalRepositoryProvider, RepositoryError
 from .retrieval import RetrievalService
@@ -43,6 +44,8 @@ from .schemas import (
     DelegationBriefTelemetry,
     DelegationCreate,
     EvidenceSubmission,
+    GitHubPRLinkCreate,
+    GitHubPRReviewSessionCreate,
     HumanDecision,
     LinearImportRequest,
     PolicySimulationSource,
@@ -158,6 +161,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
     agent = AgentService(db, service, code)
     coding = CodingSessionService(db, settings, service, repository)
     slack = SlackAdapter(db, settings, service, agent, coding)
+    pr_review_service = GitHubPRReviewService(settings, db, provider)
     auth = AuthService(db, settings, service.audit)
     if auth.enabled:
         auth.ensure_credentials()
@@ -222,6 +226,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "external_coding_agent": settings.external_coding_agent_enabled,
             "slack": settings.slack_enabled,
             "pr_publishing": settings.pr_publishing_enabled,
+            "github_pr_review": settings.github_pr_review_enabled,
         }
 
     def policy_surface(workspace_id: str) -> dict[str, Any]:
@@ -671,7 +676,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         """
         workspace_id = settings.workspace_id
         rows = db.all(
-            "SELECT c.id,c.state,c.provider,c.created_at,c.delegation_id,"
+            "SELECT c.id,c.state,c.provider,c.created_at,c.delegation_id,c.session_kind,"
             "i.external_key,i.title,d.additions,d.deletions "
             "FROM coding_sessions c JOIN issues i ON i.id=c.issue_id "
             "LEFT JOIN diff_artifacts d ON d.session_id=c.id "
@@ -742,13 +747,17 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         """GitHub evidence interface."""
         actor_id = acting_id(request, None)
         actor = db.one(
-            "SELECT role FROM users WHERE id=? AND workspace_id=?", 
-            (actor_id, settings.workspace_id)
+            "SELECT role FROM users WHERE id=? AND workspace_id=?",
+            (actor_id, settings.workspace_id),
         )
         is_admin = bool(actor and actor["role"] in {"admin", "owner"})
-        
+
         ctx = page_context(settings.workspace_id, request)
         ctx["is_admin"] = is_admin
+        ctx["issues"] = db.all(
+            "SELECT external_key, title FROM issues WHERE workspace_id=? ORDER BY updated_at DESC",
+            (settings.workspace_id,),
+        )
 
         return templates.TemplateResponse(
             request,
@@ -1465,7 +1474,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         workspace_id = workspace(x_workspace_id)
         actor_id = acting_id(request, x_actor_id)
         service.require_admin(workspace_id, actor_id)
-        
+
         return service.get_linear_sync_status(workspace_id)
 
     @app.get("/v1/adapters/linear/updates")
@@ -1480,7 +1489,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         workspace_id = workspace(x_workspace_id)
         actor_id = acting_id(request, x_actor_id)
         service.require_admin(workspace_id, actor_id)
-        
+
         status = service.get_linear_sync_status(workspace_id)
         since_str = status.get("max_external_updated_at")
         since = None
@@ -1737,6 +1746,74 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             }
         )
 
+    @app.get("/v1/adapters/github/pull-request/evidence")
+    async def github_pull_request_evidence_endpoint(
+        request: Request,
+        owner: str,
+        repo: str,
+        number: Annotated[int, Query(ge=1)],
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+    ) -> Any:
+        workspace_id = workspace(x_workspace_id)
+        actor_id = acting_id(request, x_actor_id)
+        service.require_admin(workspace_id, actor_id)
+
+        adapter = GitHubAdapter(settings)
+        pr = adapter.get_pull_request(owner, repo, number)
+        files = adapter.get_pull_request_files(owner, repo, number, limit=100)
+        checks = adapter.get_pull_request_checks(owner, repo, pr.head_sha, limit=100)
+
+        return JSONResponse(
+            {
+                "adapter_mode": settings.github_mode,
+                "source": adapter.source,
+                "pull_request": pr.model_dump(),
+                "files": [f.model_dump() for f in files],
+                "checks": [c.model_dump() for c in checks],
+            }
+        )
+
+    @app.post("/v1/integrations/github/pr-link")
+    async def create_github_pr_link_endpoint(
+        request: Request,
+        body: GitHubPRLinkCreate,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> Any:
+        require_csrf(x_csrf_token)
+        workspace_id = workspace(x_workspace_id)
+        actor_id = acting_id(request, x_actor_id)
+        service.require_admin(workspace_id, actor_id)
+
+        return pr_review_service.link_pr_to_issue(
+            workspace_id, actor_id, body.owner, body.repo, body.pull_request_number, body.issue_ref
+        )
+
+    @app.post("/v1/coding-sessions/github-pr-review", status_code=202)
+    async def create_github_pr_review_session_endpoint(
+        request: Request,
+        body: GitHubPRReviewSessionCreate,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> Any:
+        require_csrf(x_csrf_token)
+        workspace_id = workspace(x_workspace_id)
+        actor_id = acting_id(request, x_actor_id)
+        service.require_admin(workspace_id, actor_id)
+
+        return pr_review_service.create_review_session(
+            workspace_id,
+            actor_id,
+            body.owner,
+            body.repo,
+            body.pull_request_number,
+            body.issue_ref,
+            body.source,
+        )
+
     @app.get("/healthz")
     async def health() -> dict:
         degraded = []
@@ -1754,6 +1831,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
                 "external_coding_agent": settings.external_coding_agent_enabled,
                 "slack": settings.slack_enabled,
                 "pr_publishing": settings.pr_publishing_enabled,
+                "github_pr_review": settings.github_pr_review_enabled,
             },
         }
 

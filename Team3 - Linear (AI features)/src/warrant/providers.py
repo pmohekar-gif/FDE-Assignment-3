@@ -255,9 +255,9 @@ class FixtureProvider(LLMProvider):
         self._fail("answer")
         body = " ".join(fact.strip() for fact in facts if fact.strip())
         text = (
-            f"SIMULATED fixture answer to \"{question.strip()}\": {body}"
+            f'SIMULATED fixture answer to "{question.strip()}": {body}'
             if body
-            else f"SIMULATED fixture answer to \"{question.strip()}\": no facts were supplied."
+            else f'SIMULATED fixture answer to "{question.strip()}": no facts were supplied.'
         )
         value = AnswerResult(answer=text[:4000])
         return ProviderResponse(

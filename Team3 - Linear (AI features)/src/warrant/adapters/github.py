@@ -92,10 +92,7 @@ class GitHubAdapter:
         return min(max(int(value), 1), _MAX_LIMIT)
 
     def _repo_path(self, owner: str, repo: str) -> str:
-        return (
-            f"repos/{self._safe_path_part(owner, 'owner')}/"
-            f"{self._safe_path_part(repo, 'repo')}"
-        )
+        return f"repos/{self._safe_path_part(owner, 'owner')}/{self._safe_path_part(repo, 'repo')}"
 
     def _get_json(self, path: str, missing: str) -> Any:
         url = f"{self._validated_base_url()}/{path}"
@@ -147,9 +144,7 @@ class GitHubAdapter:
             data: list[dict[str, Any]] = list(STUB_GITHUB_FILES)
         else:
             path = f"{self._repo_path(owner, repo)}/pulls/{number}/files?per_page={bounded_limit}"
-            data = self._get_json(
-                path, f"Pull request files {owner}/{repo}#{number} not found."
-            )
+            data = self._get_json(path, f"Pull request files {owner}/{repo}#{number} not found.")
 
         return [
             GitHubChangedFileDTO(
