@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+# ruff: noqa: E501
 import fnmatch
 import hashlib
 import json
+import re
 import secrets
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -25,11 +28,14 @@ from .policy import (
 from .providers import LLMProvider, ProviderError, ProviderMalformed
 from .retrieval import RetrievalResult, RetrievalService
 from .schemas import (
+    CommentCreate,
+    CommentUpdate,
     Consequence,
     DelegationCreate,
     EvidenceSubmission,
     ExtractionResult,
     HumanDecision,
+    IssueCreate,
     PolicyDecision,
     Reversibility,
     RiskAssessment,
@@ -89,6 +95,10 @@ class Unauthorized(DomainError):
 
 class Conflict(DomainError):
     status_code = 409
+
+
+class ServiceUnavailable(DomainError):
+    status_code = 503
 
 
 class Gone(DomainError):
@@ -203,6 +213,233 @@ class WarrantService:
             structured_output_mode=getattr(response, "structured_output_mode", None),
             count=repairs,
         )
+
+    def _comment_issue(self, workspace_id: str, issue_ref: str, actor_id: str) -> dict[str, Any]:
+        # This demo's issue ACL is workspace membership. Keeping the check in one method
+        # makes a future per-issue policy apply equally to thread, context, and citations.
+        if not self.db.one("SELECT id FROM users WHERE id=? AND workspace_id=?", (actor_id, workspace_id)):
+            raise NotFound("issue not found")
+        issue = self.db.one("SELECT * FROM issues WHERE workspace_id=? AND external_key=?", (workspace_id, issue_ref))
+        if not issue:
+            raise NotFound("issue not found")
+        return issue
+
+    def create_issue(self, workspace_id: str, actor_id: str, request: IssueCreate) -> dict[str, Any]:
+        """Persist a normal issue without triggering AI, delegation, or authority."""
+        if not self.db.one("SELECT id FROM users WHERE id=? AND workspace_id=?", (actor_id, workspace_id)):
+            raise Forbidden("a valid workspace user must create an issue")
+        title = normalise_untrusted("", request.title).text
+        description = normalise_untrusted("", request.description).text
+        if len(title) < 3:
+            raise DomainError("issue title is required")
+        now = self.now()
+        try:
+            with self.db.transaction() as connection:
+                existing = connection.execute(
+                    "SELECT i.* FROM issue_creation_requests r JOIN issues i ON i.id=r.issue_id "
+                    "WHERE r.workspace_id=? AND r.client_request_id=?",
+                    (workspace_id, request.idempotency_key),
+                ).fetchone()
+                if existing:
+                    return {**dict(existing), "created": False}
+                teams = connection.execute(
+                    "SELECT team,external_key FROM issues WHERE workspace_id=? ORDER BY external_key",
+                    (workspace_id,),
+                ).fetchall()
+                team_rows = [row for row in teams if str(row["team"]).casefold() == request.team.strip().casefold()]
+                if not team_rows:
+                    raise DomainError("team is not available in this workspace")
+                team = str(team_rows[0]["team"])
+                prefix_match = re.match(r"^([A-Z][A-Z0-9]*)-[0-9]+$", str(team_rows[0]["external_key"]))
+                if prefix_match is None:
+                    raise DomainError("team does not have a valid ticket reference prefix")
+                prefix = prefix_match.group(1)
+                suffixes = [
+                    int(match.group(1))
+                    for row in connection.execute(
+                        "SELECT external_key FROM issues WHERE workspace_id=? AND external_key LIKE ?",
+                        (workspace_id, f"{prefix}-%"),
+                    ).fetchall()
+                    if (match := re.match(rf"^{re.escape(prefix)}-([0-9]+)$", str(row["external_key"])))
+                ]
+                external_key = f"{prefix}-{(max(suffixes) if suffixes else 0) + 1}"
+                issue_id = self.new_id("issue")
+                connection.execute(
+                    "INSERT INTO issues (id,workspace_id,external_key,title,body_normalised,team,labels_json,path_hints_json,priority,revision,updated_at,demo_note,is_demo_path) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (issue_id, workspace_id, external_key, title, description, team, Database.dumps(request.labels), Database.dumps([]), request.priority, 1, now, "", 0),
+                )
+                connection.execute(
+                    "INSERT INTO issues_fts(issue_id,workspace_id,title,body) VALUES (?,?,?,?)",
+                    (issue_id, workspace_id, title, description),
+                )
+                connection.execute(
+                    "INSERT INTO issue_creation_requests(workspace_id,client_request_id,issue_id,created_at) VALUES (?,?,?,?)",
+                    (workspace_id, request.idempotency_key, issue_id, now),
+                )
+                self.audit.append(
+                    workspace_id,
+                    "issue_created",
+                    "user",
+                    actor_id,
+                    "issue",
+                    issue_id,
+                    {"issue_ref": external_key, "team": team, "priority": request.priority, "label_count": len(request.labels)},
+                    connection=connection,
+                )
+        except sqlite3.Error as exc:
+            raise ServiceUnavailable("ticket storage is temporarily unavailable; no ticket was created") from exc
+        issue = self.db.one("SELECT * FROM issues WHERE id=? AND workspace_id=?", (issue_id, workspace_id))
+        if issue is None:  # pragma: no cover - transaction guarantees this
+            raise NotFound("issue not found after creation")
+        return {**issue, "created": True}
+
+    @staticmethod
+    def _warrant_mention(text: str) -> tuple[bool, str]:
+        match = re.search(r"(?<![\w@])@warrant\b", text, re.I)
+        if not match:
+            return False, ""
+        return True, (text[:match.start()] + text[match.end():]).strip()
+
+    def _agent_enabled(self, workspace_id: str) -> bool:
+        row = self.db.one("SELECT enabled FROM agent_settings WHERE workspace_id=?", (workspace_id,))
+        return True if row is None else bool(row["enabled"])
+
+    def agent_settings(self, workspace_id: str, actor_id: str, update: Any | None = None) -> dict[str, Any]:
+        actor = self.db.one("SELECT role FROM users WHERE id=? AND workspace_id=?", (actor_id, workspace_id))
+        if not actor:
+            raise NotFound("agent settings not found")
+        if update is not None:
+            if actor["role"] not in {"owner", "admin"}:
+                raise NotFound("agent settings not found")
+            now = self.now()
+            guidance = normalise_untrusted("", update.workspace_guidance).text
+            self.db.execute(
+                "INSERT INTO agent_settings (workspace_id,enabled,workspace_guidance,updated_by,updated_at) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(workspace_id) DO UPDATE SET enabled=excluded.enabled,workspace_guidance=excluded.workspace_guidance,updated_by=excluded.updated_by,updated_at=excluded.updated_at",
+                (workspace_id, int(update.enabled), guidance, actor_id, now),
+            )
+            self.audit.append(workspace_id, "agent_settings_updated", "user", actor_id, "agent_settings", workspace_id, {"enabled": update.enabled})
+        row = self.db.one("SELECT * FROM agent_settings WHERE workspace_id=?", (workspace_id,))
+        return row or {"workspace_id": workspace_id, "enabled": True, "workspace_guidance": ""}
+
+    def list_comments(self, workspace_id: str, issue_ref: str, actor_id: str) -> list[dict[str, Any]]:
+        issue = self._comment_issue(workspace_id, issue_ref, actor_id)
+        rows = self.db.all(
+            "SELECT c.*,m.id AS mention_id,m.state AS mention_state,m.provider,m.model,m.citations_json,m.uncertainty_json "
+            "FROM comments c LEFT JOIN comment_mentions m ON m.assistant_comment_id=c.id "
+            "WHERE c.workspace_id=? AND c.issue_id=? AND c.deleted_at IS NULL ORDER BY c.created_at",
+            (workspace_id, issue["id"]),
+        )
+        for row in rows:
+            row["citations"] = Database.loads(row.pop("citations_json", None), [])
+            row["uncertainties"] = Database.loads(row.pop("uncertainty_json", None), [])
+        return rows
+
+    def create_comment(self, workspace_id: str, issue_ref: str, actor_id: str, body: CommentCreate) -> dict[str, Any]:
+        issue = self._comment_issue(workspace_id, issue_ref, actor_id)
+        normalised = normalise_untrusted("", body.body)
+        if not normalised.text:
+            raise DomainError("comment body is required")
+        mentioned, requested = self._warrant_mention(normalised.text)
+        now = self.now()
+        with self.db.transaction() as connection:
+            existing = connection.execute(
+                "SELECT id FROM comments WHERE workspace_id=? AND client_request_id=?", (workspace_id, body.idempotency_key)
+            ).fetchone()
+            if existing:
+                comment = dict(connection.execute("SELECT * FROM comments WHERE id=?", (existing["id"],)).fetchone())
+                mention = connection.execute("SELECT * FROM comment_mentions WHERE comment_id=?", (comment["id"],)).fetchone()
+                return {"comment": comment, "mention": dict(mention) if mention else None}
+            if mentioned and not self._agent_enabled(workspace_id):
+                raise Forbidden("Warrant is disabled for this workspace")
+            if mentioned:
+                user_count = connection.execute("SELECT COUNT(*) AS n FROM comment_mentions WHERE workspace_id=? AND invoking_user_id=? AND created_at>=datetime('now','-1 hour')", (workspace_id, actor_id)).fetchone()["n"]
+                workspace_count = connection.execute("SELECT COUNT(*) AS n FROM comment_mentions WHERE workspace_id=? AND created_at>=datetime('now','-1 hour')", (workspace_id,)).fetchone()["n"]
+                if user_count >= 20 or workspace_count >= 100:
+                    raise DomainError("Warrant mention rate limit reached")
+            comment_id = self.new_id("cmt")
+            connection.execute("INSERT INTO comments VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (comment_id, workspace_id, issue["id"], body.parent_comment_id, "user", actor_id, normalised.text, "completed", body.idempotency_key, issue["revision"], now, now, None))
+            mention: dict[str, Any] | None = None
+            if mentioned:
+                assistant_id, mention_id = self.new_id("cmt"), self.new_id("mnt")
+                connection.execute("INSERT INTO comments VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (assistant_id, workspace_id, issue["id"], comment_id, "agent", "warrant", "Warrant is working…", "working", None, issue["revision"], now, now, None))
+                connection.execute("INSERT INTO comment_mentions (id,workspace_id,comment_id,invoking_user_id,mentioned_identity,requested_text,state,assistant_comment_id,idempotency_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", (mention_id, workspace_id, comment_id, actor_id, "Warrant", requested, "working", assistant_id, body.idempotency_key, now))
+                mention = {"id": mention_id, "state": "working", "assistant_comment_id": assistant_id, "poll_url": f"/v1/comment-mentions/{mention_id}"}
+        self.audit.append(workspace_id, "comment_created", "user", actor_id, "comment", comment_id, {"issue_id": issue["id"], "mention": mentioned, "redactions": normalised.redactions})
+        return {"comment": {"id": comment_id, "author_type": "user", "status": "completed", "body_normalised": normalised.text}, "mention": mention}
+
+    def get_mention(self, workspace_id: str, mention_id: str, actor_id: str) -> dict[str, Any]:
+        row = self.db.one("SELECT m.*,c.issue_id FROM comment_mentions m JOIN comments c ON c.id=m.comment_id WHERE m.id=? AND m.workspace_id=?", (mention_id, workspace_id))
+        if not row:
+            raise NotFound("mention not found")
+        self._comment_issue(workspace_id, self.db.one("SELECT external_key FROM issues WHERE id=?", (row["issue_id"],))["external_key"], actor_id)
+        assistant = self.db.one("SELECT * FROM comments WHERE id=? AND deleted_at IS NULL", (row["assistant_comment_id"],))
+        return {"id": row["id"], "state": row["state"], "assistant_comment": assistant, "provider": row["provider"], "model": row["model"], "citations": Database.loads(row["citations_json"], []), "uncertainties": Database.loads(row["uncertainty_json"], [])}
+
+    def process_mention(self, workspace_id: str, mention_id: str, actor_id: str) -> dict[str, Any]:
+        row = self.db.one("SELECT m.*,c.issue_id FROM comment_mentions m JOIN comments c ON c.id=m.comment_id WHERE m.id=? AND m.workspace_id=?", (mention_id, workspace_id))
+        if not row:
+            raise NotFound("mention not found")
+        issue = self.db.one("SELECT * FROM issues WHERE id=? AND workspace_id=?", (row["issue_id"], workspace_id))
+        self._comment_issue(workspace_id, issue["external_key"], actor_id)
+        if row["state"] != "working":
+            return self.get_mention(workspace_id, mention_id, actor_id)
+        comments = self.db.all("SELECT id,body_normalised FROM comments WHERE issue_id=? AND workspace_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 30", (issue["id"], workspace_id))
+        context = [{"id": f"issue:{issue['id']}", "type": "issue", "title": issue["title"], "body": issue["body_normalised"]}]
+        settings_row = self.db.one("SELECT workspace_guidance FROM agent_settings WHERE workspace_id=?", (workspace_id,))
+        if settings_row and settings_row["workspace_guidance"]:
+            context.append({"id": "workspace:guidance", "type": "workspace_guidance", "body": settings_row["workspace_guidance"]})
+        context += [{"id": f"comment:{c['id']}", "type": "comment", "body": c["body_normalised"]} for c in comments]
+        related = self.retrieval.search_issues(workspace_id, f"{issue['title']} {row['requested_text']}", limit=5).results
+        context += [
+            {
+                "id": f"issue:{item['issue_id']}",
+                "type": "related_issue",
+                "title": item["title"],
+                "external_key": item["external_key"],
+            }
+            for item in related
+            if item["issue_id"] != issue["id"]
+        ]
+        allowed = {item["id"] for item in context}
+        try:
+            response = self.provider.comment_assist(row["requested_text"], context)
+            value = response.value
+            citations = [value_id for value_id in value.citation_ids if value_id in allowed]
+            if len(citations) != len(value.citation_ids):
+                raise ProviderError("provider cited context outside the allowed set")
+            self.db.execute("UPDATE comments SET body_normalised=?,status='completed',updated_at=? WHERE id=?", (value.answer_markdown, self.now(), row["assistant_comment_id"]))
+            self.db.execute("UPDATE comment_mentions SET state='completed',provider=?,model=?,citations_json=?,uncertainty_json=?,completed_at=? WHERE id=?", (response.provider, response.model, Database.dumps(citations), Database.dumps(value.uncertainties), self.now(), mention_id))
+            self.record_usage(workspace_id, mention_id, "comment_assist", response)
+            self.audit.append(workspace_id, "comment_assist_completed", "agent", "warrant", "comment_mention", mention_id, {"citation_count": len(citations), "fixture": response.provider == "fixture"})
+        except (ProviderError, ProviderMalformed) as exc:
+            self.db.execute("UPDATE comments SET body_normalised=?,status='failed',updated_at=? WHERE id=?", ("Warrant could not complete this response. Retry later.", self.now(), row["assistant_comment_id"]))
+            self.db.execute("UPDATE comment_mentions SET state='failed',failure_reason=?,completed_at=? WHERE id=?", (type(exc).__name__, self.now(), mention_id))
+            self.record_usage(workspace_id, mention_id, "comment_assist", None, exc)
+        return self.get_mention(workspace_id, mention_id, actor_id)
+
+    def update_comment(self, workspace_id: str, comment_id: str, actor_id: str, body: CommentUpdate) -> dict[str, Any]:
+        row = self.db.one("SELECT * FROM comments WHERE id=? AND workspace_id=? AND deleted_at IS NULL", (comment_id, workspace_id))
+        if not row or row["author_type"] != "user" or row["author_id"] != actor_id:
+            raise NotFound("comment not found")
+        text = normalise_untrusted("", body.body).text
+        self.db.execute("UPDATE comments SET body_normalised=?,updated_at=? WHERE id=?", (text, self.now(), comment_id))
+        self.audit.append(workspace_id, "comment_edited", "user", actor_id, "comment", comment_id, {})
+        return self.db.one("SELECT * FROM comments WHERE id=?", (comment_id,)) or {}
+
+    def delete_comment(self, workspace_id: str, comment_id: str, actor_id: str) -> None:
+        row = self.db.one("SELECT * FROM comments WHERE id=? AND workspace_id=? AND deleted_at IS NULL", (comment_id, workspace_id))
+        if not row or row["author_type"] != "user" or row["author_id"] != actor_id:
+            raise NotFound("comment not found")
+        now = self.now()
+        mention = self.db.one("SELECT assistant_comment_id,id FROM comment_mentions WHERE comment_id=?", (comment_id,))
+        with self.db.transaction() as connection:
+            connection.execute("UPDATE comments SET deleted_at=?,updated_at=? WHERE id=?", (now, now, comment_id))
+            if mention:
+                connection.execute("UPDATE comments SET deleted_at=?,updated_at=? WHERE id=?", (now, now, mention["assistant_comment_id"]))
+                connection.execute("UPDATE comment_mentions SET state='deleted',completed_at=? WHERE id=?", (now, mention["id"]))
+        self.audit.append(workspace_id, "comment_deleted", "user", actor_id, "comment", comment_id, {"linked_agent_response_deleted": bool(mention)})
 
     def _workspace_resource(
         self, table: str, resource_id: str, workspace_id: str

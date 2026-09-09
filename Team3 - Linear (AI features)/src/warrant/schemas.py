@@ -50,6 +50,24 @@ class DelegationCreate(BaseModel):
     idempotency_key: str = Field(min_length=4, max_length=120)
 
 
+class IssueCreate(BaseModel):
+    """A normal, non-authorizing workspace ticket request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=3, max_length=240)
+    description: str = Field(default="", max_length=8000)
+    team: str = Field(min_length=1, max_length=80)
+    priority: Literal["urgent", "high", "medium", "low"] = "medium"
+    labels: list[str] = Field(default_factory=list, max_length=12)
+    idempotency_key: str = Field(min_length=4, max_length=120)
+
+    @field_validator("labels")
+    @classmethod
+    def clean_issue_labels(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip().lower()[:40] for value in values if value.strip()))
+
+
 class RelatedIssueTelemetry(BaseModel):
     event: Literal["viewed", "selected"]
     source_issue_ref: str = Field(min_length=2, max_length=80)
@@ -103,6 +121,34 @@ class TriageApplication(BaseModel):
 class TriageTelemetry(BaseModel):
     issue_ref: str = Field(min_length=2, max_length=80)
     retrieval_mode: Literal["HYBRID", "LEXICAL_ONLY"]
+
+
+class CodeIntelligenceTelemetry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event: Literal[
+        "query_completed", "source_preview_opened", "impact_preflight_opened", "safe_failure"
+    ]
+    operation: Literal["query", "source_preview", "impact_preflight", "status"]
+    query_length: int | None = Field(default=None, ge=2, le=1000)
+    result_count: int = Field(default=0, ge=0, le=20)
+    source_count: int = Field(default=0, ge=0, le=20)
+    cached_index: bool | None = None
+    stale: bool | None = None
+    truncated: bool | None = None
+    failure_code: Literal[
+        "REPOSITORY_UNAVAILABLE",
+        "REPOSITORY_SOURCE_NOT_FOUND",
+        "CODE_INTELLIGENCE_DISABLED",
+    ] | None = None
+
+    @model_validator(mode="after")
+    def telemetry_has_only_appropriate_metadata(self) -> "CodeIntelligenceTelemetry":
+        if self.event == "query_completed" and self.query_length is None:
+            raise ValueError("query_completed events require query_length")
+        if self.event == "safe_failure" and self.failure_code is None:
+            raise ValueError("safe_failure events require failure_code")
+        return self
 
 
 class ExtractionResult(BaseModel):
@@ -220,6 +266,41 @@ class AnswerResult(BaseModel):
     answer: str = Field(min_length=1, max_length=4000)
 
 
+class CommentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    body: str = Field(min_length=1, max_length=8_000)
+    parent_comment_id: str | None = Field(default=None, max_length=80)
+    idempotency_key: str = Field(min_length=4, max_length=120)
+
+
+class CommentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    body: str = Field(min_length=1, max_length=8_000)
+
+
+class AgentSettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    workspace_guidance: str = Field(default="", max_length=2_000)
+
+
+class CommentAssistNarrative(BaseModel):
+    """Closed, evidence-only output for an explicitly invoked issue comment."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal[
+        "answer", "summarize", "rewrite", "extract_action_items", "blockers",
+        "related_issues", "triage_draft", "delegation_draft",
+    ] = "answer"
+    answer_markdown: str = Field(min_length=1, max_length=2_000)
+    citation_ids: list[str] = Field(default_factory=list, max_length=36)
+    uncertainties: list[str] = Field(default_factory=list, max_length=8)
+
+
 class WarrantView(BaseModel):
     id: str
     delegation_id: str
@@ -308,6 +389,8 @@ class CodeQuery(BaseModel):
     query: str = Field(min_length=2, max_length=1000)
     repository_id: str = Field(default="local", min_length=1, max_length=120)
     limit: int = Field(default=8, ge=1, le=20)
+    source_path: str | None = Field(default=None, min_length=1, max_length=512)
+    symbol: str | None = Field(default=None, min_length=1, max_length=240)
 
 
 class CodingSessionCreate(BaseModel):

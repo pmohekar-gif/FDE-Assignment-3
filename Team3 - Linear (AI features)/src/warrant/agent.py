@@ -554,6 +554,7 @@ class AgentService:
                         "reason": item.reason,
                         "module": item.module,
                         "edge": item.edge,
+                        "rank_tier": item.rank_tier,
                     }
                     for item in code.sources
                 )

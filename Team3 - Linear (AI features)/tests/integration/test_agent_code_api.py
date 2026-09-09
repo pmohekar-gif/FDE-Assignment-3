@@ -153,6 +153,9 @@ def test_code_query_and_index_status_return_repository_revision_and_sources(clie
     assert result["sources"]
     assert result["authoritative"] is False
     assert result["authorising"] is False
+    assert result["synthesized"] is True
+    assert result["synthesis_provider"] == "fixture"
+    assert result["synthesis_degraded"] is False
     assert result["ignore_source"] == before["ignore_source"]
     assert all(
         source["path"] and source["start_line"] <= source["end_line"]
@@ -188,3 +191,137 @@ def test_code_query_admits_when_a_symbol_cannot_be_resolved(client, headers):
     assert result["dependency_resolved"] is False
     assert "could not resolve" in result["answer"]
     assert "text matches" in result["answer"]
+
+
+def test_code_source_preview_and_scoped_query_are_server_validated(client, headers):
+    client.post("/v1/code/index/refresh", headers=headers)
+    preview = client.get("/v1/code/source", params={"path": "src/warrant/policy.py"})
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["read_only"] is True
+    assert body["path"] == "src/warrant/policy.py"
+    assert body["revision"]
+    assert body["content"]
+    assert isinstance(body["symbols"], list)
+    assert isinstance(body["dependents"], list)
+
+    invalid_path = client.get("/v1/code/source", params={"path": "../.env"})
+    assert invalid_path.status_code == 404
+    assert invalid_path.json()["type"] == "RepositorySourceNotFound"
+    invalid_scope = client.post(
+        "/v1/code/query",
+        headers=headers,
+        json={"query": "Explain this", "source_path": "../.env"},
+    )
+    assert invalid_scope.status_code == 404
+
+
+def test_code_impact_preflight_is_read_only_and_does_not_create_workflow_state(client, headers):
+    client.post("/v1/code/index/refresh", headers=headers)
+    before = client.app.state.db.one(
+        "SELECT COUNT(*) AS count FROM audit_events WHERE workspace_id=?", ("ws-demo",)
+    )["count"]
+    response = client.get(
+        "/v1/code/impact",
+        params={"path": "src/warrant/policy.py", "symbol": "evaluate_policy"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["read_only"] is True
+    assert body["advisory"] is True
+    assert body["authoritative"] is False
+    assert body["authorising"] is False
+    assert body["definition_resolved"] is True
+    assert body["definitions"]
+    assert body["revision"]
+    assert "Human review is required" in body["handoff"]
+    after = client.app.state.db.one(
+        "SELECT COUNT(*) AS count FROM audit_events WHERE workspace_id=?", ("ws-demo",)
+    )["count"]
+    assert after == before
+
+
+def test_code_intelligence_telemetry_is_csrf_protected_and_metadata_only(client, headers):
+    payload = {
+        "event": "query_completed",
+        "operation": "query",
+        "query_length": 42,
+        "result_count": 3,
+        "source_count": 3,
+        "cached_index": True,
+        "stale": False,
+        "truncated": False,
+    }
+    assert client.post("/v1/telemetry/code-intelligence", json=payload).status_code == 400
+    response = client.post("/v1/telemetry/code-intelligence", headers=headers, json=payload)
+    assert response.status_code == 202
+    event = client.app.state.db.one(
+        "SELECT attributes_json FROM telemetry_events "
+        "WHERE name='code_intelligence_query_completed'"
+    )
+    attributes = client.app.state.db.loads(event["attributes_json"])
+    assert attributes == {
+        "operation": "query",
+        "query_length": 42,
+        "result_count": 3,
+        "source_count": 3,
+        "cached_index": True,
+        "stale": False,
+        "truncated": False,
+        "failure_code": None,
+    }
+    stored = event["attributes_json"].casefold()
+    assert all(value not in stored for value in ("prompt", "source_preview", "raw code"))
+    rejected = client.post(
+        "/v1/telemetry/code-intelligence",
+        headers=headers,
+        json={**payload, "query": "do not store this"},
+    )
+    assert rejected.status_code == 422
+
+
+def test_disabling_code_intelligence_leaves_ordinary_workflows_available(client_factory, headers):
+    disabled = client_factory(code_intelligence_enabled=False)
+    response = disabled.post("/v1/code/query", headers=headers, json={"query": "approval"})
+    assert response.status_code == 503
+    assert disabled.get("/issues/PAY-4471").status_code == 200
+    delegation = create(disabled, headers)
+    assert delegation["id"]
+
+
+def test_unavailable_repository_is_a_recoverable_code_intelligence_state(
+    client_factory, headers, tmp_path
+):
+    client = client_factory(repository_root=tmp_path / "missing-repository")
+
+    status = client.get("/v1/code/index/status")
+    assert status.status_code == 200
+    body = status.json()
+    assert body["enabled"] is True
+    assert body["indexed"] is False
+    assert body["availability"] == {
+        "available": False,
+        "code": "REPOSITORY_UNAVAILABLE",
+        "title": "Repository unavailable",
+        "message": (
+            "Code Intelligence cannot access its configured repository. Set REPOSITORY_ROOT "
+            "to an available local checkout, then refresh the index."
+        ),
+    }
+    assert "missing-repository" not in str(body)
+
+    for response in (
+        client.post("/v1/code/query", headers=headers, json={"query": "approval"}),
+        client.post("/v1/code/index/refresh", headers=headers),
+        client.get("/v1/code/files"),
+        client.get("/v1/code/symbols"),
+    ):
+        assert response.status_code == 503
+        assert response.json()["type"] == "RepositoryUnavailable"
+        assert response.json()["code"] == "REPOSITORY_UNAVAILABLE"
+        assert response.json()["repository_available"] is False
+
+    page = client.get("/code")
+    assert page.status_code == 200
+    assert 'id="repository-unavailable"' in page.text
+    assert "Set REPOSITORY_ROOT to an available local checkout" in page.text

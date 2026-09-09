@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ issue.external_key }} · Warrant{% endblock %}
+{% block view_title %}{{ issue.external_key }}{% endblock %}
+{% block view_count %}{{ issue.team }}{% endblock %}
+{% block content %}
+<main class="issue-thread" data-issue-ref="{{ issue.external_key }}">
+  <section class="card issue-summary"><h2>{{ issue.title }}</h2><p>{{ issue.body_normalised }}</p></section>
+  <section class="card discussion-card"><h2>Discussion</h2><div id="comment-list" class="comment-list" role="log" aria-live="polite"></div>
+    <form id="comment-form" class="comment-form"><label for="comment-body">Add a comment</label>
+      <textarea id="comment-body" required maxlength="8000" placeholder="Write a comment, or mention @Warrant for grounded help."></textarea>
+      <div id="warrant-suggestion" class="mention-suggestion" role="listbox" aria-label="Mention suggestions" hidden>
+        <button class="mention-option" type="button" role="option"><span>@Warrant</span><b>AI</b><small>Ask about this issue</small></button>
+      </div>
+      <div><small>AI suggestions are non-authorizing and require review before any action.</small><button class="btn primary" type="submit">Post comment</button></div>
+    </form>
+  </section>
+</main>
+<script>
+(()=>{const root=document.querySelector('.issue-thread'),ref=root.dataset.issueRef,list=document.getElementById('comment-list'),form=document.getElementById('comment-form'),body=document.getElementById('comment-body'),suggestion=document.getElementById('warrant-suggestion');
+const esc=value=>{const d=document.createElement('div');d.textContent=value;return d.innerHTML};
+if(new URLSearchParams(window.location.search).get('code_handoff')==='1'){const draft=sessionStorage.getItem('warrant-code-impact-handoff');if(draft){body.value=draft;sessionStorage.removeItem('warrant-code-impact-handoff');}}
+function render(comments){list.innerHTML=comments.length?comments.map(c=>`<article class="comment ${c.author_type==='agent'?'agent-comment':''}"><header><b>${c.author_type==='agent'?'Warrant <em>AI</em>':esc(c.author_id)}</b><small>${esc(c.status)}</small></header><p>${esc(c.body_normalised)}</p>${c.author_type==='agent'?`<footer>${c.provider==='fixture'?'SIMULATED FIXTURE':esc(c.provider||'working')} ${c.citations?.length?`· citations: ${c.citations.map(esc).join(', ')}`:''}</footer>`:(c.author_id===window.WARRANT.actor?`<footer><button data-edit="${esc(c.id)}" data-body="${esc(c.body_normalised)}">Edit</button> <button data-delete="${esc(c.id)}">Delete</button></footer>`:'')}</article>`).join(''):'<p class="empty">No comments yet.</p>'}
+async function load(){render((await api(`/v1/issues/${encodeURIComponent(ref)}/comments`,{cache:'no-store'})).comments)}
+function mentionIsActive(){return /(^|[^\w@])@[\w-]*$/i.test(body.value.slice(0,body.selectionStart))}function chooseWarrant(){const before=body.value.slice(0,body.selectionStart).replace(/@[-\w]*$/i,'@Warrant '),after=body.value.slice(body.selectionEnd);body.value=before+after;body.selectionStart=body.selectionEnd=before.length;suggestion.hidden=true;body.focus()}body.addEventListener('input',()=>suggestion.hidden=!mentionIsActive());body.addEventListener('keydown',event=>{if(!suggestion.hidden&&(event.key==='Enter'||event.key==='Tab')){event.preventDefault();chooseWarrant()}if(event.key==='Escape')suggestion.hidden=true});suggestion.querySelector('.mention-option').addEventListener('click',chooseWarrant);
+form.addEventListener('submit',async event=>{event.preventDefault();try{const result=await api(`/v1/issues/${encodeURIComponent(ref)}/comments`,{method:'POST',body:JSON.stringify({body:body.value,idempotency_key:crypto.randomUUID()})});body.value='';await load();if(result.mention){await api(`/v1/comment-mentions/${result.mention.id}/process`,{method:'POST'});await load();}}catch(error){toast(error.message)}});
+list.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button)return;try{if(button.dataset.delete){await api(`/v1/comments/${button.dataset.delete}`,{method:'DELETE'});await load();toast('Comment and its linked Warrant response were deleted.')}if(button.dataset.edit){const next=prompt('Edit comment',button.dataset.body);if(next) {await api(`/v1/comments/${button.dataset.edit}`,{method:'PUT',body:JSON.stringify({body:next})});await load();}}}catch(error){toast(error.message)}});window.addEventListener('pageshow',event=>{if(event.persisted)load()});document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});window.addEventListener('load',load,{once:true});})();
+</script>
+{% endblock %}

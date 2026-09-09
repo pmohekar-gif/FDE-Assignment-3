@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}New ticket · Warrant{% endblock %}
+{% block view_title %}New ticket{% endblock %}
+{% block view_count %}workspace issue{% endblock %}
+{% block content %}
+<div class="doc">
+  <p class="crumb">Workspace <span>/</span> New ticket</p>
+  <h1>Create a ticket</h1>
+  <p class="doc-sub">Describe the problem first. Creating a ticket does not start AI, Triage, a delegation, or any action.</p>
+  <article class="card">
+    <form id="new-issue-form" class="form-grid">
+      <label><span>Title</span><input id="issue-title" required minlength="3" maxlength="240" placeholder="Describe the problem clearly"></label>
+      <label><span>Description</span><textarea id="issue-description" maxlength="8000" placeholder="Reproduction steps, expected behavior, and useful context"></textarea></label>
+      <div class="form-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+        <label><span>Team</span><select id="issue-team" required>{% for team in teams %}<option value="{{ team }}">{{ team }}</option>{% endfor %}</select></label>
+        <label><span>Priority</span><select id="issue-priority"><option value="medium" selected>Medium</option><option value="urgent">Urgent</option><option value="high">High</option><option value="low">Low</option></select></label>
+      </div>
+      <label><span>Labels (optional)</span><input id="issue-labels" maxlength="480" placeholder="exports, regression"></label>
+      <div class="btn-row"><button class="btn pri" type="submit">Create ticket</button><span class="hint">You will review and post any future AI suggestion yourself.</span></div>
+    </form>
+    <div class="inline-error" id="new-issue-error" hidden></div>
+  </article>
+</div>
+<script>
+(()=>{const form=document.getElementById('new-issue-form'),error=document.getElementById('new-issue-error');form.addEventListener('submit',async event=>{event.preventDefault();const title=document.getElementById('issue-title').value.trim();const description=document.getElementById('issue-description').value.trim();const team=document.getElementById('issue-team').value;const priority=document.getElementById('issue-priority').value;const labels=document.getElementById('issue-labels').value.split(',').map(label=>label.trim()).filter(Boolean);try{const result=await api('/v1/issues',{method:'POST',body:JSON.stringify({title,description,team,priority,labels,idempotency_key:crypto.randomUUID()})});window.location.assign(`/issues/${encodeURIComponent(result.issue.external_key)}`)}catch(exception){renderError(error,exception,'ticket creation')}})})();
+</script>
+{% endblock %}

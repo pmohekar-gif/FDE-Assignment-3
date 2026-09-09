@@ -14,6 +14,10 @@
     <p class="doc-sub">Every answer cites <code>path:start-end</code> from the indexed checkout. Nothing here is authoritative and nothing here grants authority.</p>
 
     {% if code_intelligence_enabled %}
+    <article class="card inline-error" id="repository-unavailable" hidden>
+      <h2>Repository unavailable</h2>
+      <p id="repository-unavailable-message">Code Intelligence cannot access its configured repository. Set REPOSITORY_ROOT to an available local checkout, then refresh the index.</p>
+    </article>
     <article class="card">
       <h2>Query <span class="aside">authoritative = false · authorising = false</span></h2>
       <form class="agent-in" id="code-form">
@@ -23,6 +27,10 @@
       </form>
       <div class="btn-row" style="margin-top:4px">
         {% for example in example_queries %}<button class="mini" type="button" data-example="{{ example }}">{{ example }}</button>{% endfor %}
+      </div>
+      <p class="note tight" style="margin:12px 0 4px">Impact-preflight prompts for current issues — use a cited module’s <em>Impact preflight</em> action before adding the advisory handoff to that issue’s Discussion.</p>
+      <div class="btn-row" data-impact-examples>
+        {% for example in impact_example_queries %}<button class="mini" type="button" data-example="{{ example }}">{{ example }}</button>{% endfor %}
       </div>
       <div class="agent-out" id="code-answer" aria-live="polite"></div>
       <div class="inline-error" id="code-error" hidden></div>
@@ -64,12 +72,27 @@
 function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined&&text!==null)node.textContent=text;if(className)node.className=className;return node;}
 const statusHost=document.getElementById('index-status');
 
+function recordCodeTelemetry(event,operation,metadata={}){api('/v1/telemetry/code-intelligence',{method:'POST',body:JSON.stringify({event,operation,...metadata})}).catch(()=>{});}
+
+function setRepositoryAvailability(status){
+  const unavailable=document.getElementById('repository-unavailable');
+  const message=document.getElementById('repository-unavailable-message');
+  const available=status.availability?.available!==false;
+  if(unavailable){unavailable.hidden=available;if(!available)message.textContent=status.availability.message;}
+  ['code-query','file-filter','symbol-filter','refresh-index'].forEach(id=>{
+    const node=document.getElementById(id);if(node)node.disabled=!available;
+  });
+  document.querySelector('#code-form button[type="submit"]')?.toggleAttribute('disabled',!available);
+  return available;
+}
+
 async function loadStatus(){
   statusHost.replaceChildren();
   const section=el('div','','rail-sec');section.append(el('p','Index status','rail-h'));statusHost.append(section);
   section.append(el('p','Reading index status…','loading'));
   try{
     const status=await api('/v1/code/index/status');
+    const available=setRepositoryAvailability(status);
     statusHost.replaceChildren();
     const panel=el('div','','rail-sec');panel.append(el('p','Index status','rail-h'));statusHost.append(panel);
     const list=document.createElement('dl');list.className='kv';
@@ -89,6 +112,11 @@ async function loadStatus(){
       if(key==='Stale'&&value==='true')dd.className='warn';
       list.append(dd);});
     panel.append(list);
+    if(!available){
+      recordCodeTelemetry('safe_failure','status',{failure_code:'REPOSITORY_UNAVAILABLE'});
+      const unavailable=el('p',status.availability.message,'inline-error');panel.append(unavailable);
+      return;
+    }
     panel.append(el('p',`authoritative = ${status.authoritative} · authorising = ${status.authorising}`,'advisory'));
     const actions=el('div','','rail-actions');
     const refresh=el('button','Refresh index now','btn');refresh.type='button';refresh.addEventListener('click',refreshIndex);
@@ -110,33 +138,75 @@ async function refreshIndex(){
     loadStatus();
   }catch(error){if(failure)renderError(failure,error,'index refresh');else toast(error.message);}
 }
+function sourceActions(path,symbol,startLine){const actions=el('div','','btn-row');const open=el('button','Open source','mini');open.type='button';open.addEventListener('click',()=>openSource(path,startLine));actions.append(open);const impact=el('button','Impact preflight','mini');impact.type='button';impact.addEventListener('click',()=>openImpact(path,symbol));actions.append(impact);return actions;}
 loadStatus();
 document.getElementById('refresh-index').addEventListener('click',refreshIndex);
 
-async function ask(query){
+function sourceMetadata(label,items){if(!items.length)return null;const section=el('p','','note');section.append(el('b',`${label}: `),document.createTextNode(items.join(', ')));return section;}
+async function openSource(path,startLine=1){
+  const host=document.getElementById('code-action-result');if(!host)return;
+  host.hidden=false;host.replaceChildren();const panel=el('article','','card source-preview'),title=el('h2','Source preview');title.append(el('span','bounded · redacted · read-only','aside'));const body=el('div');panel.append(title,body);host.append(panel);body.append(el('p','Opening the indexed source preview…','loading'));host.scrollIntoView({behavior:'smooth',block:'center'});
+  try{
+    const preview=await api(`/v1/code/source?path=${encodeURIComponent(path)}&start_line=${encodeURIComponent(startLine)}&line_count=80`);
+    recordCodeTelemetry('source_preview_opened','source_preview',{result_count:1,source_count:preview.symbols.length,stale:preview.stale,truncated:preview.truncated});
+    body.replaceChildren();
+    body.append(el('p',`${preview.path}:${preview.start_line}-${preview.end_line} · ${preview.language} · ${preview.module||'no module'} · revision ${preview.revision}`,'advisory'));
+    const pre=document.createElement('pre');pre.textContent=preview.content;body.append(pre);
+    [sourceMetadata('Symbols',preview.symbols),sourceMetadata('Imports',preview.imports),sourceMetadata('Known dependents',preview.dependents)].filter(Boolean).forEach(node=>body.append(node));
+    body.append(sourceActions(preview.path,null,preview.start_line));
+    if(preview.truncated)body.append(el('p','Preview is bounded; open a nearby citation or use a narrower line window.','note'));
+  }catch(error){body.replaceChildren();renderError(body,error,'source preview');recordCodeTelemetry('safe_failure','source_preview',{failure_code:'REPOSITORY_SOURCE_NOT_FOUND'});}
+}
+
+function pathList(label,items){if(!items.length)return null;const section=el('p','','note');section.append(el('b',`${label}: `),document.createTextNode(items.join(', ')));return section;}
+async function openImpact(path,symbol=null){
+  const host=document.getElementById('code-action-result');if(!host)return;
+  host.hidden=false;host.replaceChildren();const panel=el('article','','card source-preview'),title=el('h2','Impact preflight');title.append(el('span','advisory · no action taken','aside'));const bodyHost=el('div');panel.append(title,bodyHost);host.append(panel);bodyHost.append(el('p','Building a read-only impact preflight from the current index…','loading'));host.scrollIntoView({behavior:'smooth',block:'center'});
+  try{
+    const url=`/v1/code/impact?path=${encodeURIComponent(path)}${symbol?`&symbol=${encodeURIComponent(symbol)}`:''}`;
+    const impact=await api(url);bodyHost.replaceChildren();
+    recordCodeTelemetry('impact_preflight_opened','impact_preflight',{result_count:impact.related_paths.length,source_count:impact.definitions.length,stale:impact.stale,truncated:impact.truncated});
+    bodyHost.append(el('p',`${impact.path}${impact.symbol?` · symbol ${impact.symbol}`:''} · revision ${impact.revision} · stale = ${impact.stale} · definition_resolved = ${impact.definition_resolved} · advisory only`,'advisory'));
+    const citations=impact.definitions.map(item=>`${item.path}:${item.start_line}-${item.end_line}`);
+    [pathList('Definitions',citations),pathList('Direct dependents',impact.direct_dependents),pathList('Related paths',impact.related_paths.map(item=>`${item.path} (${item.relation})`))].filter(Boolean).forEach(node=>bodyHost.append(node));
+    const verification=el('ul');impact.verification_areas.forEach(area=>verification.append(el('li',`${area.label} ${area.paths.join(', ')}`)));bodyHost.append(el('p','Suggested verification areas','rail-h tight'),verification);
+    const handoff=document.createElement('textarea');handoff.readOnly=true;handoff.value=impact.handoff;handoff.rows=7;handoff.className='impact-handoff';bodyHost.append(handoff);
+    const actions=el('div','','btn-row');
+    const copy=el('button','Copy handoff','mini');copy.type='button';copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(impact.handoff);toast('Impact handoff copied. Review it before sharing.')}catch{handoff.select();document.execCommand('copy');toast('Impact handoff copied. Review it before sharing.')}});actions.append(copy);
+    const issueInput=document.createElement('input');issueInput.type='text';issueInput.placeholder='Issue ref, e.g. PAY-4471';issueInput.maxLength=80;issueInput.setAttribute('aria-label','Issue reference for a prefilled comment');actions.append(issueInput);
+    const openComment=el('button','Open comment draft','mini');openComment.type='button';openComment.addEventListener('click',()=>{const ref=issueInput.value.trim();if(!ref){toast('Enter an issue reference first.');return}sessionStorage.setItem('warrant-code-impact-handoff',impact.handoff);window.location.assign(`/issues/${encodeURIComponent(ref)}?code_handoff=1`)});actions.append(openComment);bodyHost.append(actions);
+    bodyHost.append(el('p','This preflight is advisory. Opening a comment only pre-fills a draft; you must review and post it yourself.','note'));
+  }catch(error){bodyHost.replaceChildren();renderError(bodyHost,error,'impact preflight');recordCodeTelemetry('safe_failure','impact_preflight',{failure_code:'REPOSITORY_SOURCE_NOT_FOUND'});}
+}
+
+async function ask(query,scope={}){
   const answer=document.getElementById('code-answer'),errorNode=document.getElementById('code-error');
   if(!answer)return;
-  answer.replaceChildren(el('p','Searching the configured repository…','loading'));errorNode.hidden=true;
+  answer.replaceChildren(el('p','Searching the configured repository…','loading'));answer.scrollIntoView({behavior:'smooth',block:'start'});errorNode.hidden=true;
   try{
-    const body=await api('/v1/code/query',{method:'POST',body:JSON.stringify({query,repository_id:{{ repository_id|tojson }},limit:8})});
-    answer.replaceChildren(el('p',body.answer));
+    const body=await api('/v1/code/query',{method:'POST',body:JSON.stringify({query,repository_id:{{ repository_id|tojson }},limit:8,...scope})});
+    recordCodeTelemetry('query_completed','query',{query_length:query.length,result_count:body.sources.length,source_count:body.sources.length,cached_index:body.cached_index,truncated:body.truncated});
+    answer.replaceChildren();const synthesis=body.synthesized?(body.synthesis_degraded?`AI synthesis fallback · ${body.synthesis_provider}`:`AI synthesis · ${body.synthesis_provider}`):'Deterministic repository answer · AI synthesis unavailable';answer.append(el('p',synthesis,'advisory'),el('p',body.answer));
     if(body.modules.length){
-      const modules=el('div','','tools');
-      body.modules.forEach(module=>modules.append(el('span',module,'tool neutral')));
-      answer.append(el('p','Modules cited','rail-h tight'),modules);
+      const modules=el('div','','module-actions');
+      body.modules.forEach(module=>{const source=body.sources.find(item=>item.module===module);const row=el('div','','module-action');row.append(el('b',module,'tool neutral'));if(source){row.append(el('span',`${source.path}:${source.start_line}-${source.end_line}`,'aside'),sourceActions(source.path,null,source.start_line));}modules.append(row)});
+      answer.append(el('p','Modules cited · choose a module to inspect or plan','rail-h tight'),modules);
     }
+    const actionResult=el('div','','code-action-result');actionResult.id='code-action-result';actionResult.hidden=true;answer.append(actionResult);
+    const citations=el('div','','citation-results');
     body.sources.forEach(source=>{
       const citation=el('div','','citation'),top=el('div','','citation-top');
       top.append(el('b',`${source.path}:${source.start_line}-${source.end_line}`),
-        el('span',`${source.module||'—'} · edge ${source.edge} · score ${source.score}`,'aside'));
+        el('span',`${source.module||'—'} · ${source.rank_tier} · edge ${source.edge} · score ${source.score}`,'aside'));
       const pre=document.createElement('pre');pre.textContent=source.snippet;
       citation.append(top,pre);
       const why=el('p',source.reason,'note');why.style.padding='0 10px 8px';citation.append(why);
-      answer.append(citation);
+      citations.append(citation);
     });
+    answer.append(citations);
     if(!body.sources.length)answer.append(el('p','No repository location matched, so nothing is cited. The answer above is the honest empty result.','note'));
     answer.append(el('span',`revision = ${body.revision} · cached_index = ${body.cached_index} · ignore_source = ${body.ignore_source} · dependency_resolved = ${body.dependency_resolved} · truncated = ${body.truncated} · authoritative = ${body.authoritative} · authorising = ${body.authorising}`,'advisory'));
-  }catch(error){answer.replaceChildren();renderError(errorNode,error,'code query');}
+  }catch(error){answer.replaceChildren();renderError(errorNode,error,'code query');recordCodeTelemetry('safe_failure','query',{failure_code:'REPOSITORY_UNAVAILABLE'});}
 }
 document.getElementById('code-form')?.addEventListener('submit',event=>{
   event.preventDefault();ask(document.getElementById('code-query').value.trim());

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "scope": "synthetic local repository fixtures only",
+  "cases": [
+    {
+      "id": "exact-symbol-definition",
+      "kind": "location",
+      "query": "Where is evaluate_policy implemented?",
+      "expected_first": {
+        "path": "pkg/policy.py",
+        "symbol": "evaluate_policy",
+        "edge": "definition",
+        "rank_tier": "exact_definition"
+      }
+    },
+    {
+      "id": "dependency-importer",
+      "kind": "dependency",
+      "query": "What depends on evaluate_policy?",
+      "expected_edges": ["definition", "call_site"],
+      "expected_rank_tiers": ["exact_definition", "resolved_dependency"],
+      "expected_paths": ["pkg/policy.py", "pkg/service.py"]
+    },
+    {
+      "id": "no-match",
+      "kind": "negative",
+      "query": "Where is never_defined_symbol implemented?",
+      "expected_source_count": 0
+    },
+    {
+      "id": "ui-copy-does-not-outrank-code",
+      "kind": "false-positive",
+      "query": "Where is evaluate_policy implemented?",
+      "forbidden_first_path_prefixes": ["templates/", "docs/", "tests/"]
+    },
+    {
+      "id": "impact-preflight",
+      "kind": "impact",
+      "path": "pkg/policy.py",
+      "symbol": "evaluate_policy",
+      "expected_definition_path": "pkg/policy.py",
+      "expected_direct_dependent": "pkg/service.py"
+    }
+  ],
+  "unavailable_root_copy": {
+    "title": "Repository unavailable",
+    "body": "Code Intelligence cannot access its configured repository. Set REPOSITORY_ROOT to an available local checkout, then refresh the index.",
+    "must_not_include": ["absolute filesystem path", "environment value", "secret"]
+  }
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# ruff: noqa: E501
 import csv
 import io
 import json
@@ -32,14 +33,26 @@ from .db import Database
 from .policy import PolicyValidationError, granted_tools, load_policy
 from .pr_review import GitHubPRReviewService
 from .providers import ProviderError, build_provider
-from .repository import CodeIntelligenceService, LocalRepositoryProvider, RepositoryError
+from .repository import (
+    REPOSITORY_UNAVAILABLE_CODE,
+    REPOSITORY_UNAVAILABLE_MESSAGE,
+    REPOSITORY_UNAVAILABLE_TITLE,
+    CodeIntelligenceService,
+    LocalRepositoryProvider,
+    RepositoryError,
+    RepositorySourceNotFound,
+)
 from .retrieval import RetrievalService
 from .schemas import (
     AgentQuery,
+    AgentSettingsUpdate,
     AuthTokenRequest,
+    CodeIntelligenceTelemetry,
     CodeQuery,
     CodingSessionCancel,
     CodingSessionCreate,
+    CommentCreate,
+    CommentUpdate,
     Consequence,
     DelegationBriefTelemetry,
     DelegationCreate,
@@ -47,6 +60,7 @@ from .schemas import (
     GitHubPRLinkCreate,
     GitHubPRReviewSessionCreate,
     HumanDecision,
+    IssueCreate,
     LinearImportRequest,
     PolicySimulationSource,
     PolicySource,
@@ -229,6 +243,21 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "github_pr_review": settings.github_pr_review_enabled,
         }
 
+    def code_unavailable_response() -> JSONResponse:
+        """A stable, path-free failure for Code Intelligence capability endpoints."""
+        return JSONResponse(
+            {
+                "error": REPOSITORY_UNAVAILABLE_MESSAGE,
+                "type": "RepositoryUnavailable",
+                "code": REPOSITORY_UNAVAILABLE_CODE,
+                "title": REPOSITORY_UNAVAILABLE_TITLE,
+                "repository_available": False,
+                "authoritative": False,
+                "authorising": False,
+            },
+            status_code=503,
+        )
+
     def policy_surface(workspace_id: str) -> dict[str, Any]:
         """Never-grantable tools and per-consequence grants, for the shell's tool chips."""
         active = service._active_policy(workspace_id)
@@ -386,6 +415,17 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
 
     @app.exception_handler(RepositoryError)
     async def handle_repository_error(_: Request, exc: RepositoryError) -> JSONResponse:
+        if not code.availability()["available"]:
+            return code_unavailable_response()
+        if isinstance(exc, RepositorySourceNotFound):
+            return JSONResponse(
+                {
+                    "error": str(exc),
+                    "type": type(exc).__name__,
+                    "repository_available": True,
+                },
+                status_code=404,
+            )
         return JSONResponse(
             {"error": str(exc), "type": type(exc).__name__, "repository_available": False},
             status_code=503,
@@ -616,7 +656,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             issues = db.all(
                 "SELECT external_key,title,team,path_hints_json,demo_note,is_demo_path "
                 f"FROM issues WHERE {where} "
-                "ORDER BY is_demo_path DESC, CASE external_key WHEN 'PAY-4471' THEN 0 "
+                "ORDER BY updated_at DESC, is_demo_path DESC, CASE external_key WHEN 'PAY-4471' THEN 0 "
                 "WHEN 'SEC-4502' THEN 1 WHEN 'WEB-4519' THEN 2 ELSE 3 END, external_key "
                 "LIMIT ? OFFSET ?",
                 [*params, page_size, (page - 1) * page_size],
@@ -666,6 +706,28 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             },
         )
 
+    @app.get("/issues/new", response_class=HTMLResponse)
+    async def new_issue_page(request: Request) -> HTMLResponse:
+        workspace_id = settings.workspace_id
+        teams = db.all(
+            "SELECT DISTINCT team FROM issues WHERE workspace_id=? ORDER BY team", (workspace_id,)
+        )
+        return templates.TemplateResponse(
+            request,
+            "new_issue.html",
+            {"teams": [str(row["team"]) for row in teams], **page_context(workspace_id, request)},
+        )
+
+    @app.get("/issues/{issue_ref}", response_class=HTMLResponse)
+    async def issue_page(request: Request, issue_ref: str) -> HTMLResponse:
+        workspace_id = settings.workspace_id
+        # Header-selected demo identity is only available to API requests after this HTML
+        # page loads. The unauthenticated demo shell therefore renders as its documented
+        # default actor; AUTH_ENABLED still reaches this route only with a verified session.
+        actor = acting_id(request, request.headers.get("x-actor-id")) or "admin-demo"
+        issue = service._comment_issue(workspace_id, issue_ref, actor)
+        return templates.TemplateResponse(request, "issue.html", {"issue": issue, **page_context(workspace_id, request)})
+
     @app.get("/coding-sessions", response_class=HTMLResponse)
     async def coding_sessions_page(request: Request) -> HTMLResponse:
         """Index of governed coding sessions.
@@ -706,6 +768,17 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
                     "Where is the policy verdict computed?",
                     "Where is an active warrant re-checked before execution?",
                     "How is the audit chain hashed?",
+                    "How does the authentication system work?",
+                    "Who wrote the payment processing logic?",
+                    "When was the search feature added?",
+                ],
+                "impact_example_queries": [
+                    "Where is payment retry idempotency implemented, and what dependents and tests could a double-charge fix affect?",
+                    "Where are authentication signing keys rotated or validated, and which services depend on that flow?",
+                    "Where is empty-state copy rendered, and which components or tests would a wording fix affect?",
+                    "Where is export notification delivery implemented, and what callers could cause duplicate notifications?",
+                    "Where are export retries and timeouts handled, and what is the impact of changing that behavior?",
+                    "Which modules handle export pagination, saved filters, status labels, and time-zone dates, and what dependents need review?",
                 ],
                 **page_context(settings.workspace_id, request),
             },
@@ -1047,6 +1120,76 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "advisory_only": True,
         }
 
+    @app.get("/v1/issues/{issue_ref}/comments")
+    async def list_comments_endpoint(
+        request: Request, response: Response, issue_ref: str,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        # Comments are collaborative state. Never let a browser reuse an older thread after
+        # the user returns to this issue or posts another comment.
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return {"comments": service.list_comments(workspace(x_workspace_id), issue_ref, acting_id(request, x_actor_id))}
+
+    @app.get("/v1/agent-settings")
+    async def get_agent_settings_endpoint(request: Request, x_workspace_id: Annotated[str | None, Header()] = None, x_actor_id: Annotated[str | None, Header()] = None) -> dict[str, Any]:
+        return service.agent_settings(workspace(x_workspace_id), acting_id(request, x_actor_id))
+
+    @app.put("/v1/agent-settings")
+    async def update_agent_settings_endpoint(request: Request, body: AgentSettingsUpdate, x_workspace_id: Annotated[str | None, Header()] = None, x_actor_id: Annotated[str | None, Header()] = None, x_csrf_token: Annotated[str | None, Header()] = None) -> dict[str, Any]:
+        require_csrf(x_csrf_token)
+        return service.agent_settings(workspace(x_workspace_id), acting_id(request, x_actor_id), body)
+
+    @app.post("/v1/issues/{issue_ref}/comments", status_code=201)
+    async def create_comment_endpoint(
+        request: Request, issue_ref: str, body: CommentCreate,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        require_csrf(x_csrf_token)
+        return service.create_comment(workspace(x_workspace_id), issue_ref, acting_id(request, x_actor_id), body)
+
+    @app.get("/v1/comment-mentions/{mention_id}")
+    async def get_comment_mention_endpoint(
+        request: Request, mention_id: str,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        return service.get_mention(workspace(x_workspace_id), mention_id, acting_id(request, x_actor_id))
+
+    @app.post("/v1/comment-mentions/{mention_id}/process")
+    async def process_comment_mention_endpoint(
+        request: Request, mention_id: str,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        require_csrf(x_csrf_token)
+        return service.process_mention(workspace(x_workspace_id), mention_id, acting_id(request, x_actor_id))
+
+    @app.put("/v1/comments/{comment_id}")
+    async def update_comment_endpoint(
+        request: Request, comment_id: str, body: CommentUpdate,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        require_csrf(x_csrf_token)
+        return service.update_comment(workspace(x_workspace_id), comment_id, acting_id(request, x_actor_id), body)
+
+    @app.delete("/v1/comments/{comment_id}", status_code=204)
+    async def delete_comment_endpoint(
+        request: Request, comment_id: str,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> Response:
+        require_csrf(x_csrf_token)
+        service.delete_comment(workspace(x_workspace_id), comment_id, acting_id(request, x_actor_id))
+        return Response(status_code=204)
+
     @app.get("/v1/issues/search")
     async def semantic_issue_search_endpoint(
         q: str = Query(min_length=2, max_length=300),
@@ -1062,6 +1205,18 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "results": result.results,
             "read_only": True,
         }
+
+    @app.post("/v1/issues", status_code=201)
+    async def create_issue_endpoint(
+        request: Request,
+        body: IssueCreate,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, Any]:
+        require_csrf(x_csrf_token)
+        issue = service.create_issue(workspace(x_workspace_id), acting_id(request, x_actor_id), body)
+        return {"issue": issue, "authoritative": False, "authorising": False}
 
     @app.get("/v1/issues/{issue_ref}/triage-recommendation")
     async def triage_recommendation_endpoint(
@@ -1115,6 +1270,29 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             issue["id"],
             issue_ref=body.issue_ref,
             retrieval_mode=body.retrieval_mode,
+        )
+        return {"recorded": True}
+
+    @app.post("/v1/telemetry/code-intelligence", status_code=202)
+    async def code_intelligence_telemetry_endpoint(
+        body: CodeIntelligenceTelemetry,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, bool]:
+        """Record allow-listed Code Intelligence usage metadata only."""
+        require_csrf(x_csrf_token)
+        service.telemetry(
+            workspace(x_workspace_id),
+            f"code_intelligence_{body.event}",
+            None,
+            operation=body.operation,
+            query_length=body.query_length,
+            result_count=body.result_count,
+            source_count=body.source_count,
+            cached_index=body.cached_index,
+            stale=body.stale,
+            truncated=body.truncated,
+            failure_code=body.failure_code,
         )
         return {"recorded": True}
 
@@ -1192,9 +1370,12 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         require_csrf(x_csrf_token)
         if not settings.code_intelligence_enabled:
             return JSONResponse({"error": "Code Intelligence is disabled"}, status_code=503)
+        if not code.availability()["available"]:
+            return code_unavailable_response()
         if body.repository_id != repository.repository_id:
             raise NotFound("repository not found")
-        result = code.query(body.query, body.limit)
+        scoped_query = code.scoped_query(body.query, body.source_path, body.symbol)
+        result = code.query(scoped_query, body.limit)
         return {
             "answer": result.answer,
             "repository_id": result.repository_id,
@@ -1205,6 +1386,10 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "dependency_resolved": result.dependency_resolved,
             "modules": list(result.modules),
             "sources": [asdict(item) for item in result.sources],
+            "synthesized": result.synthesized,
+            "synthesis_provider": result.synthesis_provider,
+            "synthesis_model": result.synthesis_model,
+            "synthesis_degraded": result.synthesis_degraded,
             "authoritative": False,
             "authorising": False,
         }
@@ -1232,7 +1417,62 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         require_csrf(x_csrf_token)
         if not settings.code_intelligence_enabled:
             return JSONResponse({"error": "Code Intelligence is disabled"}, status_code=503)
+        if not code.availability()["available"]:
+            return code_unavailable_response()
         return code.refresh(force=True)
+
+    @app.get("/v1/code/files")
+    async def code_files_endpoint(
+        q: str = Query(default="", max_length=240),
+        limit: int = Query(default=100, ge=1, le=200),
+    ) -> dict[str, Any]:
+        if not settings.code_intelligence_enabled:
+            return JSONResponse({"error": "Code Intelligence is disabled"}, status_code=503)
+        if not code.availability()["available"]:
+            return code_unavailable_response()
+        return {
+            "repository_id": repository.repository_id,
+            "read_only": True,
+            **code.browse_files(q, limit),
+        }
+
+    @app.get("/v1/code/symbols")
+    async def code_symbols_endpoint(
+        q: str = Query(default="", max_length=240),
+        limit: int = Query(default=100, ge=1, le=200),
+    ) -> dict[str, Any]:
+        if not settings.code_intelligence_enabled:
+            return JSONResponse({"error": "Code Intelligence is disabled"}, status_code=503)
+        if not code.availability()["available"]:
+            return code_unavailable_response()
+        return {
+            "repository_id": repository.repository_id,
+            "read_only": True,
+            **code.search_symbols(q, limit),
+        }
+
+    @app.get("/v1/code/source")
+    async def code_source_endpoint(
+        path: str = Query(min_length=1, max_length=512),
+        start_line: int = Query(default=1, ge=1, le=1_000_000),
+        line_count: int = Query(default=80, ge=1, le=120),
+    ) -> dict[str, Any]:
+        if not settings.code_intelligence_enabled:
+            return JSONResponse({"error": "Code Intelligence is disabled"}, status_code=503)
+        if not code.availability()["available"]:
+            return code_unavailable_response()
+        return {"repository_id": repository.repository_id, **code.source_preview(path, start_line, line_count)}
+
+    @app.get("/v1/code/impact")
+    async def code_impact_endpoint(
+        path: str = Query(min_length=1, max_length=512),
+        symbol: str | None = Query(default=None, min_length=1, max_length=240),
+    ) -> dict[str, Any]:
+        if not settings.code_intelligence_enabled:
+            return JSONResponse({"error": "Code Intelligence is disabled"}, status_code=503)
+        if not code.availability()["available"]:
+            return code_unavailable_response()
+        return code.impact_preflight(path, symbol)
 
     @app.get("/v1/coding-sessions/capabilities")
     async def coding_capabilities_endpoint() -> dict[str, Any]:

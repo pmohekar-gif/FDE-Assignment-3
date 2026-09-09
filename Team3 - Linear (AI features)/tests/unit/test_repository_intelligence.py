@@ -13,6 +13,7 @@ from warrant.repository import (
     ContextBudget,
     LocalRepositoryProvider,
     RepositoryError,
+    RepositorySourceNotFound,
     module_for_path,
     package_for_module,
     resolve_import,
@@ -103,6 +104,18 @@ def non_git_repository(tmp_path: Path) -> Path:
         "from .policy import evaluate_policy\n\n\ndef decide(context):\n"
         "    return evaluate_policy(context)\n"
     )
+    (root / "pkg" / "preview.py").write_text(
+        "API_KEY = 'sk_12345678901234567890'\n\n\ndef preview_target():\n    return True\n"
+    )
+    (root / "pkg" / "long_preview.py").write_text("\n".join("value = 1" for _ in range(200)))
+    (root / "templates").mkdir()
+    (root / "templates" / "assistant.html").write_text(
+        "<p>Where is evaluate_policy implemented?</p>\n"
+    )
+    (root / "docs").mkdir()
+    (root / "docs" / "examples.md").write_text(
+        "Example query: Where is evaluate_policy implemented?\n"
+    )
     return root
 
 
@@ -188,6 +201,87 @@ def test_impact_answers_come_from_real_importer_edges_not_text_hits(tmp_path):
     assert "def evaluate_policy" in definition.snippet
     assert "pkg/service.py" in answer.answer
     assert answer.ignore_source == "gitignore"
+
+
+def test_exact_definition_outranks_ui_and_documentation_text_for_location_queries(tmp_path):
+    root = non_git_repository(tmp_path)
+    db = Database(tmp_path / "source-quality.db")
+    db.migrate()
+    service = CodeIntelligenceService(db, LocalRepositoryProvider(root))
+
+    answer = service.query("Where is evaluate_policy implemented?", limit=8)
+
+    assert answer.sources[0].path == "pkg/policy.py"
+    assert answer.sources[0].edge == "definition"
+    assert answer.sources[0].rank_tier == "exact_definition"
+    assert all(
+        source.path not in {"templates/assistant.html", "docs/examples.md"}
+        for source in answer.sources[:1]
+    )
+    assert any(source.path == "templates/assistant.html" for source in answer.sources)
+    assert any(source.path == "docs/examples.md" for source in answer.sources)
+
+
+def test_location_query_without_evidence_is_explicit_and_has_no_invented_citation(tmp_path):
+    root = non_git_repository(tmp_path)
+    db = Database(tmp_path / "location-no-match.db")
+    db.migrate()
+    service = CodeIntelligenceService(db, LocalRepositoryProvider(root))
+
+    answer = service.query("Where is never_defined_symbol implemented?")
+
+    assert answer.sources == ()
+    assert "No repository evidence matched" in answer.answer
+
+
+def test_source_preview_is_indexed_bounded_redacted_and_has_derived_metadata(tmp_path):
+    root = non_git_repository(tmp_path)
+    db = Database(tmp_path / "preview.db")
+    db.migrate()
+    service = CodeIntelligenceService(db, LocalRepositoryProvider(root))
+    service.refresh()
+
+    preview = service.source_preview("pkg/preview.py", line_count=999)
+
+    assert preview["read_only"] is True
+    assert preview["path"] == "pkg/preview.py"
+    assert preview["symbols"] == ["preview_target"]
+    assert "sk_12345678901234567890" not in preview["content"]
+    assert "[REDACTED:" in preview["content"]
+    assert preview["start_line"] == 1
+    assert preview["end_line"] <= 120
+    long_preview = service.source_preview("pkg/long_preview.py", line_count=999)
+    assert long_preview["end_line"] == 120
+    assert long_preview["truncated"] is True
+    with pytest.raises(RepositorySourceNotFound):
+        service.source_preview("../.env")
+    with pytest.raises(RepositorySourceNotFound):
+        service.source_preview("ignored_secret.py")
+    with pytest.raises(RepositorySourceNotFound):
+        service.scoped_query("Explain this", "pkg/preview.py", "not_a_symbol")
+    assert "pkg/preview.py" in service.scoped_query("Explain this", "pkg/preview.py", None)
+
+
+def test_impact_preflight_is_indexed_read_only_and_citation_backed(tmp_path):
+    root = non_git_repository(tmp_path)
+    db = Database(tmp_path / "impact-preflight.db")
+    db.migrate()
+    service = CodeIntelligenceService(db, LocalRepositoryProvider(root))
+    service.refresh()
+
+    impact = service.impact_preflight("pkg/policy.py", "evaluate_policy")
+
+    assert impact["read_only"] is True
+    assert impact["advisory"] is True
+    assert impact["authoritative"] is False
+    assert impact["authorising"] is False
+    assert impact["definition_resolved"] is True
+    assert impact["definitions"][0]["path"] == "pkg/policy.py"
+    assert impact["direct_dependents"] == ["pkg/service.py"]
+    assert "pkg/service.py" in impact["handoff"]
+    assert "Human review is required" in impact["handoff"]
+    with pytest.raises(RepositorySourceNotFound):
+        service.impact_preflight("pkg/policy.py", "not_a_symbol")
 
 
 def test_impact_admits_when_a_symbol_cannot_be_resolved_in_the_graph(tmp_path):
