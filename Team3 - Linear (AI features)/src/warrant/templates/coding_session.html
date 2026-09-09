@@ -68,6 +68,14 @@
       </div>
     </article>
 
+    {% for event in s.events if event.event_type == 'agent_activity' and event.payload.output %}
+    <article class="card">
+      <h2>Runner transcript <span class="aside">persisted agent output</span></h2>
+      <p class="note">This is the captured CLI output for this run, including missing files, scope decisions, and command errors. It is diagnostic evidence only.</p>
+      <details class="disclosure" open><summary>Show runner output</summary><div class="inner"><pre>{{ event.payload.output }}</pre></div></details>
+    </article>
+    {% endfor %}
+
     <article class="card">
       <h2>Verification <span class="aside">{{ s.verification_checks|length }} discovered checks · source {{ contract.verification_source }}</span></h2>
       {% if s.verification_checks %}
@@ -220,7 +228,7 @@
 {% endblock %}
 
 {% block scripts %}<script>
-const sessionId={{ s.id|tojson }},delegationId={{ s.delegation_id|tojson }},terminal={{ (s.state in terminals)|tojson }};
+const sessionId={{ s.id|tojson }},delegationId={{ s.delegation_id|tojson }},provider={{ s.provider|tojson }},terminal={{ (s.state in terminals)|tojson }};
 const unifiedDiff={{ (s.diff.unified_diff if s.diff else '')|tojson }};
 const changedFiles={{ (s.diff.changed_files if s.diff else [])|tojson }};
 if(!terminal)setTimeout(()=>location.reload(),2200);

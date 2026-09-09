@@ -266,8 +266,18 @@ def test_new_ticket_page_replaces_the_sidebar_issues_destination(client):
     assert 'id="new-issue-form"' in page.text
     assert "Creating a ticket does not start AI" in page.text
     assert "api('/v1/issues'" in page.text
+    assert "warrant-ticket-created" in page.text
+    assert "window.location.assign('/#issue-inbox')" in page.text
     assert 'href="/issues/new"' in page.text
     assert 'href="/#issue-inbox"' not in page.text
+
+
+def test_triage_shows_a_ticket_creation_redirect_notification(client):
+    page = client.get("/")
+
+    assert "New ticket ${createdTicket} created. Redirected to Triage." in page.text
+    assert "sessionStorage.removeItem('warrant-ticket-created')" in page.text
+    assert "requestAnimationFrame" in page.text
 
 
 def test_triage_rail_surfaces_measured_and_failing_evaluation_metrics(client):
@@ -353,6 +363,8 @@ def test_delegation_page_shows_verdict_provenance_risk_and_full_contract(client,
 
     # 21/16: session launcher reads real runner capabilities before offering a provider
     assert "/v1/coding-sessions/capabilities" in page.text
+    assert 'id="coding-launch-log"' in page.text
+    assert "Preflight: requesting" in page.text
 
 
 def test_long_acceptance_criteria_are_truncated_with_a_title(client, headers):
@@ -415,6 +427,8 @@ def test_allowed_delegation_shows_the_warrant_panel_and_never_grantable_tools(cl
     assert "/evidence" in page.text
     assert "Launch a governed session" in page.text
     assert 'id="coding-provider"' in page.text
+    assert 'id="revoke-warrant"' in page.text
+    assert "/revoke" in page.text
 
 
 # --- coding sessions -----------------------------------------------------------------
@@ -464,6 +478,8 @@ def test_coding_session_page_renders_stepper_multi_check_verification_and_diff(
     assert "Agent activity" in page.text
     assert "Output truncated" in page.text
     assert "Runner output" in page.text
+    assert "Runner transcript" in page.text
+    assert "persisted agent output" in page.text
 
     # 20: honest publishing-disabled state
     assert "Publishing disabled." in page.text

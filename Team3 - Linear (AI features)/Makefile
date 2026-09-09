@@ -57,7 +57,7 @@ worktree-prune:
 
 dev:
 	@test -f data/warrant.db || $(MAKE) seed
-	$(RUN) python -m uvicorn warrant.main:app --reload --host 127.0.0.1 --port 8000
+	$(RUN) python -m uvicorn warrant.main:app --reload --reload-dir src --host 127.0.0.1 --port 8000
 
 demo: demo-repo
 	$(MAKE) demo-reset

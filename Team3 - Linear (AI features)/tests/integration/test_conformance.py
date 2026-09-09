@@ -198,29 +198,28 @@ def test_extraction_cache_is_keyed_by_issue_revision_and_prompt(client, headers)
     assert "warrant_extraction_cache_hit_rate 0.5000" in client.get("/metrics").text
 
 
-def test_fully_concurrent_scope_requires_approval_and_cannot_issue_empty_warrant(client, headers):
+def test_approved_newer_scope_supersedes_the_concurrent_warrant(client, headers):
     first = create_web(client, headers, "concurrency-holder")
     assert first["warrant"] is not None
 
     blocked = create_web(client, headers, "concurrency-blocked")
     assert blocked["status"] == "awaiting_approval"
     assert blocked["warrant"] is None
-    assert blocked["risk_assessment"]["proposed_surfaces"] == []
-    assert "SCOPE_FULLY_HELD_BY_CONCURRENT_WARRANT" in blocked["decision"]["reason_codes"]
+    assert blocked["risk_assessment"]["proposed_surfaces"]
+    assert "CONCURRENT_WARRANT" in blocked["decision"]["reason_codes"]
 
     attempted_approval = client.post(
         f"/v1/delegations/{blocked['id']}/decision",
         headers=headers,
         json={"action": "approve", "approver_id": "admin-demo"},
     )
-    assert attempted_approval.status_code == 409
-    assert (
-        client.app.state.db.one(
-            "SELECT COUNT(*) AS count FROM warrants WHERE delegation_id=?",
-            (blocked["id"],),
-        )["count"]
-        == 0
+    assert attempted_approval.status_code == 200
+    assert attempted_approval.json()["warrant"] is not None
+    previous = client.app.state.db.one(
+        "SELECT revoked_at,revoke_reason FROM warrants WHERE delegation_id=?", (first["id"],)
     )
+    assert previous["revoked_at"] is not None
+    assert "Superseded by approved delegation" in previous["revoke_reason"]
 
 
 def test_retrieval_filters_by_team_and_includes_policy_precedents(client, headers):

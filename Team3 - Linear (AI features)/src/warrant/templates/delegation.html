@@ -183,6 +183,7 @@
         <button class="btn pri center" type="submit">Start governed coding <span class="kbd inv">C</span></button>
       </form>
       <div id="capability-note"><p class="loading">Reading runner capabilities…</p></div>
+      <div id="coding-launch-log" class="note" role="status" aria-live="polite" hidden></div>
       <div class="inline-error" id="coding-error" hidden></div>
       {% elif d.warrant %}
       <p class="note">This warrant does not grant <code>write_files</code>, so no coding session can start against it.</p>
@@ -267,6 +268,12 @@
     {% endif %}
 
     {% if d.warrant and d.warrant.status == 'active' %}
+    <div class="rail-sec">
+      <p class="rail-h">Warrant control</p>
+      <p class="note tight">Revoke this active warrant only when no governed session should continue. Revocation releases its scope for a newly evaluated delegation and is recorded in the audit chain.</p>
+      <div class="rail-actions"><button class="btn danger" type="button" id="revoke-warrant">Revoke active warrant</button></div>
+      <div class="inline-error" id="revoke-warrant-error" hidden></div>
+    </div>
     <div class="rail-sec">
       <p class="rail-h">Return evidence</p>
       <details class="disclosure">
@@ -373,6 +380,19 @@ async function decide(action){
 }
 document.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',()=>decide(button.dataset.action)));
 
+/* ---------- warrant revocation ---------- */
+document.getElementById('revoke-warrant')?.addEventListener('click',async event=>{
+  const errorNode=document.getElementById('revoke-warrant-error');errorNode.hidden=true;
+  if(!warrant.id)return;
+  const reason=prompt('Reason for revoking this warrant (recorded in the audit chain):','Release scope for a newly evaluated delegation');
+  if(reason===null)return;
+  if(reason.trim().length<3){renderError(errorNode,new ApiError(422,{error:'A revocation reason must contain at least 3 characters'}),'warrant revocation');return;}
+  if(!confirm(`Revoke warrant ${warrant.id}? Running governed sessions will stop at their next warrant check.`))return;
+  event.currentTarget.disabled=true;
+  try{await api(`/v1/warrants/${encodeURIComponent(warrant.id)}/revoke`,{method:'POST',body:JSON.stringify({actor_id:window.WARRANT.actor,reason:reason.trim()})});toast('Active warrant revoked; its scope is now available for a newly evaluated delegation');setTimeout(()=>location.reload(),500);}
+  catch(error){renderError(errorNode,error,'warrant revocation');event.currentTarget.disabled=false;}
+});
+
 /* ---------- returned evidence ---------- */
 document.getElementById('evidence')?.addEventListener('click',async()=>{
   const errorNode=document.getElementById('evidence-error'),resultRegion=document.getElementById('operation-result');
@@ -423,12 +443,13 @@ async function loadCapabilities(){
 loadCapabilities();
 async function startCoding(){
   const errorNode=document.getElementById('coding-error');
+  const launchLog=document.getElementById('coding-launch-log');
   if(!providerSelect){toast('No active warrant grants write_files');return;}
-  errorNode.hidden=true;
+  errorNode.hidden=true;launchLog.hidden=false;launchLog.textContent=`Preflight: requesting ${providerSelect.value} runner for this active warrant…`;
   try{
     const session=await api('/v1/coding-sessions',{method:'POST',body:JSON.stringify({delegation_id:delegationId,provider:providerSelect.value,source:'ui'})});
-    location.href=`/coding-sessions/${session.id}`;
-  }catch(error){renderError(errorNode,error,'coding session');}
+    launchLog.textContent=`Session ${session.id} created. Opening persisted execution diagnostics…`;location.href=`/coding-sessions/${session.id}`;
+  }catch(error){launchLog.textContent=`Preflight failed: ${error.message}`;renderError(errorNode,error,'coding session');}
 }
 document.getElementById('coding-form')?.addEventListener('submit',event=>{event.preventDefault();startCoding();});
 
