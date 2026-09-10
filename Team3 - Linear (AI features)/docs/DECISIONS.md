@@ -191,7 +191,7 @@ infrastructure without changing policy semantics.
 **Context:** The conformance target asks for approximately 400 issues, a runnable
 container path, and CI, but no live tracker, PostgreSQL, or hosted runtime is authorised.
 
-**Chosen approach:** Seed 400 fictional issues/12 fictional users, cache extraction by
+**Chosen approach:** Seed a curated FDE assignment backlog with five assignment users, cache extraction by
 issue revision and prompt hash, ship ordered CI plus Docker/Compose, and retain SQLite.
 
 **Why:** This proves local workflow and packaging behavior without fabricating a live

@@ -174,9 +174,9 @@ def _e2e_slices() -> list[dict[str, Any]]:
 
         results: list[dict[str, Any]] = []
         for issue, requester, expected in (
-            ("PAY-4471", "engineer-demo", "REQUIRE_APPROVAL"),
-            ("SEC-4502", "security-lead", "DENY"),
-            ("WEB-4519", "lead-web", "ALLOW"),
+            ("PAY-4471", "kriti-developer", "REQUIRE_APPROVAL"),
+            ("SEC-4502", "kriti-developer", "DENY"),
+            ("WEB-4519", "chirayu-gupta", "ALLOW"),
         ):
             detail = create(issue, requester, f"e2e-{issue}")
             actual = detail["decision"]["verdict"]
@@ -190,7 +190,7 @@ def _e2e_slices() -> list[dict[str, Any]]:
                 }
             )
 
-        incomplete = create("WEB-3001", "lead-web", "e2e-missing-tests")
+        incomplete = create("WEB-3001", "chirayu-gupta", "e2e-missing-tests")
         incomplete_warrant = incomplete["warrant"]
         try:
             service.submit_evidence(
@@ -217,7 +217,7 @@ def _e2e_slices() -> list[dict[str, Any]]:
             }
         )
 
-        expired = create("GROW-3003", "admin-demo", "e2e-expired")
+        expired = create("GROW-3003", "priyanka-mohekar", "e2e-expired")
         expired_warrant = expired["warrant"]
         db.execute(
             "UPDATE warrants SET expires_at=? WHERE id=?",
@@ -248,7 +248,7 @@ def _e2e_slices() -> list[dict[str, Any]]:
             }
         )
 
-        replay_warrant = create("DATA-3004", "admin-demo", "e2e-replay")["warrant"]
+        replay_warrant = create("DATA-3004", "priyanka-mohekar", "e2e-replay")["warrant"]
         replay_evidence = EvidenceSubmission(
             nonce=replay_warrant["demo_nonce"],
             files=replay_warrant["scope_surfaces"],
@@ -385,7 +385,7 @@ def _brief_grounding_metrics() -> tuple[dict[str, Any], list[dict[str, Any]]]:
                 "ws-demo",
                 DelegationCreate(
                     issue_ref=label["issue"],
-                    requester_id="lead-web",
+                    requester_id="chirayu-gupta",
                     target_agent_id="codex-cloud",
                     idempotency_key=f"brief-eval-{index}",
                 ),
@@ -509,7 +509,7 @@ def run(golden_path: Path | None = None) -> dict[str, Any]:
                 requester_is_code_owner=case["requester_is_code_owner"],
                 policy_version="v1",
                 policy_sha=policy_sha,
-                approver_ids=["admin-demo"],
+                approver_ids=["priyanka-mohekar"],
                 policy=policy_document,
             )
         )

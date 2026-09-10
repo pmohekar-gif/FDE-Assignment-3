@@ -27,7 +27,7 @@
       </form>
       <div class="btn-row" style="margin-top:10px">
         <button class="btn pri center" type="submit" form="audit-filters">Apply filters</button>
-        <a class="btn center" href="{{ '/audit' if auth_enabled else '/audit?actor_id=admin-demo' }}">Clear</a>
+        <a class="btn center" href="{{ '/audit' if auth_enabled else '/audit?actor_id=priyanka-mohekar' }}">Clear</a>
       </div>
       <div class="inline-error" id="audit-error" hidden></div>
     </article>
@@ -63,7 +63,7 @@
 
     {% if next_cursor %}
     <div class="btn-row" style="margin-top:12px">
-      <a class="btn center" href="/audit?cursor={{ next_cursor }}&amp;actor_id={{ filters.actor_id|default('admin-demo')|urlencode }}&amp;agent_id={{ filters.agent_id|urlencode }}&amp;authority_id={{ filters.authority_id|urlencode }}&amp;surface={{ filters.surface|urlencode }}&amp;verdict={{ filters.verdict|urlencode }}">Older events &rarr;</a>
+      <a class="btn center" href="/audit?cursor={{ next_cursor }}&amp;actor_id={{ filters.actor_id|default('priyanka-mohekar')|urlencode }}&amp;agent_id={{ filters.agent_id|urlencode }}&amp;authority_id={{ filters.authority_id|urlencode }}&amp;surface={{ filters.surface|urlencode }}&amp;verdict={{ filters.verdict|urlencode }}">Older events &rarr;</a>
     </div>
     {% endif %}
   </div>

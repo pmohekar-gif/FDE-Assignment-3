@@ -16,9 +16,9 @@ from .seed import reset_and_seed
 from .service import WarrantService
 
 REFERENCE_ISSUES = (
-    ("PAY-4471", "engineer-demo", "REQUIRE_APPROVAL"),
-    ("SEC-4502", "security-lead", "DENY"),
-    ("WEB-4519", "lead-web", "ALLOW"),
+    ("PAY-4471", "kriti-developer", "REQUIRE_APPROVAL"),
+    ("SEC-4502", "kriti-developer", "DENY"),
+    ("WEB-4519", "chirayu-gupta", "ALLOW"),
 )
 
 

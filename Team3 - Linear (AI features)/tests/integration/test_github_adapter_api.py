@@ -42,7 +42,7 @@ def github_off_client(tmp_path) -> TestClient:
 
 def test_github_status_endpoint_reports_off_without_fetch(github_off_client):
     response = github_off_client.get(
-        "/v1/adapters/github/status", headers={"X-Actor-Id": "admin-demo"}
+        "/v1/adapters/github/status", headers={"X-Actor-Id": "priyanka-mohekar"}
     )
     assert response.status_code == 200
     assert response.json() == {
@@ -55,7 +55,7 @@ def test_github_status_endpoint_reports_off_without_fetch(github_off_client):
 def test_github_off_pull_request_returns_503(github_off_client):
     response = github_off_client.get(
         "/v1/adapters/github/pull-request?owner=o&repo=r&number=1",
-        headers={"X-Actor-Id": "admin-demo"},
+        headers={"X-Actor-Id": "priyanka-mohekar"},
     )
     assert response.status_code == 503
     assert "not configured" in response.json()["error"]
@@ -64,7 +64,7 @@ def test_github_off_pull_request_returns_503(github_off_client):
 def test_github_stub_pull_request_endpoint_requires_admin(github_stub_client):
     response = github_stub_client.get(
         "/v1/adapters/github/pull-request?owner=o&repo=r&number=1",
-        headers={"X-Actor-Id": "engineer-demo"},
+        headers={"X-Actor-Id": "kriti-developer"},
     )
     assert response.status_code == 403
 
@@ -72,7 +72,7 @@ def test_github_stub_pull_request_endpoint_requires_admin(github_stub_client):
 def test_github_stub_pull_request_endpoint_returns_source_label(github_stub_client):
     response = github_stub_client.get(
         "/v1/adapters/github/pull-request?owner=example&repo=repo&number=42",
-        headers={"X-Actor-Id": "admin-demo"},
+        headers={"X-Actor-Id": "priyanka-mohekar"},
     )
     assert response.status_code == 200
     data = response.json()
@@ -85,7 +85,7 @@ def test_github_stub_pull_request_endpoint_returns_source_label(github_stub_clie
 def test_github_stub_files_endpoint_omits_patches(github_stub_client):
     response = github_stub_client.get(
         "/v1/adapters/github/pull-request/files?owner=example&repo=repo&number=42",
-        headers={"X-Actor-Id": "admin-demo"},
+        headers={"X-Actor-Id": "priyanka-mohekar"},
     )
     assert response.status_code == 200
     data = response.json()
@@ -97,7 +97,7 @@ def test_github_stub_files_endpoint_omits_patches(github_stub_client):
 def test_github_stub_checks_endpoint_handles_limit(github_stub_client):
     response = github_stub_client.get(
         "/v1/adapters/github/pull-request/checks?owner=example&repo=repo&ref=sha&limit=1",
-        headers={"X-Actor-Id": "admin-demo"},
+        headers={"X-Actor-Id": "priyanka-mohekar"},
     )
     assert response.status_code == 200
     data = response.json()

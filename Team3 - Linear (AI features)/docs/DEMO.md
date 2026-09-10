@@ -18,7 +18,7 @@ inbox, then evaluation integrity. Show the requester and target-agent selectors.
 requester options expose declared code-owner paths so ownership is visible before work
 is delegated.
 
-Choose **Devin Reyes** and **Codex Cloud**, filter to `PAY-4471`, then click **Run
+Choose **Kriti** and **Codex Cloud**, filter to `PAY-4471`, then click **Run
 governed delegation**. Point out the visible nine-stage progress state while the request
 runs.
 
@@ -41,9 +41,9 @@ Leave only the first scope checkbox selected, enter a short rationale, and click
 **Narrow**. Confirm the narrowing. Show the resulting warrant, allowed/denied tools,
 relative expiry, and evidence contract.
 
-Switch **Acting as** to Devin before approval on another payment delegation to show the
-inline self-approval warning and the server's explanatory 403. Switch back to Casey
-Admin. There is no force or override control.
+Switch **Acting as** to Kriti before approval on another payment delegation to show the
+inline self-approval warning and the server's explanatory 403. Switch back to Priyanka
+Mohekar as admin. There is no force or override control.
 
 ## 4. Evidence failure and correction
 
@@ -75,7 +75,7 @@ never offers an override; line-level 422 and adversarial 409 failures render inl
 
 ## 7. Audit questions and evaluation honesty
 
-With Casey Admin acting, open **Audit**. Filter by Codex, Casey, a billing surface, and
+With Priyanka Mohekar acting, open **Audit**. Filter by Codex, Priyanka, a billing surface, and
 `REQUIRE_APPROVAL`. Show grouped delegation stories, expandable payloads, re-verification,
 cursor navigation, and a CSV export that retains the active filters. Switch to a
 non-admin actor and revisit Audit to demonstrate the 403 boundary.

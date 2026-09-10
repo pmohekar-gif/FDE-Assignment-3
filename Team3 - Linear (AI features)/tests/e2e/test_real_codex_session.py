@@ -45,7 +45,7 @@ def test_real_codex_executes_in_isolated_worktree_and_returns_verified_diff(clie
         headers=headers,
         json={
             "issue_ref": "WEB-4519",
-            "requester_id": "lead-web",
+            "requester_id": "chirayu-gupta",
             "target_agent_id": "codex-cloud",
             "idempotency_key": "real-codex-e2e",
         },

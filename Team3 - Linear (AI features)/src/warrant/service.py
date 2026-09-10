@@ -1085,7 +1085,7 @@ class WarrantService:
                     True,
                     policy.version,
                     proposed_sha,
-                    ["admin-demo"],
+                    ["priyanka-mohekar"],
                     policy,
                 )
             )
@@ -1096,7 +1096,7 @@ class WarrantService:
                     True,
                     active["version"] if active else "unavailable",
                     active["sha256"] if active else hashlib.sha256(b"").hexdigest(),
-                    ["admin-demo"],
+                    ["priyanka-mohekar"],
                     active_document,
                 )
             )

@@ -19,7 +19,7 @@ def slack_client(client, tmp_path):
         slack_enabled=True,
         slack_signing_secret="slack-test-secret",
         slack_bot_token=None,
-        slack_user_map={"U123": "engineer-demo"},
+        slack_user_map={"U123": "kriti-developer"},
     )
     reset_and_seed(settings)
     return TestClient(create_app(settings))

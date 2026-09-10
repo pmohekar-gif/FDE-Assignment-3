@@ -188,7 +188,7 @@ No controlled benchmark was run. Performance and latency are `NOT_MEASURED`.
 
 ## Known limitations
 
-SQLite/local vectors instead of PostgreSQL/pgvector, a wholly synthetic 400-issue seed,
+SQLite/local vectors instead of PostgreSQL/pgvector, a curated synthetic FDE assignment-ticket seed,
 fixture provider by default, only a bounded read-only Linear import/update picker,
 synthetic local identities, in-process execution state, no verified real Slack/Codex/PR
 run, and no external audit anchor. See `docs/LIMITATIONS.md`.

@@ -5,39 +5,39 @@ surfaces:
     irreversible: false
     security_sensitive: false
     data_classes: [payment_instrument, customer_data]
-    owners: [lead-payments, admin-demo]
+    owners: [priyanka-mohekar]
   - glob: services/billing/ledger/**
     label: Immutable billing ledger
     protected: true
     irreversible: true
     security_sensitive: false
     data_classes: [payment_instrument, financial_record]
-    owners: [lead-payments, admin-demo]
+    owners: [priyanka-mohekar]
   - glob: services/auth/keys/**
     label: Authentication keys
     protected: true
     irreversible: true
     security_sensitive: true
     data_classes: [credential]
-    owners: [security-lead, admin-demo]
+    owners: [kriti-developer, priyanka-mohekar]
   - glob: infra/deploy/**
     label: Production deployment
     protected: true
     irreversible: false
     security_sensitive: false
     data_classes: []
-    owners: [platform-lead, admin-demo]
+    owners: [kriti-developer, priyanka-mohekar]
   - glob: web/**
     label: Web application
     protected: false
     irreversible: false
     security_sensitive: false
     data_classes: []
-    owners: [lead-web, admin-demo]
+    owners: [chirayu-gupta, kriti-developer, priyanka-mohekar]
   - glob: docs/**
     label: Documentation
     protected: false
     irreversible: false
     security_sensitive: false
     data_classes: []
-    owners: [lead-web, admin-demo]
+    owners: [chirayu-gupta, kriti-developer, priyanka-mohekar]

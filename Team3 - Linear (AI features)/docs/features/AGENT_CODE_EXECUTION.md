@@ -108,7 +108,7 @@ anything.
 Map real Slack member IDs to existing Warrant identities:
 
 ```dotenv
-SLACK_USER_MAP={"U012ABCDEF":"engineer-demo"}
+SLACK_USER_MAP={"U012ABCDEF":"kriti-developer"}
 ```
 
 ## API surface

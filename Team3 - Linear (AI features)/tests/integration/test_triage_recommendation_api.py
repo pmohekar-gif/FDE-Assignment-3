@@ -52,7 +52,7 @@ def test_human_can_change_and_apply_triage_with_revision_and_audit(client, heade
 
     response = client.post(
         "/v1/issues/PAY-4471/triage",
-        headers={**headers, "X-Actor-ID": "admin-demo"},
+        headers={**headers, "X-Actor-ID": "priyanka-mohekar"},
         json=payload,
     )
 
@@ -66,7 +66,7 @@ def test_human_can_change_and_apply_triage_with_revision_and_audit(client, heade
     event = client.app.state.db.one(
         "SELECT actor_id,payload_json FROM audit_events WHERE event_type='triage_applied'"
     )
-    assert event["actor_id"] == "admin-demo"
+    assert event["actor_id"] == "priyanka-mohekar"
     audit = client.app.state.db.loads(event["payload_json"])
     assert audit["previous"]["team"] == "Payments"
     assert audit["applied"]["team"] == "Data"
@@ -75,7 +75,7 @@ def test_human_can_change_and_apply_triage_with_revision_and_audit(client, heade
 
     stale = client.post(
         "/v1/issues/PAY-4471/triage",
-        headers={**headers, "X-Actor-ID": "admin-demo"},
+        headers={**headers, "X-Actor-ID": "priyanka-mohekar"},
         json=payload,
     )
     assert stale.status_code == 409

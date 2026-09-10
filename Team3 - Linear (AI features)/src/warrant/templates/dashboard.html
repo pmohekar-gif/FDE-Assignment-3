@@ -121,7 +121,7 @@
 
     <nav class="pagination" aria-label="Issue pages">
       {% if page > 1 %}<a href="/?q={{ q|urlencode }}&amp;team={{ team|urlencode }}&amp;page={{ page - 1 }}#issue-inbox">&larr; Previous</a>{% endif %}
-      <span>Showing {{ issues|length }} of {{ issue_count }} synthetic issues</span>
+      <span>Showing {{ issues|length }} of {{ issue_count }} FDE assignment tickets</span>
       {% if page < page_count %}<a href="/?q={{ q|urlencode }}&amp;team={{ team|urlencode }}&amp;page={{ page + 1 }}#issue-inbox">Next &rarr;</a>{% endif %}
     </nav>
 

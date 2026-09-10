@@ -111,7 +111,7 @@ def _completed_session(client, delegation: dict) -> str:
             delegation["id"],
             delegation["warrant"]["id"],
             issue["issue_id"],
-            "lead-web",
+            "chirayu-gupta",
             "api",
             "mock",
             "COMPLETED",
@@ -160,9 +160,9 @@ def _completed_session(client, delegation: dict) -> str:
 @pytest.fixture
 def agent_fixtures(client):
     """Three scopes: no delegation, an awaiting-approval delegation, a completed session."""
-    awaiting = _delegate(client, "PAY-4471", "engineer-demo", "intent-awaiting")
+    awaiting = _delegate(client, "PAY-4471", "kriti-developer", "intent-awaiting")
     assert awaiting["decision"]["verdict"] == "REQUIRE_APPROVAL"
-    allowed = _delegate(client, "WEB-4519", "lead-web", "intent-allowed")
+    allowed = _delegate(client, "WEB-4519", "chirayu-gupta", "intent-allowed")
     session_id = _completed_session(client, allowed)
     return {
         "no_delegation": AgentScope(issue_id="SEC-4502"),

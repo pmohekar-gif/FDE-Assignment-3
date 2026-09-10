@@ -1,4 +1,4 @@
-def create(client, headers, issue="WEB-4519", requester="lead-web"):
+def create(client, headers, issue="WEB-4519", requester="chirayu-gupta"):
     return client.post(
         "/v1/delegations",
         headers=headers,
@@ -40,7 +40,7 @@ def test_agent_answers_issue_and_delegation_questions_without_authority(client, 
 
 
 def test_agent_supports_conversation_and_repository_grounding(client, headers):
-    delegation = create(client, headers, requester="lead-web")
+    delegation = create(client, headers, requester="chirayu-gupta")
     first = ask(
         client,
         headers,

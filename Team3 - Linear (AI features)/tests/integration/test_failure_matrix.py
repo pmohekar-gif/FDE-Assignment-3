@@ -17,13 +17,13 @@ def create(client, headers, issue, requester, key):
 
 
 def approve_payment(client, headers, key):
-    created = create(client, headers, "PAY-4471", "engineer-demo", key).json()
+    created = create(client, headers, "PAY-4471", "kriti-developer", key).json()
     approved = client.post(
         f"/v1/delegations/{created['id']}/decision",
         headers=headers,
         json={
             "action": "approve",
-            "approver_id": "admin-demo",
+            "approver_id": "priyanka-mohekar",
             "rationale": "failure-matrix fixture approval",
         },
     ).json()
@@ -82,13 +82,13 @@ def test_every_expressible_failure_mode_never_allows(client_factory, headers, mo
         "policy_unloadable",
         "stale_surface_map",
     }:
-        result = create(client, headers, "WEB-4519", "lead-web", failure).json()
+        result = create(client, headers, "WEB-4519", "chirayu-gupta", failure).json()
         observed_authority = result["decision"]["verdict"]
         assert result["decision"]["fail_closed"] is True
 
     elif failure == "duplicate_delivery":
-        first = create(client, headers, "PAY-4471", "engineer-demo", failure).json()
-        second = create(client, headers, "PAY-4471", "engineer-demo", failure).json()
+        first = create(client, headers, "PAY-4471", "kriti-developer", failure).json()
+        second = create(client, headers, "PAY-4471", "kriti-developer", failure).json()
         assert second["idempotent_replay"] is True
         assert first["id"] == second["id"]
         assert len(client.app.state.db.all("SELECT id FROM delegations")) == 1
@@ -124,7 +124,7 @@ def test_every_expressible_failure_mode_never_allows(client_factory, headers, mo
 
         monkeypatch.setattr(client.app.state.service.audit, "append", fail_audit)
         with pytest.raises(RuntimeError, match="audit write failure"):
-            create(client, headers, "PAY-4471", "engineer-demo", failure)
+            create(client, headers, "PAY-4471", "kriti-developer", failure)
         assert not client.app.state.db.one("SELECT id FROM warrants LIMIT 1")
 
     assert observed_authority != "ALLOW"

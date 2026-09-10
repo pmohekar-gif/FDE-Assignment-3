@@ -176,7 +176,7 @@ def test_policy_allowed_mock_session_uses_worktree_verifies_and_creates_diff(
     client, headers, tmp_path
 ):
     app, repo = session_client(client, tmp_path)
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-allow")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-allow")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -232,7 +232,7 @@ def test_policy_allowed_mock_session_uses_worktree_verifies_and_creates_diff(
     unavailable_pr = app.post(
         f"/v1/coding-sessions/{session['id']}/pull-request",
         headers=headers,
-        json={"actor_id": "admin-demo"},
+        json={"actor_id": "priyanka-mohekar"},
     )
     assert unavailable_pr.status_code == 503
     # The feature flag gates the outbound path itself, not just the gh publisher: swapping in
@@ -241,7 +241,7 @@ def test_policy_allowed_mock_session_uses_worktree_verifies_and_creates_diff(
     flagged_off = app.post(
         f"/v1/coding-sessions/{session['id']}/pull-request",
         headers=headers,
-        json={"actor_id": "admin-demo"},
+        json={"actor_id": "priyanka-mohekar"},
     )
     assert flagged_off.status_code == 503
     assert flagged_off.json()["error"] == "PR publishing feature flag is disabled"
@@ -257,7 +257,7 @@ def test_policy_allowed_mock_session_uses_worktree_verifies_and_creates_diff(
 
 def test_denied_or_unapproved_delegation_cannot_start_coding(client, headers, tmp_path):
     app, _ = session_client(client, tmp_path)
-    denied = create_delegation(app, headers, "SEC-4502", "admin-demo", "coding-deny")
+    denied = create_delegation(app, headers, "SEC-4502", "priyanka-mohekar", "coding-deny")
     blocked = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -265,7 +265,7 @@ def test_denied_or_unapproved_delegation_cannot_start_coding(client, headers, tm
     )
     assert blocked.status_code == 403
 
-    approval = create_delegation(app, headers, "PAY-4471", "engineer-demo", "coding-approval")
+    approval = create_delegation(app, headers, "PAY-4471", "kriti-developer", "coding-approval")
     blocked = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -278,14 +278,14 @@ def test_denied_or_unapproved_delegation_cannot_start_coding(client, headers, tm
 def test_human_approval_is_snapshotted_in_the_execution_contract(client, headers, tmp_path):
     app, _ = session_client(client, tmp_path)
     delegation = create_delegation(
-        app, headers, "PAY-4471", "engineer-demo", "coding-approved-contract"
+        app, headers, "PAY-4471", "kriti-developer", "coding-approved-contract"
     )
     approved = app.post(
         f"/v1/delegations/{delegation['id']}/decision",
         headers=headers,
         json={
             "action": "approve",
-            "approver_id": "lead-payments",
+            "approver_id": "priyanka-mohekar",
             "rationale": "Limit the agent to billing service code.",
         },
     )
@@ -303,9 +303,9 @@ def test_human_approval_is_snapshotted_in_the_execution_contract(client, headers
     contract_approval = started.json()["contract"]["approval"]
     assert contract_approval == {
         "id": approval["id"],
-        "approver_id": "lead-payments",
-        "approver_name": "Samira Lind",
-        "approver_role": "lead",
+        "approver_id": "priyanka-mohekar",
+        "approver_name": "Priyanka Mohekar",
+        "approver_role": "admin",
         "action": "approve",
         "scope_surfaces": Database.loads(approval["narrowed_scope_json"], []),
         "rationale": "Limit the agent to billing service code.",
@@ -316,7 +316,7 @@ def test_human_approval_is_snapshotted_in_the_execution_contract(client, headers
 def test_auto_allowed_sessions_record_an_explicit_absent_approval(client, headers, tmp_path):
     """A null approval cannot be told apart from a forgotten one, so ALLOW says so outright."""
     app, _ = session_client(client, tmp_path)
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-auto-allow")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-auto-allow")
     assert delegation["decision"]["verdict"] == "ALLOW"
     started = app.post(
         "/v1/coding-sessions",
@@ -363,7 +363,7 @@ def test_restricted_path_write_fails_even_when_the_path_is_allowed(client, heade
         (Database.dumps(["web/private.pem"]),),
     )
     delegation = create_delegation(
-        app, headers, "WEB-4519", "lead-web", "coding-restricted-path"
+        app, headers, "WEB-4519", "chirayu-gupta", "coding-restricted-path"
     )
 
     started = app.post(
@@ -386,7 +386,7 @@ def test_baseline_restriction_should_catch_env_nested_in_an_allowed_directory(
     app, _ = session_client(client, tmp_path)
     app.app.state.coding.runners["mock"] = NestedEnvFileRunner()
     delegation = create_delegation(
-        app, headers, "WEB-4519", "lead-web", "coding-nested-env-gap"
+        app, headers, "WEB-4519", "chirayu-gupta", "coding-nested-env-gap"
     )
     started = app.post(
         "/v1/coding-sessions",
@@ -418,7 +418,7 @@ def test_revoking_the_warrant_mid_flight_aborts_before_the_runner(client, header
         return worktree
 
     coding._prepare_worktree = gated
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-revoke-midflight")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-revoke-midflight")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -427,7 +427,7 @@ def test_revoking_the_warrant_mid_flight_aborts_before_the_runner(client, header
     assert started.status_code == 202, started.json()
     assert prepared.wait(timeout=10)
     app.app.state.service.revoke_warrant(
-        delegation["warrant"]["id"], "ws-demo", "admin-demo", "revoked mid-flight"
+        delegation["warrant"]["id"], "ws-demo", "priyanka-mohekar", "revoked mid-flight"
     )
     release.set()
 
@@ -459,7 +459,7 @@ def test_an_expired_warrant_aborts_the_session_before_the_runner(client, headers
         return worktree
 
     coding._prepare_worktree = gated
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-expire-midflight")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-expire-midflight")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -484,7 +484,7 @@ def test_an_expired_warrant_aborts_the_session_before_the_runner(client, headers
 
 def test_real_runner_and_pr_publisher_are_explicitly_gated(client, headers, tmp_path):
     app, _ = session_client(client, tmp_path)
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-real-gate")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-real-gate")
     real = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -498,7 +498,7 @@ def test_cancellation_requires_an_authorized_actor(client, headers, tmp_path):
     app, _ = session_client(client, tmp_path)
     runner = BlockingRunner()
     app.app.state.coding.runners["mock"] = runner
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-cancel")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-cancel")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -518,7 +518,7 @@ def test_cancellation_requires_an_authorized_actor(client, headers, tmp_path):
     cancelled = app.post(
         f"/v1/coding-sessions/{started.json()['id']}/cancel",
         headers=headers,
-        json={"actor_id": "lead-web"},
+        json={"actor_id": "chirayu-gupta"},
     )
     assert cancelled.status_code == 200
     assert cancelled.json()["state"] == "CANCELLED"
@@ -539,7 +539,7 @@ def test_discovery_runs_every_discovered_check_and_records_each_result(client, h
     ]
     assert capabilities["git_checkout"]["available"] is True
 
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-discovery")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-discovery")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -578,7 +578,7 @@ def test_a_failing_required_check_fails_the_session_despite_a_clean_agent_exit(
     client, headers, tmp_path
 ):
     app, _ = session_client(client, tmp_path, files={"Makefile": FAILING_MAKEFILE})
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-check-fails")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-check-fails")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -603,7 +603,7 @@ def test_a_failing_required_check_fails_the_session_despite_a_clean_agent_exit(
 
 def test_branch_carries_the_issue_key_and_title_slug(client, headers, tmp_path):
     app, _ = session_client(client, tmp_path, files={"Makefile": PASSING_MAKEFILE})
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-branch-name")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-branch-name")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -617,7 +617,7 @@ def test_an_existing_branch_is_uniquified_instead_of_being_reused(client, header
     app, repo = session_client(client, tmp_path, files={"Makefile": PASSING_MAKEFILE})
     derived = "agent/web-4519-reports-empty-state-copy-is-misleading"
     git(repo, "branch", derived)
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-branch-taken")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-branch-taken")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -635,7 +635,7 @@ def test_protected_branch_guard_refuses_the_targets_checked_out_branch(client, h
     derived = "agent/web-4519-reports-empty-state-copy-is-misleading"
     # Make the branch this session would derive the repository's live checkout.
     git(repo, "switch", "-q", "-c", derived)
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-protected")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-protected")
     blocked = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -670,7 +670,7 @@ def test_terminal_worktrees_and_branches_are_reclaimed_beyond_retention(client, 
     sessions = []
     # Two different owned, reversible web issues, so both reach ALLOW on their own merits.
     for issue in ("WEB-4519", "WEB-3001"):
-        delegation = create_delegation(app, headers, issue, "lead-web", f"coding-retention-{issue}")
+        delegation = create_delegation(app, headers, issue, "chirayu-gupta", f"coding-retention-{issue}")
         started = app.post(
             "/v1/coding-sessions",
             headers=headers,
@@ -703,7 +703,7 @@ def test_terminal_worktrees_and_branches_are_reclaimed_beyond_retention(client, 
     refused = app.post(
         f"/v1/coding-sessions/{sessions[0]['id']}/pull-request",
         headers=headers,
-        json={"actor_id": "admin-demo"},
+        json={"actor_id": "priyanka-mohekar"},
     )
     assert refused.status_code == 503
     assert "reclaimed by retention" in refused.json()["error"]
@@ -713,7 +713,7 @@ def test_the_diff_records_its_head_revision_without_publishing_a_pull_request(
     client, headers, tmp_path
 ):
     app, _ = session_client(client, tmp_path, files={"Makefile": PASSING_MAKEFILE})
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-head-revision")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-head-revision")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -741,7 +741,7 @@ def test_draft_pull_requests_go_through_the_publisher_abstraction(client, header
     )
     publisher = MockPullRequestPublisher()
     app.app.state.coding.publisher = publisher
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-pr-publish")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-pr-publish")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -755,7 +755,7 @@ def test_draft_pull_requests_go_through_the_publisher_abstraction(client, header
     published = app.post(
         f"/v1/coding-sessions/{session['id']}/pull-request",
         headers=headers,
-        json={"actor_id": "admin-demo"},
+        json={"actor_id": "priyanka-mohekar"},
     )
     assert published.status_code == 200, published.json()
     artifact = published.json()
@@ -791,7 +791,7 @@ def test_reviewers_and_base_branch_travel_from_the_request_to_the_publisher(
     )
     publisher = MockPullRequestPublisher()
     app.app.state.coding.publisher = publisher
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-pr-reviewers")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-pr-reviewers")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -804,7 +804,7 @@ def test_reviewers_and_base_branch_travel_from_the_request_to_the_publisher(
         f"/v1/coding-sessions/{session['id']}/pull-request",
         headers=headers,
         json={
-            "actor_id": "admin-demo",
+            "actor_id": "priyanka-mohekar",
             "reviewers": ["teammate-one", "acme/reviewers"],
             "base": "release/2.1",
         },
@@ -836,7 +836,7 @@ def test_configured_default_reviewers_apply_when_the_request_omits_them(
     )
     publisher = MockPullRequestPublisher()
     app.app.state.coding.publisher = publisher
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-pr-defaults")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-pr-defaults")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -848,7 +848,7 @@ def test_configured_default_reviewers_apply_when_the_request_omits_them(
     published = app.post(
         f"/v1/coding-sessions/{session['id']}/pull-request",
         headers=headers,
-        json={"actor_id": "admin-demo"},
+        json={"actor_id": "priyanka-mohekar"},
     )
     assert published.status_code == 200, published.json()
     assert published.json()["reviewers"] == ["configured-default", "acme/platform"]
@@ -863,7 +863,7 @@ def test_a_reviewer_handle_shaped_like_a_flag_is_refused_by_the_api(client, head
     )
     publisher = MockPullRequestPublisher()
     app.app.state.coding.publisher = publisher
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-pr-badhandle")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-pr-badhandle")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -875,7 +875,7 @@ def test_a_reviewer_handle_shaped_like_a_flag_is_refused_by_the_api(client, head
     refused = app.post(
         f"/v1/coding-sessions/{session['id']}/pull-request",
         headers=headers,
-        json={"actor_id": "admin-demo", "reviewers": ["--repo=someone-else/repo"]},
+        json={"actor_id": "priyanka-mohekar", "reviewers": ["--repo=someone-else/repo"]},
     )
     assert refused.status_code == 503
     assert "not a valid GitHub username" in refused.json()["error"]
@@ -890,7 +890,7 @@ def test_pull_request_publishing_refuses_a_revoked_warrant(client, headers, tmp_
     )
     publisher = MockPullRequestPublisher()
     app.app.state.coding.publisher = publisher
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-pr-revoked")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-pr-revoked")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -907,12 +907,12 @@ def test_pull_request_publishing_refuses_a_revoked_warrant(client, headers, tmp_
     ).stdout.strip()
 
     app.app.state.service.revoke_warrant(
-        delegation["warrant"]["id"], "ws-demo", "admin-demo", "revoked before publishing"
+        delegation["warrant"]["id"], "ws-demo", "priyanka-mohekar", "revoked before publishing"
     )
     refused = app.post(
         f"/v1/coding-sessions/{session['id']}/pull-request",
         headers=headers,
-        json={"actor_id": "admin-demo"},
+        json={"actor_id": "priyanka-mohekar"},
     )
     assert refused.status_code == 503
     assert refused.json()["type"] == "WarrantNoLongerValid"
@@ -938,7 +938,7 @@ def test_pull_request_publishing_refuses_a_revoked_warrant(client, headers, tmp_
 def test_the_agent_process_id_reaches_the_session_row(client, headers, tmp_path):
     app, _ = session_client(client, tmp_path, files={"Makefile": PASSING_MAKEFILE})
     app.app.state.coding.runners["mock"] = PidReportingRunner()
-    delegation = create_delegation(app, headers, "WEB-4519", "lead-web", "coding-pid")
+    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-pid")
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -973,7 +973,7 @@ def test_sessions_orphaned_by_a_restart_are_failed_with_their_recorded_pids(
             "dlg_orphan",
             "wrt_orphan",
             "issue-web-4519",
-            "lead-web",
+            "chirayu-gupta",
             "api",
             "mock",
             "RUNNING",

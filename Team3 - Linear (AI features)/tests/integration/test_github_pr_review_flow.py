@@ -35,7 +35,7 @@ def _client(settings: Settings) -> TestClient:
 
 
 def _headers() -> dict[str, str]:
-    return {"X-Actor-Id": "admin-demo", "X-Csrf-Token": "test-csrf"}
+    return {"X-Actor-Id": "priyanka-mohekar", "X-Csrf-Token": "test-csrf"}
 
 
 def _create_review(client: TestClient, issue_ref: str = "WEB-4519"):
@@ -56,7 +56,7 @@ def test_github_integration_page_uses_single_pr_url_input(tmp_path):
     settings = _settings(tmp_path)
     client = _client(settings)
 
-    response = client.get("/integrations/github", headers={"X-Actor-Id": "admin-demo"})
+    response = client.get("/integrations/github", headers={"X-Actor-Id": "priyanka-mohekar"})
 
     assert response.status_code == 200
     assert "pr-url-input" in response.text
@@ -89,7 +89,7 @@ def test_pr_review_without_delegation_is_post_hoc_and_renders(tmp_path):
     assert session["result"]["pre_authorized"] is False
     assert session["result"]["governance"]["gap"] is True
 
-    page = client.get(f"/coding-sessions/{session_id}", headers={"X-Actor-Id": "admin-demo"})
+    page = client.get(f"/coding-sessions/{session_id}", headers={"X-Actor-Id": "priyanka-mohekar"})
     assert page.status_code == 200
     assert "Warrant evaluated this external PR but did not launch an agent" in page.text
     assert "/delegations/None" not in page.text
@@ -144,7 +144,7 @@ def test_pr_review_can_share_warrant_with_agent_execution(tmp_path):
             "dlg-existing",
             settings.workspace_id,
             "issue-web-4519",
-            "admin-demo",
+            "priyanka-mohekar",
             "codex-cloud",
             "ui",
             "existing-delivery",
@@ -165,7 +165,7 @@ def test_pr_review_can_share_warrant_with_agent_execution(tmp_path):
             settings.workspace_id,
             "dlg-existing",
             "codex-cloud",
-            "admin-demo",
+            "priyanka-mohekar",
             json.dumps(["*"]),
             "[]",
             "[]",
@@ -187,7 +187,7 @@ def test_pr_review_can_share_warrant_with_agent_execution(tmp_path):
             "dlg-existing",
             "war-existing",
             "issue-web-4519",
-            "admin-demo",
+            "priyanka-mohekar",
             "ui",
             "mock",
             "COMPLETED",

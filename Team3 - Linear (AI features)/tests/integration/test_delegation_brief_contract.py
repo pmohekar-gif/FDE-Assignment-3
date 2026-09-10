@@ -4,7 +4,7 @@ def create_web_delegation(client, headers, key):
         headers=headers,
         json={
             "issue_ref": "WEB-4519",
-            "requester_id": "lead-web",
+            "requester_id": "chirayu-gupta",
             "target_agent_id": "codex-cloud",
             "idempotency_key": key,
         },
@@ -94,7 +94,7 @@ def test_changed_facts_mark_cache_stale_until_csrf_protected_refresh(client, hea
         headers=headers,
         json={
             "issue_ref": "PAY-4471",
-            "requester_id": "engineer-demo",
+            "requester_id": "kriti-developer",
             "target_agent_id": "codex-cloud",
             "idempotency_key": "brief-contract-stale",
         },
@@ -105,8 +105,8 @@ def test_changed_facts_mark_cache_stale_until_csrf_protected_refresh(client, hea
 
     decision = client.post(
         f"/v1/delegations/{delegation['id']}/decision",
-        headers={**headers, "X-Actor-ID": "lead-payments"},
-        json={"action": "approve", "approver_id": "lead-payments"},
+        headers={**headers, "X-Actor-ID": "priyanka-mohekar"},
+        json={"action": "approve", "approver_id": "priyanka-mohekar"},
     )
     assert decision.status_code == 200
     stale = client.get(f"/v1/delegations/{delegation['id']}/brief").json()

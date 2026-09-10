@@ -2,7 +2,7 @@
 
 Warrant is a working delegation control plane for coding-agent work. It decides whether a requested delegation may proceed, requires a named human to approve it when risk warrants that, issues a scoped and expiring warrant, verifies returned evidence, and preserves the complete decision in a hash-chained audit ledger.
 
-> **Synthetic demo:** every issue, identity, agent, and activity in this repository is fictional. The default AI provider is a visibly labelled deterministic fixture. Fixture results are not represented as live-model evaluation evidence.
+> **Synthetic assignment demo:** the seeded issues and activity are synthetic FDE-assignment records based on the team context. The seeded identities are the assignment actors used for local demo authorization. The default AI provider is a visibly labelled deterministic fixture. Fixture results are not represented as live-model evaluation evidence.
 
 > **Hard data rule:** the experimental OpenRouter free endpoint may receive synthetic
 > data only. Never point it at real customer issues, code, credentials, or attachments.
@@ -14,7 +14,7 @@ Issue trackers and coding agents provide delegation mechanics, OAuth scopes, and
 ## Current MVP
 
 - Manual delegation and signed/idempotent webhook ingress.
-- 400 fictional issues across five teams, 12 users, three agents, and six governed repository surfaces.
+- A curated FDE assignment backlog across product, sales, engineering, evaluation, and demo teams; five seeded assignment users; three agents; and six governed repository surfaces.
 - Hybrid SQLite FTS5 plus deterministic local-vector retrieval with reciprocal-rank fusion.
 - `LLMProvider` abstraction with offline fixture, OpenAI JSON-Schema mode, and an
   experimental OpenRouter MiniMax M3 JSON-object live path that remains client-schema
@@ -167,7 +167,7 @@ before any non-synthetic use.
 
 ```bash
 make doctor      # check this checkout: venv path match and importability
-make demo-reset  # delete only data/warrant.db and create the repeatable fictional workspace
+make demo-reset  # delete only data/warrant.db and create the repeatable FDE assignment workspace
 make demo-repo   # idempotently create the gitignored demo Git checkout coding sessions need
 make worktree-prune # reclaim coding-session worktrees left behind by an interrupted process
 make dev         # local development server
@@ -196,22 +196,22 @@ AUTH_ENABLED=true make dev     # or set AUTH_ENABLED=true in .env
 
 | User | Name | Role | Password |
 | --- | --- | --- | --- |
-| `admin-demo` | Casey Admin | admin | `warrant-demo` |
-| `workspace-owner` | Rina Chen | owner | `warrant-demo` |
-| `lead-payments` | Samira Lind | lead | `warrant-demo` |
-| `lead-web` | Morgan Okafor | lead | `warrant-demo` |
-| `engineer-demo` | Devin Reyes | member | `warrant-demo` |
+| `chirayu-gupta` | Chirayu Gupta | owner | `warrant-demo` |
+| `priyanka-mohekar` | Priyanka Mohekar | admin | `warrant-demo` |
+| `kriti-developer` | Kriti | lead | `warrant-demo` |
+| `naresh-evaluator` | Naresh | admin | `warrant-demo` |
+| `gaurav-yadav-archive` | Gaurav Yadav | member | `warrant-demo` |
 
 Every seeded user signs in with the single configured `DEMO_PASSWORD`; `/login` lists all
-twelve on screen, because publishing them is the point of a demo gate. Sign in as
-`admin-demo` for the audit ledger and policy activation, or as a lead/member to watch
+five on screen, because publishing them is the point of a demo gate. Sign in as
+`priyanka-mohekar` for the audit ledger and policy activation, as `naresh-evaluator` for rubric review, or as a lead/member to watch
 authority be refused rather than granted.
 
 What it does, and why it is a real hardening rather than decoration:
 
 - The acting identity comes from a **JWT-backed server-side session** (`sessions` table) instead of a
   client-supplied `X-Actor-Id` header. With `AUTH_ENABLED=true` that header is ignored
-  outright — it cannot escalate a member session to `admin-demo`.
+  outright — it cannot escalate a member session to `priyanka-mohekar`.
 - Passwords are never stored. Each user gets a random salt and a stdlib `hashlib.scrypt`
   derivation of `DEMO_PASSWORD`; changing the setting re-derives the hashes on restart.
 - PyJWT signs each token with pinned `HS256`, `iss=warrant`, and `aud=warrant-api`.
@@ -235,7 +235,7 @@ Issue a bearer token with the same shared password, then use the returned
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/auth/token \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin-demo","password":"warrant-demo"}'
+  -d '{"username":"priyanka-mohekar","password":"warrant-demo"}'
 
 curl http://127.0.0.1:8000/v1/auth/me \
   -H 'Authorization: Bearer <access_token>'
@@ -347,7 +347,7 @@ The most important limitations are intentional and visible:
 - Warrant governs only delegations routed through it; it cannot physically prevent a bypass in another tool.
 - The local build uses SQLite/FTS5 and deterministic local vectors rather than the R&D document’s PostgreSQL/pgvector deployment target.
 - Fixture mode is a development/demo fallback, not real AI evidence.
-- The 400-issue seed is synthetic and does not establish production retrieval quality.
+- The curated assignment-ticket seed is synthetic and does not establish production retrieval quality.
 - Authentication is a synthetic workspace context, not production OAuth/SSO. The optional
   `AUTH_ENABLED` sign-in is a mock demo gate: one shared published password, no
   self-registration, reset, MFA or federation. It binds identity to a server-side session

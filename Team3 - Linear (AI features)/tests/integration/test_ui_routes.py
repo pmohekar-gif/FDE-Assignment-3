@@ -55,7 +55,7 @@ def session_client(client, tmp_path, name="ui-target"):
     return TestClient(create_app(settings))
 
 
-def create_delegation(client, headers, issue="PAY-4471", requester="engineer-demo", key="ui-1"):
+def create_delegation(client, headers, issue="PAY-4471", requester="kriti-developer", key="ui-1"):
     response = client.post(
         "/v1/delegations",
         headers=headers,
@@ -140,8 +140,8 @@ def test_shell_renders_sidebar_counts_palette_and_integrity_pill(client):
 
 def test_triage_queue_groups_by_verdict_with_sufficiency_rings(client, headers):
     create_delegation(client, headers, key="ui-queue-hold")
-    create_delegation(client, headers, issue="SEC-4502", requester="lead-payments", key="ui-deny")
-    create_delegation(client, headers, issue="WEB-4519", requester="lead-web", key="ui-allow")
+    create_delegation(client, headers, issue="SEC-4502", requester="priyanka-mohekar", key="ui-deny")
+    create_delegation(client, headers, issue="WEB-4519", requester="chirayu-gupta", key="ui-allow")
 
     page = client.get("/")
     assert page.status_code == 200
@@ -165,7 +165,7 @@ def test_triage_queue_groups_by_verdict_with_sufficiency_rings(client, headers):
     assert 'class="code-chip allow"' in page.text
     assert ">STANDARD_REVERSIBLE_SCOPE</span>" in page.text
     assert '<span class="suff">0.92</span>' in page.text
-    assert 'title="Devin Reyes · engineer-demo">DR</span>' in page.text
+    assert 'title="Kriti · kriti-developer">KR</span>' in page.text
 
     # the signature component: arc offset computed from the real sufficiency value
     # (circumference 37.7, so 0.92 measured leaves 37.7 * 0.08 = 3.0 unfilled) and the
@@ -207,7 +207,7 @@ def test_issue_inbox_filters_paginates_and_exposes_launcher_identities(client):
     assert "Governed delegation" in page.text
     assert 'id="requester-select"' in page.text
     assert 'id="agent-select"' in page.text
-    assert "lead-web" in page.text
+    assert "chirayu-gupta" in page.text
     assert "deterministic ownership and warrant inputs" in page.text
 
     # per-issue AI surfaces are collapsed but present
@@ -391,7 +391,7 @@ def test_long_acceptance_criteria_are_truncated_with_a_title(client, headers):
 
 def test_denied_delegation_explains_the_boundary_without_offering_an_override(client, headers):
     delegation = create_delegation(
-        client, headers, issue="SEC-4502", requester="lead-payments", key="ui-deny-detail"
+        client, headers, issue="SEC-4502", requester="priyanka-mohekar", key="ui-deny-detail"
     )
     assert delegation["decision"]["verdict"] == "DENY"
     page = client.get(f"/delegations/{delegation['id']}")
@@ -408,7 +408,7 @@ def test_denied_delegation_explains_the_boundary_without_offering_an_override(cl
 
 def test_allowed_delegation_shows_the_warrant_panel_and_never_grantable_tools(client, headers):
     delegation = create_delegation(
-        client, headers, issue="WEB-4519", requester="lead-web", key="ui-allow-detail"
+        client, headers, issue="WEB-4519", requester="chirayu-gupta", key="ui-allow-detail"
     )
     assert delegation["decision"]["verdict"] == "ALLOW"
     page = client.get(f"/delegations/{delegation['id']}")
@@ -439,7 +439,7 @@ def test_coding_session_page_renders_stepper_multi_check_verification_and_diff(
 ):
     app = session_client(client, tmp_path, name="ui-session")
     delegation = create_delegation(
-        app, headers, issue="WEB-4519", requester="lead-web", key="ui-session"
+        app, headers, issue="WEB-4519", requester="chirayu-gupta", key="ui-session"
     )
     session_id = run_mock_session(app, headers, delegation["id"])
     page = app.get(f"/coding-sessions/{session_id}")
@@ -492,7 +492,7 @@ def test_coding_session_page_renders_stepper_multi_check_verification_and_diff(
 def test_coding_session_verification_lists_every_discovered_check(client, headers, tmp_path):
     app = session_client(client, tmp_path, name="ui-checks")
     delegation = create_delegation(
-        app, headers, issue="WEB-4519", requester="lead-web", key="ui-session-checks"
+        app, headers, issue="WEB-4519", requester="chirayu-gupta", key="ui-session-checks"
     )
     session_id = run_mock_session(app, headers, delegation["id"])
     detail = app.get(f"/v1/coding-sessions/{session_id}", headers=headers).json()
@@ -515,7 +515,7 @@ def test_coding_session_verification_lists_every_discovered_check(client, header
 def test_coding_sessions_index_lists_sessions_and_reads_capabilities(client, headers, tmp_path):
     app = session_client(client, tmp_path, name="ui-index")
     delegation = create_delegation(
-        app, headers, issue="WEB-4519", requester="lead-web", key="ui-session-index"
+        app, headers, issue="WEB-4519", requester="chirayu-gupta", key="ui-session-index"
     )
     session_id = run_mock_session(app, headers, delegation["id"])
     page = app.get("/coding-sessions")
@@ -536,7 +536,7 @@ def test_coding_sessions_index_lists_sessions_and_reads_capabilities(client, hea
 
 def test_delegations_index_groups_every_delegation_by_verdict(client, headers):
     create_delegation(client, headers, key="ui-index-hold")
-    create_delegation(client, headers, issue="WEB-4519", requester="lead-web", key="ui-index-allow")
+    create_delegation(client, headers, issue="WEB-4519", requester="chirayu-gupta", key="ui-index-allow")
     page = client.get("/delegations")
     assert page.status_code == 200
     assert "Verdict distribution" in page.text
@@ -608,7 +608,7 @@ def test_integrations_page_reports_feature_flags_and_slack_state(client):
 
 def test_audit_page_shows_chain_state_and_event_hashes(client, headers):
     create_delegation(client, headers, key="ui-audit")
-    page = client.get("/audit?actor_id=admin-demo")
+    page = client.get("/audit?actor_id=priyanka-mohekar")
     assert page.status_code == 200
     assert "CHAIN VERIFIED" in page.text
     assert "Chain integrity" in page.text
@@ -656,7 +656,7 @@ def test_evaluation_page_does_not_hide_the_failing_metric(client):
 
 def test_audit_filters_cursor_and_actor_identity_boundary(client, headers):
     delegation = create_delegation(client, headers, key="ui-audit-api")
-    admin = {"X-Actor-ID": "admin-demo"}
+    admin = {"X-Actor-ID": "priyanka-mohekar"}
     filtered = client.get(
         "/v1/audit?agent_id=codex-cloud&verdict=REQUIRE_APPROVAL&limit=2", headers=admin
     )
@@ -673,8 +673,8 @@ def test_audit_filters_cursor_and_actor_identity_boundary(client, headers):
 
     mismatch = client.post(
         f"/v1/delegations/{delegation['id']}/decision",
-        headers={**headers, "X-Actor-ID": "engineer-demo"},
-        json={"action": "approve", "approver_id": "admin-demo"},
+        headers={**headers, "X-Actor-ID": "kriti-developer"},
+        json={"action": "approve", "approver_id": "priyanka-mohekar"},
     )
     assert mismatch.status_code == 403
 

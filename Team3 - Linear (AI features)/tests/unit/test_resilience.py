@@ -56,6 +56,9 @@ class SpyProvider(LLMProvider):
     def answer(self, question, facts, repair_error=None):
         raise NotImplementedError
 
+    def comment_assist(self, request, context, repair_error=None):
+        raise NotImplementedError
+
 
 def test_transport_errors_retry_twice(monkeypatch):
     delays: list[float] = []

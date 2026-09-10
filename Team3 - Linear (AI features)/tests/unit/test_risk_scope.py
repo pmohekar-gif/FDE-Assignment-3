@@ -16,7 +16,7 @@ def test_extracted_surface_outside_declared_scope_is_retained_as_risk_signal(cli
     )
     requester = db.one(
         "SELECT * FROM users WHERE workspace_id=? AND id=?",
-        ("ws-demo", "lead-web"),
+        ("ws-demo", "chirayu-gupta"),
     )
     outside = "services/auth/keys/signing.py"
     extraction = ExtractionResult(

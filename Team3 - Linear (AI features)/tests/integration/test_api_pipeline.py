@@ -67,7 +67,7 @@ def openrouter_response(content, usage=True, metadata=True):
     return response
 
 
-def create(client, headers, issue, requester="engineer-demo", key="case"):
+def create(client, headers, issue, requester="kriti-developer", key="case"):
     return client.post(
         "/v1/delegations",
         headers=headers,
@@ -83,7 +83,7 @@ def create(client, headers, issue, requester="engineer-demo", key="case"):
 def test_three_reference_scenarios_execute_real_pipeline(client, headers):
     approval = create(client, headers, "PAY-4471", key="reference").json()
     denied = create(client, headers, "SEC-4502", key="reference").json()
-    allowed = create(client, headers, "WEB-4519", requester="lead-web", key="reference").json()
+    allowed = create(client, headers, "WEB-4519", requester="chirayu-gupta", key="reference").json()
     assert approval["decision"]["verdict"] == "REQUIRE_APPROVAL"
     assert denied["decision"]["verdict"] == "DENY"
     assert "INJECTION_SIGNAL" in denied["decision"]["reason_codes"]
@@ -93,13 +93,13 @@ def test_three_reference_scenarios_execute_real_pipeline(client, headers):
 
 
 def test_idempotent_manual_and_signed_webhook_ingress(client, headers):
-    first = create(client, headers, "WEB-4519", requester="lead-web", key="idem").json()
-    second = create(client, headers, "WEB-4519", requester="lead-web", key="idem").json()
+    first = create(client, headers, "WEB-4519", requester="chirayu-gupta", key="idem").json()
+    second = create(client, headers, "WEB-4519", requester="chirayu-gupta", key="idem").json()
     assert first["id"] == second["id"]
     assert second["idempotent_replay"] is True
 
     raw = json.dumps(
-        {"issue_ref": "PAY-4471", "requester_id": "engineer-demo", "target_agent_id": "codex-cloud"}
+        {"issue_ref": "PAY-4471", "requester_id": "kriti-developer", "target_agent_id": "codex-cloud"}
     ).encode()
     timestamp = str(time.time())
     signature = sign_webhook("test-webhook-secret", timestamp, raw)
@@ -135,7 +135,7 @@ def test_dashboard_exposes_measured_and_not_measured_metrics(client):
     assert "unsafe allow count" in dashboard.text
     assert "risk class macro f1" in dashboard.text
     assert "NOT_MEASURED" in dashboard.text
-    assert "of 400 synthetic issues" in dashboard.text
+    assert "FDE assignment tickets" in dashboard.text
 
 
 def test_openrouter_json_object_pipeline_keeps_deterministic_verdict(
@@ -154,7 +154,7 @@ def test_openrouter_json_object_pipeline_keeps_deterministic_verdict(
 
     monkeypatch.setattr("warrant.providers.ChatCompletionsProvider._post_chat_completions", stub)
     client = openrouter_client(tmp_path)
-    created = create(client, headers, "WEB-4519", requester="lead-web", key="openrouter-ok").json()
+    created = create(client, headers, "WEB-4519", requester="chirayu-gupta", key="openrouter-ok").json()
     assert created["decision"]["verdict"] == "ALLOW"
     usage = client.app.state.db.one(
         "SELECT * FROM model_usage WHERE delegation_id=?", (created["id"],)
@@ -179,7 +179,7 @@ def test_openrouter_malformed_extraction_fails_closed_without_allow(tmp_path, he
     )
     client = openrouter_client(tmp_path)
     created = create(
-        client, headers, "WEB-4519", requester="lead-web", key="openrouter-malformed"
+        client, headers, "WEB-4519", requester="chirayu-gupta", key="openrouter-malformed"
     ).json()
     assert created["decision"]["verdict"] == "REQUIRE_APPROVAL"
     assert created["decision"]["fail_closed"] is True
@@ -199,7 +199,7 @@ def test_openrouter_missing_provider_metadata_does_not_block_authorization(
     )
     client = openrouter_client(tmp_path)
     created = create(
-        client, headers, "WEB-4519", requester="lead-web", key="openrouter-no-metadata"
+        client, headers, "WEB-4519", requester="chirayu-gupta", key="openrouter-no-metadata"
     ).json()
     assert created["decision"]["verdict"] == "ALLOW"
     usage = client.app.state.db.one(
@@ -224,7 +224,7 @@ def test_openrouter_schema_repair_telemetry_includes_provider_and_model(
     monkeypatch.setattr("warrant.providers.ChatCompletionsProvider._post_chat_completions", stub)
     client = openrouter_client(tmp_path)
     created = create(
-        client, headers, "WEB-4519", requester="lead-web", key="openrouter-repair"
+        client, headers, "WEB-4519", requester="chirayu-gupta", key="openrouter-repair"
     ).json()
     usage = client.app.state.db.one(
         "SELECT schema_repair_count FROM model_usage WHERE delegation_id=?",

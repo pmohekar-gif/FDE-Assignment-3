@@ -54,7 +54,7 @@ def auth(tmp_path):
 
 def test_credentials_are_provisioned_as_salted_hashes_never_plaintext(auth):
     rows = auth.db.all("SELECT user_id,salt,password_hash,algorithm FROM user_credentials")
-    assert len(rows) == 12
+    assert len(rows) == 5
     assert {row["algorithm"] for row in rows} == {"scrypt-n16384-r8-p1"}
     # No plaintext anywhere, and every user gets an independent salt.
     assert all(DEMO_PASSWORD not in row["password_hash"] for row in rows)
@@ -68,30 +68,30 @@ def test_ensure_credentials_is_idempotent_and_reprovisions_on_password_change(tm
     reset_and_seed(settings)
     db = Database(settings.database_path)
     service = AuthService(db, settings)
-    assert service.ensure_credentials() == 12
+    assert service.ensure_credentials() == 5
     assert service.ensure_credentials() == 0
 
     rotated = AuthService(db, build_settings(tmp_path, demo_password="another-demo-password"))
-    assert rotated.ensure_credentials() == 12
-    assert rotated.verify_credentials("admin-demo", "another-demo-password") is not None
-    assert rotated.verify_credentials("admin-demo", DEMO_PASSWORD) is None
+    assert rotated.ensure_credentials() == 5
+    assert rotated.verify_credentials("priyanka-mohekar", "another-demo-password") is not None
+    assert rotated.verify_credentials("priyanka-mohekar", DEMO_PASSWORD) is None
 
 
 def test_verify_credentials_accepts_seeded_user_and_rejects_everything_else(auth):
-    actor = auth.verify_credentials("admin-demo", DEMO_PASSWORD)
-    assert actor == {"id": "admin-demo", "display_name": "Casey Admin", "role": "admin"}
-    assert auth.verify_credentials("admin-demo", "wrong") is None
-    assert auth.verify_credentials("admin-demo", "") is None
+    actor = auth.verify_credentials("priyanka-mohekar", DEMO_PASSWORD)
+    assert actor == {"id": "priyanka-mohekar", "display_name": "Priyanka Mohekar", "role": "admin"}
+    assert auth.verify_credentials("priyanka-mohekar", "wrong") is None
+    assert auth.verify_credentials("priyanka-mohekar", "") is None
     assert auth.verify_credentials("no-such-user", DEMO_PASSWORD) is None
     assert auth.verify_credentials("", "") is None
     # Role comes from the users table, so authority is unchanged by signing in.
-    assert auth.verify_credentials("engineer-demo", DEMO_PASSWORD)["role"] == "member"
+    assert auth.verify_credentials("kriti-developer", DEMO_PASSWORD)["role"] == "lead"
 
 
 def test_session_issue_verify_and_revoke(auth):
-    token, session = auth.issue_session("lead-web")
+    token, session = auth.issue_session("chirayu-gupta")
     stored = auth.db.one("SELECT * FROM sessions WHERE id=?", (session["id"],))
-    assert stored["user_id"] == "lead-web"
+    assert stored["user_id"] == "chirayu-gupta"
     # The bearer/cookie token is never persisted, only its digest.
     assert stored["token_hash"] not in token
     assert len(stored["token_hash"]) == 64
@@ -106,17 +106,17 @@ def test_session_issue_verify_and_revoke(auth):
         issuer="warrant",
     )
     assert header == {"alg": "HS256", "typ": "JWT"}
-    assert claims["sub"] == "lead-web"
+    assert claims["sub"] == "chirayu-gupta"
     assert claims["jti"] == session["id"]
     assert claims["workspace_id"] == "ws-demo"
-    assert claims["role"] == "lead"
+    assert claims["role"] == "owner"
     assert claims["iat"] <= claims["nbf"] <= claims["exp"]
 
     verified = auth.verify_session(token)
     assert verified["actor"] == {
-        "id": "lead-web",
-        "display_name": "Morgan Okafor",
-        "role": "lead",
+        "id": "chirayu-gupta",
+        "display_name": "Chirayu Gupta",
+        "role": "owner",
     }
     assert auth.revoke_session(session["id"]) is True
     assert auth.verify_session(token) is None
@@ -124,7 +124,7 @@ def test_session_issue_verify_and_revoke(auth):
 
 
 def test_session_verification_rejects_tampering_and_foreign_signatures(auth, tmp_path):
-    token, session = auth.issue_session("admin-demo")
+    token, session = auth.issue_session("priyanka-mohekar")
     header, payload, signature = token.split(".")
 
     assert auth.verify_session(None) is None
@@ -138,7 +138,7 @@ def test_session_verification_rejects_tampering_and_foreign_signatures(auth, tmp
         auth.db,
         build_settings(tmp_path, session_secret="other-session-secret-at-least-32-bytes"),
     )
-    forged, _ = other.issue_session("admin-demo")
+    forged, _ = other.issue_session("priyanka-mohekar")
     assert auth.verify_session(forged) is None
 
     # A valid signature over a session row that no longer matches is still rejected.
@@ -147,7 +147,7 @@ def test_session_verification_rejects_tampering_and_foreign_signatures(auth, tmp
 
 
 def test_session_verification_uses_current_database_role_not_role_claim(auth):
-    token, _ = auth.issue_session("engineer-demo")
+    token, _ = auth.issue_session("kriti-developer")
     claims = jwt.decode(
         token,
         SESSION_SECRET,
@@ -155,18 +155,18 @@ def test_session_verification_uses_current_database_role_not_role_claim(auth):
         audience="warrant-api",
         issuer="warrant",
     )
-    assert claims["role"] == "member"
+    assert claims["role"] == "lead"
 
-    auth.db.execute("UPDATE users SET role='lead' WHERE id='engineer-demo'")
+    auth.db.execute("UPDATE users SET role='member' WHERE id='kriti-developer'")
     verified = auth.verify_session(token)
     assert verified is not None
-    assert verified["actor"]["role"] == "lead"
+    assert verified["actor"]["role"] == "member"
 
 
 def test_session_verification_rejects_wrong_issuer_audience_and_algorithm(auth):
     now = int(datetime.now(timezone.utc).timestamp())
     base = {
-        "sub": "admin-demo",
+        "sub": "priyanka-mohekar",
         "jti": "sess_forged",
         "workspace_id": "ws-demo",
         "role": "admin",
@@ -194,7 +194,7 @@ def test_session_verification_rejects_wrong_issuer_audience_and_algorithm(auth):
 
 
 def test_expired_sessions_are_rejected(auth):
-    token, session = auth.issue_session("admin-demo")
+    token, session = auth.issue_session("priyanka-mohekar")
     past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
     auth.db.execute("UPDATE sessions SET expires_at=? WHERE id=?", (past, session["id"]))
     assert auth.verify_session(token) is None
@@ -216,23 +216,23 @@ def test_cookie_flags_and_ttl_follow_configuration(tmp_path):
 
 def test_demo_credentials_expose_every_seeded_user_with_the_shared_password(auth):
     credentials = auth.demo_credentials()
-    assert len(credentials) == 12
-    assert credentials[0]["username"] == "admin-demo"
+    assert len(credentials) == 5
+    assert credentials[0]["username"] == "naresh-evaluator"
     assert {item["password"] for item in credentials} == {DEMO_PASSWORD}
     assert {item["username"] for item in credentials} >= {
-        "admin-demo",
-        "lead-web",
-        "lead-payments",
-        "engineer-demo",
+        "priyanka-mohekar",
+        "chirayu-gupta",
+        "naresh-evaluator",
+        "kriti-developer",
     }
 
 
 def test_auth_events_append_to_the_existing_hash_chain(auth):
-    token, session = auth.issue_session("admin-demo")
-    auth.record_login({"id": "admin-demo", "role": "admin"}, session["id"])
-    auth.record_login_failure("admin-demo")
+    token, session = auth.issue_session("priyanka-mohekar")
+    auth.record_login({"id": "priyanka-mohekar", "role": "admin"}, session["id"])
+    auth.record_login_failure("priyanka-mohekar")
     auth.record_login_failure("attacker")
-    auth.record_logout("admin-demo", session["id"])
+    auth.record_logout("priyanka-mohekar", session["id"])
     events = auth.db.all("SELECT event_type,actor_id,actor_type FROM audit_events ORDER BY seq")
     assert [event["event_type"] for event in events] == [
         "auth_login_succeeded",

@@ -12,7 +12,7 @@ def create_payment(client, headers, key="security"):
         headers=headers,
         json={
             "issue_ref": "PAY-4471",
-            "requester_id": "engineer-demo",
+            "requester_id": "kriti-developer",
             "target_agent_id": "codex-cloud",
             "idempotency_key": key,
         },
@@ -25,7 +25,7 @@ def test_csrf_and_cross_tenant_resources_are_not_exposed(client):
             "/v1/delegations",
             json={
                 "issue_ref": "WEB-4519",
-                "requester_id": "lead-web",
+                "requester_id": "chirayu-gupta",
                 "target_agent_id": "codex-cloud",
                 "idempotency_key": "missing-csrf",
             },
@@ -37,7 +37,7 @@ def test_csrf_and_cross_tenant_resources_are_not_exposed(client):
         headers={"X-CSRF-Token": "test-csrf"},
         json={
             "issue_ref": "WEB-4519",
-            "requester_id": "lead-web",
+            "requester_id": "chirayu-gupta",
             "target_agent_id": "codex-cloud",
             "idempotency_key": "tenant",
         },
@@ -55,7 +55,7 @@ def test_self_approval_and_scope_widening_are_blocked(client, headers):
     self_approval = client.post(
         f"/v1/delegations/{created['id']}/decision",
         headers=headers,
-        json={"action": "approve", "approver_id": "engineer-demo"},
+        json={"action": "approve", "approver_id": "kriti-developer"},
     )
     assert self_approval.status_code == 403
     widening = client.post(
@@ -63,7 +63,7 @@ def test_self_approval_and_scope_widening_are_blocked(client, headers):
         headers=headers,
         json={
             "action": "narrow",
-            "approver_id": "admin-demo",
+            "approver_id": "priyanka-mohekar",
             "narrowed_surfaces": ["services/auth/keys/**"],
         },
     )
@@ -76,7 +76,7 @@ def test_nonce_replay_is_rejected(client, headers):
         headers=headers,
         json={
             "issue_ref": "WEB-4519",
-            "requester_id": "lead-web",
+            "requester_id": "chirayu-gupta",
             "target_agent_id": "codex-cloud",
             "idempotency_key": "nonce",
         },
@@ -116,10 +116,10 @@ def test_audit_table_rejects_mutation(client):
 
 def test_audit_export_requires_admin_for_json_and_csv(client):
     for suffix in ("", "?format=csv"):
-        non_admin = client.get(f"/v1/audit{suffix}", headers={"X-Actor-ID": "engineer-demo"})
+        non_admin = client.get(f"/v1/audit{suffix}", headers={"X-Actor-ID": "kriti-developer"})
         assert non_admin.status_code == 403
 
-        admin = client.get(f"/v1/audit{suffix}", headers={"X-Actor-ID": "admin-demo"})
+        admin = client.get(f"/v1/audit{suffix}", headers={"X-Actor-ID": "priyanka-mohekar"})
         assert admin.status_code == 200
         if suffix:
             assert admin.headers["content-type"].startswith("text/csv")

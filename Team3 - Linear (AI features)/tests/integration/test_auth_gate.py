@@ -71,9 +71,9 @@ def issue_token(client: TestClient, username: str, password: str = DEMO_PASSWORD
 
 def test_disabled_mode_keeps_the_header_actor_path_and_switcher(open_client):
     assert open_client.get("/").status_code == 200
-    assert open_client.get("/v1/audit", headers={"X-Actor-ID": "admin-demo"}).status_code == 200
-    assert open_client.get("/v1/audit", headers={"X-Actor-ID": "engineer-demo"}).status_code == 403
-    assert open_client.get("/audit?actor_id=admin-demo").status_code == 200
+    assert open_client.get("/v1/audit", headers={"X-Actor-ID": "priyanka-mohekar"}).status_code == 200
+    assert open_client.get("/v1/audit", headers={"X-Actor-ID": "kriti-developer"}).status_code == 403
+    assert open_client.get("/audit?actor_id=priyanka-mohekar").status_code == 200
 
     dashboard = open_client.get("/").text
     assert 'id="actor-switcher"' in dashboard
@@ -84,7 +84,7 @@ def test_disabled_mode_has_no_sign_in_gate(open_client):
     redirected = open_client.get("/login", follow_redirects=False)
     assert redirected.status_code == 303
     assert redirected.headers["location"] == "/"
-    posted = open_client.post("/login", data={"username": "admin-demo"}, follow_redirects=False)
+    posted = open_client.post("/login", data={"username": "priyanka-mohekar"}, follow_redirects=False)
     assert posted.status_code == 303
     assert SESSION_COOKIE_NAME not in posted.headers.get("set-cookie", "")
 
@@ -101,7 +101,7 @@ def test_unauthenticated_html_redirects_and_api_returns_typed_401(gated_client):
     assert audit_page.status_code == 303
     assert audit_page.headers["location"] == "/login?next=/audit%3Fverdict%3DDENY"
 
-    api = gated_client.get("/v1/audit", headers={"X-Actor-ID": "admin-demo"})
+    api = gated_client.get("/v1/audit", headers={"X-Actor-ID": "priyanka-mohekar"})
     assert api.status_code == 401
     assert api.json() == {"error": "authentication required", "type": "Unauthorized"}
     assert api.headers["www-authenticate"] == "Bearer"
@@ -111,7 +111,7 @@ def test_unauthenticated_html_redirects_and_api_returns_typed_401(gated_client):
         headers=CSRF,
         json={
             "issue_ref": "WEB-4519",
-            "requester_id": "lead-web",
+            "requester_id": "chirayu-gupta",
             "target_agent_id": "codex-cloud",
             "idempotency_key": "unauthenticated",
         },
@@ -125,13 +125,13 @@ def test_health_login_and_static_stay_open(gated_client):
     assert login.status_code == 200
     assert gated_client.get("/static/app.css").status_code == 200
     # The login page has to publish the demo credentials; a grader must be able to get in.
-    for expected in ("admin-demo", "lead-web", "engineer-demo", DEMO_PASSWORD):
+    for expected in ("priyanka-mohekar", "chirayu-gupta", "kriti-developer", DEMO_PASSWORD):
         assert expected in login.text
     assert "demo identity gate" in login.text
 
 
 def test_successful_sign_in_issues_a_session_cookie_and_resolves_the_actor(gated_client):
-    response = sign_in(gated_client, "lead-payments")
+    response = sign_in(gated_client, "priyanka-mohekar")
     assert response.status_code == 303
     assert response.headers["location"] == "/"
     cookie = response.headers["set-cookie"]
@@ -143,14 +143,14 @@ def test_successful_sign_in_issues_a_session_cookie_and_resolves_the_actor(gated
 
     page = gated_client.get("/")
     assert page.status_code == 200
-    assert "Samira Lind" in page.text
+    assert "Priyanka Mohekar" in page.text
     assert "Sign out" in page.text
     assert 'id="actor-switcher"' not in page.text
-    assert '"lead-payments"' in page.text
+    assert '"priyanka-mohekar"' in page.text
 
 
 def test_wrong_password_and_unknown_user_are_rejected_without_a_session(gated_client):
-    for username, password in (("admin-demo", "not-the-password"), ("ghost", DEMO_PASSWORD)):
+    for username, password in (("priyanka-mohekar", "not-the-password"), ("ghost", DEMO_PASSWORD)):
         response = sign_in(gated_client, username, password)
         assert response.status_code == 401
         assert SESSION_COOKIE_NAME not in response.headers.get("set-cookie", "")
@@ -162,7 +162,7 @@ def test_wrong_password_and_unknown_user_are_rejected_without_a_session(gated_cl
 def test_login_requires_the_demo_csrf_token(gated_client):
     response = gated_client.post(
         "/login",
-        data={"username": "admin-demo", "password": DEMO_PASSWORD},
+        data={"username": "priyanka-mohekar", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert response.status_code == 400
@@ -170,42 +170,42 @@ def test_login_requires_the_demo_csrf_token(gated_client):
 
 
 def test_forged_actor_header_cannot_escalate_to_admin(gated_client):
-    assert sign_in(gated_client, "engineer-demo").status_code == 303
+    assert sign_in(gated_client, "kriti-developer").status_code == 303
 
-    forged = gated_client.get("/v1/audit", headers={"X-Actor-ID": "admin-demo"})
+    forged = gated_client.get("/v1/audit", headers={"X-Actor-ID": "priyanka-mohekar"})
     assert forged.status_code == 403
     assert forged.json()["type"] == "Forbidden"
 
-    forged_page = gated_client.get("/audit?actor_id=admin-demo")
+    forged_page = gated_client.get("/audit?actor_id=priyanka-mohekar")
     assert forged_page.status_code == 403
 
     forged_policy = gated_client.post(
         "/v1/policies/simulate",
-        headers={**CSRF, "X-Actor-ID": "admin-demo"},
+        headers={**CSRF, "X-Actor-ID": "priyanka-mohekar"},
         json={"yaml_source": "version: v1"},
     )
     assert forged_policy.status_code == 403
 
     # The header is ignored, not merged: the session user is still the actor.
     assert (
-        "Signed in as <b>Devin Reyes"
-        in gated_client.get("/", headers={"X-Actor-ID": "admin-demo"}).text
+        "Signed in as <b>Kriti"
+        in gated_client.get("/", headers={"X-Actor-ID": "priyanka-mohekar"}).text
     )
 
     # Authority follows the session, so the admin session succeeds where the header failed.
     gated_client.post("/logout", data={"csrf_token": "test-csrf"})
-    assert sign_in(gated_client, "admin-demo").status_code == 303
-    assert gated_client.get("/v1/audit", headers={"X-Actor-ID": "engineer-demo"}).status_code == 200
+    assert sign_in(gated_client, "priyanka-mohekar").status_code == 303
+    assert gated_client.get("/v1/audit", headers={"X-Actor-ID": "kriti-developer"}).status_code == 200
 
 
 def test_body_declared_actor_must_match_the_session(gated_client):
-    assert sign_in(gated_client, "engineer-demo").status_code == 303
+    assert sign_in(gated_client, "kriti-developer").status_code == 303
     created = gated_client.post(
         "/v1/delegations",
         headers=CSRF,
         json={
             "issue_ref": "PAY-4471",
-            "requester_id": "engineer-demo",
+            "requester_id": "kriti-developer",
             "target_agent_id": "codex-cloud",
             "idempotency_key": "declared-actor",
         },
@@ -213,20 +213,20 @@ def test_body_declared_actor_must_match_the_session(gated_client):
     impersonated = gated_client.post(
         f"/v1/delegations/{created['id']}/decision",
         headers=CSRF,
-        json={"action": "approve", "approver_id": "admin-demo"},
+        json={"action": "approve", "approver_id": "priyanka-mohekar"},
     )
     assert impersonated.status_code == 403
     assert impersonated.json()["error"] == "declared actor must match the authenticated session"
 
 
 def test_approval_under_a_session_records_the_authenticated_user_as_authority(gated_client):
-    assert sign_in(gated_client, "lead-payments").status_code == 303
+    assert sign_in(gated_client, "priyanka-mohekar").status_code == 303
     created = gated_client.post(
         "/v1/delegations",
         headers=CSRF,
         json={
             "issue_ref": "PAY-4471",
-            "requester_id": "engineer-demo",
+            "requester_id": "kriti-developer",
             "target_agent_id": "codex-cloud",
             "idempotency_key": "session-approval",
         },
@@ -234,24 +234,24 @@ def test_approval_under_a_session_records_the_authenticated_user_as_authority(ga
     assert created["status"] == "awaiting_approval"
     approved = gated_client.post(
         f"/v1/delegations/{created['id']}/decision",
-        headers={**CSRF, "X-Actor-ID": "admin-demo"},
-        json={"action": "approve", "approver_id": "lead-payments"},
+        headers={**CSRF, "X-Actor-ID": "priyanka-mohekar"},
+        json={"action": "approve", "approver_id": "priyanka-mohekar"},
     )
     assert approved.status_code == 200
-    assert approved.json()["warrant"]["authority_user_id"] == "lead-payments"
+    assert approved.json()["warrant"]["authority_user_id"] == "priyanka-mohekar"
 
     db = gated_client.app.state.db
     issued = db.one(
         "SELECT actor_id FROM audit_events WHERE event_type='warrant_issued' ORDER BY seq DESC"
     )
-    assert issued["actor_id"] == "lead-payments"
-    assert db.one("SELECT approver_id FROM approvals LIMIT 1")["approver_id"] == "lead-payments"
+    assert issued["actor_id"] == "priyanka-mohekar"
+    assert db.one("SELECT approver_id FROM approvals LIMIT 1")["approver_id"] == "priyanka-mohekar"
     assert gated_client.app.state.service.audit.verify("ws-demo") is True
 
 
 def test_login_failure_and_logout_are_recorded_in_the_audit_chain(gated_client):
-    sign_in(gated_client, "admin-demo", "wrong-password")
-    assert sign_in(gated_client, "admin-demo").status_code == 303
+    sign_in(gated_client, "priyanka-mohekar", "wrong-password")
+    assert sign_in(gated_client, "priyanka-mohekar").status_code == 303
     ledger = gated_client.get("/v1/audit").json()
     assert ledger["chain_verified"] is True
     recorded = [event["event_type"] for event in ledger["events"]]
@@ -266,7 +266,7 @@ def test_login_failure_and_logout_are_recorded_in_the_audit_chain(gated_client):
 
 
 def test_logout_revokes_the_session_server_side(gated_client):
-    assert sign_in(gated_client, "admin-demo").status_code == 303
+    assert sign_in(gated_client, "priyanka-mohekar").status_code == 303
     cookie = gated_client.cookies.get(SESSION_COOKIE_NAME)
     assert gated_client.get("/v1/audit").status_code == 200
 
@@ -289,7 +289,7 @@ def test_logout_revokes_the_session_server_side(gated_client):
 
 
 def test_tampered_and_expired_cookies_are_rejected(gated_client):
-    assert sign_in(gated_client, "admin-demo").status_code == 303
+    assert sign_in(gated_client, "priyanka-mohekar").status_code == 303
     good = gated_client.cookies.get(SESSION_COOKIE_NAME)
     claims = jwt.decode(
         good,
@@ -316,7 +316,7 @@ def test_tampered_and_expired_cookies_are_rejected(gated_client):
 
 
 def test_token_endpoint_uses_shared_password_and_returns_distinct_roles(gated_client):
-    expected_roles = {"admin-demo": "admin", "lead-web": "lead", "engineer-demo": "member"}
+    expected_roles = {"priyanka-mohekar": "admin", "chirayu-gupta": "owner", "kriti-developer": "lead"}
     for username, role in expected_roles.items():
         response = issue_token(gated_client, username)
         assert response.status_code == 200
@@ -339,16 +339,16 @@ def test_token_endpoint_uses_shared_password_and_returns_distinct_roles(gated_cl
 
 
 def test_bearer_auth_me_role_authorization_and_invalid_precedence(gated_client):
-    admin_token = issue_token(gated_client, "admin-demo").json()["access_token"]
+    admin_token = issue_token(gated_client, "priyanka-mohekar").json()["access_token"]
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     assert gated_client.get("/v1/auth/me", headers=admin_headers).json()["user"] == {
-        "id": "admin-demo",
-        "display_name": "Casey Admin",
+        "id": "priyanka-mohekar",
+        "display_name": "Priyanka Mohekar",
         "role": "admin",
     }
     assert gated_client.get("/v1/audit", headers=admin_headers).status_code == 200
 
-    member_token = issue_token(gated_client, "engineer-demo").json()["access_token"]
+    member_token = issue_token(gated_client, "kriti-developer").json()["access_token"]
     assert (
         gated_client.get(
             "/v1/audit", headers={"Authorization": f"Bearer {member_token}"}
@@ -357,14 +357,14 @@ def test_bearer_auth_me_role_authorization_and_invalid_precedence(gated_client):
     )
 
     # An explicitly supplied invalid bearer token cannot fall back to a valid cookie.
-    assert sign_in(gated_client, "admin-demo").status_code == 303
+    assert sign_in(gated_client, "priyanka-mohekar").status_code == 303
     invalid = gated_client.get("/v1/audit", headers={"Authorization": "Bearer invalid.token.value"})
     assert invalid.status_code == 401
     assert invalid.headers["www-authenticate"] == "Bearer"
 
 
 def test_bearer_logout_revokes_token_immediately(gated_client):
-    token = issue_token(gated_client, "admin-demo").json()["access_token"]
+    token = issue_token(gated_client, "priyanka-mohekar").json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
     assert gated_client.get("/v1/audit", headers=headers).status_code == 200
     logout = gated_client.post("/v1/auth/logout", headers=headers)
@@ -375,18 +375,18 @@ def test_bearer_logout_revokes_token_immediately(gated_client):
 
 
 def test_token_endpoint_rejects_bad_credentials(gated_client):
-    response = issue_token(gated_client, "admin-demo", "wrong")
+    response = issue_token(gated_client, "priyanka-mohekar", "wrong")
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
     assert response.json() == {"error": "invalid credentials", "type": "Unauthorized"}
 
 
 def test_existing_token_loads_current_role_from_database(gated_client):
-    token = issue_token(gated_client, "admin-demo").json()["access_token"]
+    token = issue_token(gated_client, "priyanka-mohekar").json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
     assert gated_client.get("/v1/audit", headers=headers).status_code == 200
 
-    gated_client.app.state.db.execute("UPDATE users SET role='member' WHERE id='admin-demo'")
+    gated_client.app.state.db.execute("UPDATE users SET role='member' WHERE id='priyanka-mohekar'")
     response = gated_client.get("/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert response.json()["user"]["role"] == "member"
@@ -395,6 +395,6 @@ def test_existing_token_loads_current_role_from_database(gated_client):
 
 def test_session_cookie_is_secure_outside_debug(tmp_path):
     client = build_client(tmp_path, auth_enabled=True, debug=False)
-    response = sign_in(client, "admin-demo")
+    response = sign_in(client, "priyanka-mohekar")
     assert response.status_code == 303
     assert "Secure" in response.headers["set-cookie"]

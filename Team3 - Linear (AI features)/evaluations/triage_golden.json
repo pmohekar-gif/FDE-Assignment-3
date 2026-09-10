@@ -3,18 +3,18 @@
     "issue": "PAY-4471",
     "team": "Payments",
     "priority": "high",
-    "labels": ["bug", "customer-impact"]
+    "labels": ["bug", "customer-impact", "fde-demo", "kriti"]
   },
   {
     "issue": "SEC-4502",
     "team": "Platform",
     "priority": "urgent",
-    "labels": ["security", "urgent"]
+    "labels": ["deny", "fde-demo", "prompt-injection", "security", "urgent"]
   },
   {
     "issue": "WEB-4519",
     "team": "Web",
     "priority": "low",
-    "labels": ["copy"]
+    "labels": ["chirayu", "coding-session", "copy", "fde-demo", "safe-scope"]
   }
 ]

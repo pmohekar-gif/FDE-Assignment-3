@@ -747,7 +747,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         # Header-selected demo identity is only available to API requests after this HTML
         # page loads. The unauthenticated demo shell therefore renders as its documented
         # default actor; AUTH_ENABLED still reaches this route only with a verified session.
-        actor = acting_id(request, request.headers.get("x-actor-id")) or "admin-demo"
+        actor = acting_id(request, request.headers.get("x-actor-id")) or "priyanka-mohekar"
         issue = service._comment_issue(workspace_id, issue_ref, actor)
         return templates.TemplateResponse(request, "issue.html", {"issue": issue, **page_context(workspace_id, request)})
 
@@ -934,7 +934,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
     @app.get("/audit", response_class=HTMLResponse)
     async def audit_page(
         request: Request,
-        actor_id: str = "admin-demo",
+        actor_id: str = "priyanka-mohekar",
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = None,
         agent_id: str | None = None,

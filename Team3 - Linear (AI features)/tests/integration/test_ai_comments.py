@@ -3,7 +3,7 @@ from __future__ import annotations
 # ruff: noqa: E501
 
 def _headers() -> dict[str, str]:
-    return {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "engineer-demo"}
+    return {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "kriti-developer"}
 
 
 def _create(client, body: str, key: str = "comment-key-001"):
@@ -19,7 +19,7 @@ def test_normal_comment_is_not_an_ai_run(client):
     assert response.status_code == 201
     assert response.json()["mention"] is None
     assert client.app.state.db.one("SELECT COUNT(*) AS n FROM comment_mentions")["n"] == 0
-    listed = client.get("/v1/issues/WEB-4519/comments", headers={"X-Actor-Id": "engineer-demo"})
+    listed = client.get("/v1/issues/WEB-4519/comments", headers={"X-Actor-Id": "kriti-developer"})
     assert listed.status_code == 200
     assert listed.headers["cache-control"] == "no-store"
     assert [comment["body_normalised"] for comment in listed.json()["comments"]] == [
@@ -51,7 +51,7 @@ def test_comment_ownership_and_request_delete_cascades_agent_reply(client):
     comment_id = created["comment"]["id"]
     denied = client.delete(
         f"/v1/comments/{comment_id}",
-        headers={"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"},
+        headers={"X-CSRF-Token": "test-csrf", "X-Actor-Id": "priyanka-mohekar"},
     )
     assert denied.status_code == 404
     removed = client.delete(f"/v1/comments/{comment_id}", headers=_headers())

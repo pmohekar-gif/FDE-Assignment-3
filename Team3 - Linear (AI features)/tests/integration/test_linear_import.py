@@ -48,7 +48,7 @@ def openrouter_client(tmp_path) -> TestClient:
 
 
 def test_import_fresh_issue(stub_client):
-    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"}
+    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "priyanka-mohekar"}
     response = stub_client.post(
         "/v1/adapters/linear/import-issue",
         headers=headers,
@@ -69,7 +69,7 @@ def test_import_fresh_issue(stub_client):
 
 
 def test_reimport_unchanged(stub_client):
-    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"}
+    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "priyanka-mohekar"}
     
     # First import
     res1 = stub_client.post(
@@ -93,7 +93,7 @@ def test_reimport_changed(stub_client):
 
     from warrant.adapters.linear_fixture import STUB_LINEAR_ISSUE
 
-    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"}
+    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "priyanka-mohekar"}
     
     # First import
     res1 = stub_client.post(
@@ -123,7 +123,7 @@ def test_reimport_changed(stub_client):
 
 def test_collision(stub_client):
     # PAY-4471 is a pre-seeded synthetic issue
-    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"}
+    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "priyanka-mohekar"}
     response = stub_client.post(
         "/v1/adapters/linear/import-issue",
         headers=headers,
@@ -138,7 +138,7 @@ def test_collision_same_external_id(stub_client):
 
     from warrant.adapters.linear import LinearAdapter
 
-    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"}
+    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "priyanka-mohekar"}
     
     # 1. Import ENG-101
     res1 = stub_client.post(
@@ -164,7 +164,7 @@ def test_collision_same_external_id(stub_client):
 
 
 def test_status_endpoint(stub_client):
-    headers = {"X-Actor-Id": "admin-demo"}
+    headers = {"X-Actor-Id": "priyanka-mohekar"}
     response = stub_client.get("/v1/adapters/linear/status", headers=headers)
     assert response.status_code == 200
     data = response.json()
@@ -175,7 +175,7 @@ def test_status_endpoint(stub_client):
     # Import one issue
     stub_client.post(
         "/v1/adapters/linear/import-issue",
-        headers={"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"},
+        headers={"X-CSRF-Token": "test-csrf", "X-Actor-Id": "priyanka-mohekar"},
         json={"ref": "ENG-999"},
     )
     
@@ -187,7 +187,7 @@ def test_status_endpoint(stub_client):
 
 
 def test_updates_endpoint_stub(stub_client):
-    headers = {"X-Actor-Id": "admin-demo"}
+    headers = {"X-Actor-Id": "priyanka-mohekar"}
     response = stub_client.get("/v1/adapters/linear/updates", headers=headers)
     assert response.status_code == 200
     data = response.json()
@@ -201,7 +201,7 @@ def test_updates_endpoint_stub(stub_client):
 
     import_response = stub_client.post(
         "/v1/adapters/linear/import-issue",
-        headers={"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"},
+        headers={"X-CSRF-Token": "test-csrf", "X-Actor-Id": "priyanka-mohekar"},
         json={"ref": "ENG-101"},
     )
     assert import_response.status_code == 201
@@ -229,7 +229,7 @@ def test_collision_different_external_id(stub_client):
 
     from warrant.adapters.linear import LinearAdapter
 
-    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"}
+    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "priyanka-mohekar"}
     
     # 1. Import ENG-103
     res1 = stub_client.post(
@@ -255,7 +255,7 @@ def test_collision_different_external_id(stub_client):
 
 
 def test_non_admin_rejected(stub_client):
-    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "engineer-demo"}
+    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "kriti-developer"}
     response = stub_client.post(
         "/v1/adapters/linear/import-issue",
         headers=headers,
@@ -265,7 +265,7 @@ def test_non_admin_rejected(stub_client):
 
 
 def test_missing_csrf(stub_client):
-    headers = {"X-Actor-Id": "admin-demo"}
+    headers = {"X-Actor-Id": "priyanka-mohekar"}
     response = stub_client.post(
         "/v1/adapters/linear/import-issue",
         headers=headers,
@@ -275,7 +275,7 @@ def test_missing_csrf(stub_client):
 
 
 def test_openrouter_guard(openrouter_client):
-    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "admin-demo"}
+    headers = {"X-CSRF-Token": "test-csrf", "X-Actor-Id": "priyanka-mohekar"}
     
     # 1. Import issue
     res1 = openrouter_client.post(
@@ -289,7 +289,7 @@ def test_openrouter_guard(openrouter_client):
         headers=headers,
         json={
             "issue_ref": "ENG-777",
-            "requester_id": "engineer-demo",
+            "requester_id": "kriti-developer",
             "target_agent_id": "codex-cloud",
             "idempotency_key": "test-guard-key",
         }
@@ -316,15 +316,15 @@ def test_config_off(tmp_path):
     reset_and_seed(settings)
     client = TestClient(create_app(settings))
     
-    status = client.get("/v1/adapters/linear/status", headers={"X-Actor-Id": "admin-demo"})
+    status = client.get("/v1/adapters/linear/status", headers={"X-Actor-Id": "priyanka-mohekar"})
     assert status.status_code == 200
     assert status.json()["adapter_mode"] == "off"
 
-    updates = client.get("/v1/adapters/linear/updates", headers={"X-Actor-Id": "admin-demo"})
+    updates = client.get("/v1/adapters/linear/updates", headers={"X-Actor-Id": "priyanka-mohekar"})
     assert updates.status_code == 503
     assert "not configured" in updates.json()["error"]
 
-    headers = {"X-CSRF-Token": "test", "X-Actor-Id": "admin-demo"}
+    headers = {"X-CSRF-Token": "test", "X-Actor-Id": "priyanka-mohekar"}
     response = client.post(
         "/v1/adapters/linear/import-issue",
         headers=headers,

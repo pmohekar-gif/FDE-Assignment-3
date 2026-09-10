@@ -4,7 +4,7 @@ def test_complete_customer_journey(client, headers):
         headers=headers,
         json={
             "issue_ref": "PAY-4471",
-            "requester_id": "engineer-demo",
+            "requester_id": "kriti-developer",
             "target_agent_id": "codex-cloud",
             "idempotency_key": "e2e-payment",
         },
@@ -16,7 +16,7 @@ def test_complete_customer_journey(client, headers):
         headers=headers,
         json={
             "action": "narrow",
-            "approver_id": "admin-demo",
+            "approver_id": "priyanka-mohekar",
             "narrowed_surfaces": scope,
             "rationale": "Synthetic E2E approval",
         },
@@ -39,7 +39,7 @@ def test_complete_customer_journey(client, headers):
     )
     assert verified.status_code == 200
     assert verified.json()["verdict"] in {"PASS", "PASS_WITH_EXCEPTIONS"}
-    audit_headers = {"X-Actor-ID": "admin-demo"}
+    audit_headers = {"X-Actor-ID": "priyanka-mohekar"}
     audit = client.get("/v1/audit", headers=audit_headers).json()
     assert audit["chain_verified"] is True
     assert {event["event_type"] for event in audit["events"]} >= {

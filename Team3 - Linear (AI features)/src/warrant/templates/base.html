@@ -54,7 +54,7 @@
       <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l5 2.4v4c0 3-2.2 4.8-5 5.6C5.2 13.2 3 11.4 3 8.4v-4L8 2z" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
       Policy <span class="ct">{{ (nav.policy_version if nav else '—') }}</span>
     </a>
-    <a class="nav-item" id="audit-nav" href="{{ '/audit' if auth_enabled else '/audit?actor_id=admin-demo' }}" {% if path.startswith('/audit') %}aria-current="page"{% endif %}>
+    <a class="nav-item" id="audit-nav" href="{{ '/audit' if auth_enabled else '/audit?actor_id=priyanka-mohekar' }}" {% if path.startswith('/audit') %}aria-current="page"{% endif %}>
       <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h3l1.5-4 2 8L11 8h2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Audit chain <span class="ct {{ 'ok' if nav and nav.audit_ok else 'bad' }}">{{ 'ok' if nav and nav.audit_ok else 'broken' }}</span>
     </a>
@@ -92,7 +92,7 @@
       {% else %}
       <label class="actor-select"><span>Acting as</span>
         <select id="actor-switcher" aria-label="Session actor">
-          {% for user in users|default([]) %}<option value="{{ user.id }}" {% if user.id == 'admin-demo' %}selected{% endif %}>{{ user.display_name }} · {{ user.role }} · {{ user.id }}</option>{% endfor %}
+          {% for user in users|default([]) %}<option value="{{ user.id }}" {% if user.id == 'priyanka-mohekar' %}selected{% endif %}>{{ user.display_name }} · {{ user.role }} · {{ user.id }}</option>{% endfor %}
         </select>
       </label>
       {% endif %}
@@ -137,7 +137,7 @@
     workspace: {{ workspace_id|default('ws-demo')|tojson }}, authEnabled: {{ auth_enabled|default(false)|tojson }},
     /* With AUTH_ENABLED the acting identity comes from the server-side session and
        cannot be changed client-side; the X-Actor-Id header below is ignored by the server. */
-    actor: {{ (current_user.id if current_user else None)|tojson }} || localStorage.getItem('warrant.actor') || 'admin-demo',
+    actor: {{ (current_user.id if current_user else None)|tojson }} || localStorage.getItem('warrant.actor') || 'priyanka-mohekar',
     commands: [], shortcuts: {}
   };
   class ApiError extends Error { constructor(status, body) { super(body.error || body.detail || `Request failed (${status})`); this.status=status; this.body=body; } }
@@ -160,7 +160,7 @@
 
   const actorSelect=document.getElementById('actor-switcher'),auditNav=document.getElementById('audit-nav');
   function syncActor(){if(auditNav&&!window.WARRANT.authEnabled)auditNav.href=`/audit?actor_id=${encodeURIComponent(window.WARRANT.actor)}`;}
-  if(actorSelect){actorSelect.value=[...actorSelect.options].some(option=>option.value===window.WARRANT.actor)?window.WARRANT.actor:'admin-demo';window.WARRANT.actor=actorSelect.value;syncActor();actorSelect.addEventListener('change',()=>{window.WARRANT.actor=actorSelect.value;localStorage.setItem('warrant.actor',actorSelect.value);syncActor();window.dispatchEvent(new Event('warrant:actor'));});}
+  if(actorSelect){actorSelect.value=[...actorSelect.options].some(option=>option.value===window.WARRANT.actor)?window.WARRANT.actor:'priyanka-mohekar';window.WARRANT.actor=actorSelect.value;syncActor();actorSelect.addEventListener('change',()=>{window.WARRANT.actor=actorSelect.value;localStorage.setItem('warrant.actor',actorSelect.value);syncActor();window.dispatchEvent(new Event('warrant:actor'));});}
 
   /* The mode pill and the degraded banner are integrity surfaces, not decoration: they always
      reflect what /healthz reports, even when the page was rendered before a failure appeared. */
