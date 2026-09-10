@@ -64,9 +64,13 @@
       <h3>Allowed warrant scope</h3>
       <div class="tools">{% for path in s.result.governance.allowed_scope %}<span class="tool">{{ path }}</span>{% endfor %}</div>
       {% endif %}
-      <h3>Changed files</h3>
-      <div class="tools">{% for path in s.result.governance.changed_files %}<span class="tool neutral">{{ path }}</span>{% else %}<span class="tool no">none reported by GitHub</span>{% endfor %}</div>
-      <h3>Outside scope</h3>
+      <details class="disclosure" style="margin-top: 1rem;"><summary><strong>Changed files</strong></summary>
+      <div class="inner">
+        <div class="tools">{% for path in s.result.governance.changed_files %}<span class="tool neutral">{{ path }}</span>{% else %}<span class="tool no">none reported by GitHub</span>{% endfor %}</div>
+      </div>
+      </details>
+      <details class="disclosure" style="margin-top: 1rem;"><summary><strong>Outside scope</strong></summary>
+      <div class="inner">
       {% if s.result.governance.scope_evaluated %}
         {% if s.result.governance.outside_scope_files %}
         <div class="tools">{% for path in s.result.governance.outside_scope_files %}<span class="tool bad">{{ path }}</span>{% endfor %}</div>
@@ -78,6 +82,8 @@
       {% else %}
       <p class="note tight">Not evaluated: the Warrant scope is missing or invalid.</p>
       {% endif %}
+      </div>
+      </details>
       {% if s.result.governance.protected_surface_matches %}
       <h3>Protected/security-sensitive surface matches</h3>
       <ul class="missing">{% for match in s.result.governance.protected_surface_matches %}<li><code>{{ match.path }}</code> matched <code>{{ match.glob }}</code> — {{ match.label }}</li>{% endfor %}</ul>
@@ -248,25 +254,6 @@
     </div>
 
     <div class="rail-sec">
-      <p class="rail-h">Draft pull request</p>
-      {% if s.pull_request %}
-      <dl class="kv">
-        <dt>Provider</dt><dd>{{ s.pull_request.provider }}</dd>
-        <dt>State</dt><dd>{{ s.pull_request.state }}</dd>
-        <dt>Number</dt><dd>{{ s.pull_request.number or '—' }}</dd>
-      </dl>
-      <div class="rail-actions"><a class="btn pri" href="{{ s.pull_request.url }}">Open draft PR <span aria-hidden="true">&rarr;</span></a></div>
-      {% elif not pr_publishing_enabled %}
-      <p class="note tight"><strong>Publishing disabled.</strong> <code>PR_PUBLISHING_ENABLED=false</code> in this workspace, so no pull request can be created. The diff above is fully reviewable without one.</p>
-      {% elif s.state == 'COMPLETED' %}
-      <p class="note tight">Verification passed and a diff exists, so a draft PR may be created by an admin.</p>
-      <div class="rail-actions"><button class="btn" type="button" id="publish-pr">Create draft PR</button></div>
-      {% else %}
-      <p class="note tight">A draft PR needs a COMPLETED session with a reviewable diff. Current state is {{ s.state }}.</p>
-      {% endif %}
-    </div>
-
-    <div class="rail-sec">
       <p class="rail-h">Session control</p>
       <div class="rail-actions">
         {% if s.state not in terminals %}
@@ -318,7 +305,7 @@ function el(tag,text,className){const node=document.createElement(tag);if(text!=
   });
 })();
 
-/* ---------- cancel / publish ---------- */
+/* ---------- cancel ---------- */
 async function cancelSession(){
   const errorNode=document.getElementById('session-error');errorNode.hidden=true;
   if(!confirm('Cancel this coding session?'))return;
@@ -327,11 +314,6 @@ async function cancelSession(){
 }
 document.getElementById('cancel-session')?.addEventListener('click',cancelSession);
 document.getElementById('cancel-session-rail')?.addEventListener('click',cancelSession);
-document.getElementById('publish-pr')?.addEventListener('click',async event=>{
-  const errorNode=document.getElementById('session-error');errorNode.hidden=true;event.currentTarget.disabled=true;
-  try{await api(`/v1/coding-sessions/${sessionId}/pull-request`,{method:'POST',body:JSON.stringify({actor_id:window.WARRANT.actor})});location.reload();}
-  catch(error){renderError(errorNode,error,'draft PR creation');event.currentTarget.disabled=false;}
-});
 
 /* ---------- Ask Agent ---------- */
 let conversationId=null;
@@ -371,7 +353,6 @@ document.getElementById('code-form')?.addEventListener('submit',async event=>{
 
 registerShortcut('a',()=>document.getElementById('agent-query')?.focus());
 registerCommand({group:'Execution',label:'Cancel this running session',hint:['⌫'],run:()=>{const button=document.getElementById('cancel-session-rail');if(button)button.click();else toast('This session is already terminal');}});
-registerCommand({group:'Execution',label:'Create a draft pull request',run:()=>{const button=document.getElementById('publish-pr');if(button)button.click();else toast('Draft PR is unavailable in this state');}});
 registerCommand({group:'Agent',label:'Ask about this coding session…',note:'advisory',run:()=>document.getElementById('agent-query')?.focus()});
 registerCommand({group:'Go to',label:'Back to the delegation',run:()=>{location.href='/delegations/'+delegationId;}});
 </script>{% endblock %}
