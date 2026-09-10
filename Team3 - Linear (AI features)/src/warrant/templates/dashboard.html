@@ -36,6 +36,44 @@
     <div class="empty"><strong>No delegations yet.</strong><span>Run a governed delegation from the issue inbox below and the deterministic verdict lands here.</span></div>
     {% endfor %}
 
+    {% if linear_issues %}
+    <div class="group" id="linear-inbox">
+      <span class="group-name">Linear inbox</span><span class="group-ct">{{ linear_issues|length }}</span>
+      <span class="group-note">imported tickets</span>
+    </div>
+
+    {% for issue in linear_issues %}
+    <div class="issue-row" data-issue-row="{{ issue.external_key }}">
+      <div class="row issue">
+        <svg class="ring idle" viewBox="0 0 16 16" aria-hidden="true"><circle class="track" cx="8" cy="8" r="6"/></svg>
+        <span class="row-key">{{ issue.external_key }}</span>
+        <span class="row-title" title="{{ issue.demo_note }}">{{ issue.title }}</span>
+        {% if issue.is_demo_path %}<span class="row-flag">DEMO PATH</span>{% endif %}
+        {% if issue.matched_by %}<span class="code-chip">{{ issue.matched_by|join('+') }} {{ issue.semantic_score }}</span>{% endif %}
+        <span class="row-team">{{ issue.team }}</span>
+        <span class="row-act">
+          <a class="mini" href="/issues/{{ issue.external_key }}">Discuss</a>
+          <button class="mini triage-trigger" type="button" data-issue="{{ issue.external_key }}" aria-expanded="false">AI triage</button>
+          <button class="mini related-trigger" type="button" data-issue="{{ issue.external_key }}" aria-expanded="false">Related</button>
+          <button class="mini pri delegate" type="button" data-issue="{{ issue.external_key }}">Delegate</button>
+        </span>
+      </div>
+      <div class="row-panel triage-panel" hidden aria-live="polite"></div>
+      <div class="row-panel related-panel" hidden aria-live="polite"></div>
+      <div class="row-panel pipeline-panel" hidden aria-live="polite">
+        <div class="stepper" role="list" aria-label="Delegation pipeline">
+          <span class="step now" role="listitem"><span class="dot" aria-hidden="true"></span>INTAKE</span>
+          <span class="step now" role="listitem"><span class="dot" aria-hidden="true"></span>RETRIEVAL</span>
+          <span class="step now" role="listitem"><span class="dot" aria-hidden="true"></span>EXTRACTION</span>
+          <span class="step now" role="listitem"><span class="dot" aria-hidden="true"></span>POLICY</span>
+        </div>
+        <p class="note tight">All four stages run inside one server-side transaction, so this shows what is in flight rather than pretending to watch it advance. The delegation page then reports each stage's real recorded state. The verdict is computed server-side; nothing here can pre-empt it.</p>
+      </div>
+      <div class="row-panel error-panel" hidden><div class="inline-error"></div></div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
     <div class="group" id="issue-inbox">
       <span class="group-name">Issue inbox</span><span class="group-ct">{{ issue_count }}</span>
       <span class="group-note">page {{ page }} of {{ page_count }}{% if team %} · team {{ team }}{% endif %}</span>

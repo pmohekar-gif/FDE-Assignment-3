@@ -661,6 +661,28 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
                 "LIMIT ? OFFSET ?",
                 [*params, page_size, (page - 1) * page_size],
             )
+
+        linear_conditions = ["i.workspace_id=?"]
+        linear_params: list[Any] = [workspace_id]
+        if team:
+            linear_conditions.append("i.team=?")
+            linear_params.append(team)
+        if cleaned_query:
+            linear_conditions.append("(i.title LIKE ? OR i.external_key LIKE ?)")
+            like_val = f"%{cleaned_query}%"
+            linear_params.extend([like_val, like_val])
+            
+        linear_where = " AND ".join(linear_conditions)
+        linear_issues = db.all(
+            "SELECT i.external_key, i.title, i.team, i.path_hints_json, i.demo_note, i.is_demo_path "
+            "FROM issues i "
+            "JOIN linear_issue_links l ON i.id = l.issue_id "
+            f"WHERE {linear_where} "
+            "ORDER BY i.updated_at DESC "
+            "LIMIT 50",
+            linear_params,
+        )
+
         queue = _queue_rows(db, workspace_id)
         needs_decision = [item for item in queue if item["status"] == "awaiting_approval"]
         return templates.TemplateResponse(
@@ -668,6 +690,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             "dashboard.html",
             {
                 "issues": issues,
+                "linear_issues": linear_issues,
                 "queue": queue,
                 "queue_groups": _queue_groups(queue),
                 "needs_decision": needs_decision,
