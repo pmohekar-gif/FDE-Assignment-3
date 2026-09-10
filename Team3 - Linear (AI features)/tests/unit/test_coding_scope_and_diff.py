@@ -92,11 +92,12 @@ def test_git_metadata_is_never_scanned_or_redacted_as_a_secret():
         " RETRY_WINDOW_SECONDS = 5.0\n"
         "+MAX_ATTEMPTS = 3\n"
     )
-    redacted, count, kinds = redact_diff_content(diff)
-    assert count == 0
-    assert kinds == ()
-    assert redacted == diff
-    assert "index 8603970..1234567 100644" in redacted
+    result = redact_diff_content(diff)
+    assert result.introduced == 0
+    assert result.introduced_kinds == ()
+    assert result.carried == 0
+    assert result.text == diff
+    assert "index 8603970..1234567 100644" in result.text
 
 
 def test_a_secret_added_by_the_agent_is_still_caught_and_counted():
@@ -109,13 +110,151 @@ def test_a_secret_added_by_the_agent_is_still_caught_and_counted():
         " export const ok = true;\n"
         '+export const apiKey = "sk_live_0123456789abcdef";\n'
     )
-    redacted, count, kinds = redact_diff_content(diff)
-    assert count >= 1
-    assert "sk_live_0123456789abcdef" not in redacted
-    assert "REDACTED" in redacted
+    result = redact_diff_content(diff)
+    assert result.introduced >= 1
+    assert "sk_live_0123456789abcdef" not in result.text
+    assert "REDACTED" in result.text
     # secret_assignment (a credential-named variable assigned a value) matches first,
     # per SECRET_PATTERNS' own ordering, before api_key gets a chance at the same text.
-    assert "secret_assignment" in kinds
+    assert "secret_assignment" in result.introduced_kinds
+
+
+def test_a_secret_already_in_the_file_is_redacted_but_not_blamed_on_the_agent():
+    """The real failure: every session touching the demo checkout's deploy config died.
+
+    `infra/deploy/auth.yaml` carries `signing_key_secret: auth-signing-key` -- a
+    Kubernetes reference to a secret's *name*, not a credential. A diff that merely
+    showed that line as context matched `secret_assignment` and failed the session, for
+    material the agent never wrote and could not remove.
+    """
+    diff = (
+        "diff --git a/infra/deploy/auth.yaml b/infra/deploy/auth.yaml\n"
+        "index 1111111..2222222 100644\n"
+        "--- a/infra/deploy/auth.yaml\n"
+        "+++ b/infra/deploy/auth.yaml\n"
+        "@@ -1,4 +1,4 @@\n"
+        " service: auth\n"
+        "-replicas: 3\n"
+        "+replicas: 4\n"
+        " signing_key_secret: auth-signing-key\n"
+    )
+    result = redact_diff_content(diff)
+    # Nothing the agent added, so the session must not fail...
+    assert result.introduced == 0
+    assert result.introduced_kinds == ()
+    # ...but the pre-existing match is still reported, and still redacted in storage.
+    assert result.carried == 1
+    assert result.carried_kinds == ("secret_assignment",)
+    assert "auth-signing-key" not in result.text
+    assert "[REDACTED:SECRET_ASSIGNMENT]" in result.text
+    # The agent's actual change survives intact.
+    assert "+replicas: 4" in result.text
+
+
+def test_a_whole_file_rewrite_does_not_look_like_a_newly_introduced_secret():
+    """A rewrite re-adds unchanged content as `+` lines; that is not the agent leaking."""
+    diff = (
+        "diff --git a/infra/deploy/auth.yaml b/infra/deploy/auth.yaml\n"
+        "index 1111111..2222222 100644\n"
+        "--- a/infra/deploy/auth.yaml\n"
+        "+++ b/infra/deploy/auth.yaml\n"
+        "@@ -1,2 +1,2 @@\n"
+        "-signing_key_secret: auth-signing-key\n"
+        "-replicas: 3\n"
+        "+signing_key_secret: auth-signing-key\n"
+        "+replicas: 4\n"
+    )
+    result = redact_diff_content(diff)
+    assert result.introduced == 0, "identical text on a removed line means it pre-existed"
+    assert result.carried == 2
+    assert "auth-signing-key" not in result.text
+
+
+def test_a_genuinely_new_credential_next_to_a_pre_existing_one_still_fails():
+    """The narrowing must not become a loophole: a *different* secret is still caught."""
+    diff = (
+        "diff --git a/infra/deploy/auth.yaml b/infra/deploy/auth.yaml\n"
+        "index 1111111..2222222 100644\n"
+        "--- a/infra/deploy/auth.yaml\n"
+        "+++ b/infra/deploy/auth.yaml\n"
+        "@@ -1,2 +1,3 @@\n"
+        " signing_key_secret: auth-signing-key\n"
+        " replicas: 3\n"
+        '+client_secret: "hunter2-actually-a-real-value"\n'
+    )
+    result = redact_diff_content(diff)
+    assert result.introduced == 1
+    assert result.introduced_kinds == ("secret_assignment",)
+    assert "hunter2-actually-a-real-value" not in result.text
+
+
+def test_a_synthetic_token_in_a_new_test_does_not_fail_the_session():
+    """The real repeat failure: CHIR-1104's real `codex` run wrote a brand-new
+    `tests/integration/test_github_evidence.py` constructing a `FakeGitHubRequester`
+    with a synthetic PAT-shaped token to exercise the auth-header code path -- exactly
+    what this project's own test suite does (see the fixture above). A new file has no
+    removed/context line to compare against, so `carried` cannot exempt it; the path
+    must.
+    """
+    diff = (
+        "diff --git a/tests/integration/test_github_evidence.py "
+        "b/tests/integration/test_github_evidence.py\n"
+        "new file mode 100644\n"
+        "index 0000000..1111111\n"
+        "--- /dev/null\n"
+        "+++ b/tests/integration/test_github_evidence.py\n"
+        "@@ -0,0 +3 @@\n"
+        "+class TestGithubEvidence(unittest.TestCase):\n"
+        "+    def test_fetch(self) -> None:\n"
+        '+        adapter = GitHubEvidenceAdapter("acme", "roadmap", '
+        'api_key="ghp_faketoken1234567890abcd", requester=FakeGitHubRequester())\n'
+    )
+    result = redact_diff_content(diff)
+    assert result.introduced == 0, "a synthetic token in a new test must not fail the session"
+    assert result.introduced_kinds == ()
+    assert result.test_fixture >= 1
+    assert set(result.test_fixture_kinds) & {"secret_assignment", "api_key"}
+    assert "ghp_faketoken1234567890abcd" not in result.text
+    assert "[REDACTED:" in result.text
+
+
+def test_the_same_token_in_a_non_test_path_still_fails():
+    """The path exemption must be narrow: the identical value outside a test path is
+    still treated as a real leak."""
+    diff = (
+        "diff --git a/src/warrant/adapters/github.py b/src/warrant/adapters/github.py\n"
+        "new file mode 100644\n"
+        "index 0000000..1111111\n"
+        "--- /dev/null\n"
+        "+++ b/src/warrant/adapters/github.py\n"
+        "@@ -0,0 +1 @@\n"
+        '+DEFAULT_TOKEN = "ghp_faketoken1234567890abcd"\n'
+    )
+    result = redact_diff_content(diff)
+    assert result.introduced == 1
+    assert result.test_fixture == 0
+
+
+def test_test_path_detection_covers_this_projects_own_convention_and_common_others():
+    for path in (
+        "tests/unit/test_widget.py",
+        "tests/integration/test_flow.py",
+        "web/reports/__tests__/EmptyState.test.tsx",
+        "web/reports/EmptyState.spec.ts",
+        "services/billing/retry_test.go",
+    ):
+        diff = (
+            f"diff --git a/{path} b/{path}\n"
+            "new file mode 100644\n"
+            "index 0000000..1111111\n"
+            "--- /dev/null\n"
+            f"+++ b/{path}\n"
+            "@@ -0,0 +1 @@\n"
+            '+const api_key = "abcd1234efgh5678";\n'
+        )
+        result = redact_diff_content(diff)
+        assert result.introduced == 0, f"{path} should be recognised as a test path"
+        assert result.test_fixture >= 1, path
 
 
 def test_redaction_kinds_distinguish_broad_from_narrow_patterns():

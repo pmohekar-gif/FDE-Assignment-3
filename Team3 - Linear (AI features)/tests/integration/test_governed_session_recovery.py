@@ -122,6 +122,64 @@ class SecretWritingRunner(CodingAgentRunner):
         return False
 
 
+class NeighbourOfASecretRunner(CodingAgentRunner):
+    """Changes one line in a file that already contains secret-shaped material.
+
+    The demo checkout's `infra/deploy/auth.yaml` carries
+    `signing_key_secret: auth-signing-key` -- a Kubernetes reference to a secret's
+    *name*. Every session whose diff merely showed a line like that as context used to
+    fail with `secret_assignment`, for material the agent never wrote.
+    """
+
+    name = "mock"
+    real = False
+
+    def is_available(self):
+        return True, "test runner"
+
+    def run(self, session_id, workspace, prompt):
+        target = workspace / "web" / "reports" / "EmptyState.tsx"
+        target.write_text(
+            "const auth_token = 'preexisting-value-from-the-base-revision';\n"
+            "export const emptyState = 'Create your first report';\n"
+        )
+        return RunnerResult(0, "changed the empty-state copy", 1)
+
+    def cancel(self, session_id):
+        return False
+
+
+class NewTestFileWithSyntheticTokenRunner(CodingAgentRunner):
+    """Reproduces the real CHIR-1104 failure: a genuine `codex` run wrote a brand-new
+    integration test for a GitHub-token-bearing adapter, and the synthetic token needed
+    to exercise the auth-header code path failed the session. The file is new, so there
+    is no removed/context line for `carried` to compare against -- only recognising the
+    test path exempts it.
+    """
+
+    name = "mock"
+    real = False
+
+    def is_available(self):
+        return True, "test runner"
+
+    def run(self, session_id, workspace, prompt):
+        target = workspace / "tests" / "integration" / "test_github_evidence.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "class FakeGitHubRequester:\n"
+            "    pass\n\n"
+            "class TestGithubEvidence:\n"
+            "    def test_fetch(self):\n"
+            '        adapter = GitHubEvidenceAdapter("acme", "roadmap", '
+            'api_key="ghp_faketoken1234567890abcd", requester=FakeGitHubRequester())\n'
+        )
+        return RunnerResult(0, "added an integration test", 1)
+
+    def cancel(self, session_id):
+        return False
+
+
 def git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
 
@@ -362,6 +420,88 @@ def test_a_write_the_repository_ignores_is_named_as_the_reason(client, headers, 
         event for event in session["events"] if event["event_type"] == "empty_diff_diagnosed"
     ]
     assert diagnosed and diagnosed[0]["payload"]["ignored_writes"]
+
+
+def test_a_synthetic_token_in_a_new_integration_test_does_not_fail_the_session(
+    client, headers, tmp_path
+):
+    """The real repeat failure, reproduced with the actual failing ticket: CHIR-1104's
+    scope covers `tests/integration/test_github_evidence.py`, and a real `codex` run
+    wrote exactly that file with a synthetic GitHub token to test the adapter's
+    auth-header handling. The file is brand new -- no removed/context line for
+    `carried` to compare against -- so this only passes if the test-path exemption
+    fires.
+    """
+    app, _ = target_client(
+        client,
+        tmp_path,
+        {
+            "src/warrant/adapters/github.py": "SURFACE = 'src/warrant/adapters/github.py'\n",
+            "src/warrant/pr_review.py": "SURFACE = 'src/warrant/pr_review.py'\n",
+        },
+        "synthetic-token",
+    )
+    app.app.state.coding.runners["mock"] = NewTestFileWithSyntheticTokenRunner()
+    delegation = delegate(app, headers, "CHIR-1104", "chirayu-gupta", "synthetic-token")
+    if delegation["status"] == "awaiting_approval":
+        decided = approve(app, headers, delegation)
+        assert decided.status_code == 200, decided.text
+    started = app.post(
+        "/v1/coding-sessions",
+        headers=headers,
+        json={"delegation_id": delegation["id"], "provider": "mock", "source": "api"},
+    )
+    session = wait_for_terminal(app, started.json()["id"])
+    assert session["state"] == "COMPLETED", session["error"]
+    assert "ghp_faketoken1234567890abcd" not in session["diff"]["unified_diff"]
+    assert "REDACTED" in session["diff"]["unified_diff"]
+    redacted = [
+        event for event in session["events"] if event["event_type"] == "diff_secrets_redacted"
+    ]
+    assert len(redacted) == 1
+    assert redacted[0]["payload"]["redactions"] == 0, "must not be blamed on the agent"
+    assert redacted[0]["payload"]["test_fixture"] >= 1
+
+
+def test_a_secret_already_in_the_file_does_not_fail_the_session(client, headers, tmp_path):
+    """The reported repeat failure: `secret_assignment` on a line the agent never wrote.
+
+    The base revision already contains a credential-shaped line. The agent changes a
+    different line in the same file, so that line appears in the diff as context. The
+    session must complete -- and must still record that redaction happened.
+    """
+    app, _ = target_client(
+        client,
+        tmp_path,
+        {
+            "web/reports/EmptyState.tsx": (
+                "const auth_token = 'preexisting-value-from-the-base-revision';\n"
+                "export const emptyState = 'No activity';\n"
+            )
+        },
+        "carried-secret",
+    )
+    app.app.state.coding.runners["mock"] = NeighbourOfASecretRunner()
+    delegation = delegate(app, headers, "WEB-4519", "chirayu-gupta", "carried-secret")
+    started = app.post(
+        "/v1/coding-sessions",
+        headers=headers,
+        json={"delegation_id": delegation["id"], "provider": "mock", "source": "api"},
+    )
+    session = wait_for_terminal(app, started.json()["id"])
+    assert session["state"] == "COMPLETED", session["error"]
+    assert session["diff"]["changed_files"], "the agent's real change must survive"
+    # The pre-existing value is still scrubbed from what gets stored...
+    assert "preexisting-value-from-the-base-revision" not in session["diff"]["unified_diff"]
+    assert "REDACTED" in session["diff"]["unified_diff"]
+    # ...and the redaction is on the timeline, attributed to the file rather than the agent.
+    redacted = [
+        event for event in session["events"] if event["event_type"] == "diff_secrets_redacted"
+    ]
+    assert len(redacted) == 1
+    assert redacted[0]["payload"]["redactions"] == 0, "nothing was introduced by the agent"
+    assert redacted[0]["payload"]["carried"] >= 1
+    assert redacted[0]["payload"]["carried_kinds"] == ["secret_assignment"]
 
 
 def test_secret_shaped_content_names_which_pattern_fired_and_why_it_matters(

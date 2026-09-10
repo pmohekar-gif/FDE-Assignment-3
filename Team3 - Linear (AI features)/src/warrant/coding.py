@@ -256,7 +256,48 @@ def prepare_isolated_agent_home(target: Path, source_home: Path) -> bool:
     return copied
 
 
-def redact_diff_content(unified: str) -> tuple[str, int, tuple[str, ...]]:
+# A path that looks like it holds tests, by this project's own convention
+# (`tests/unit/test_*.py`, `tests/integration/test_*.py`) and the common conventions of
+# other stacks (`*.test.ts`, `*.spec.tsx`, `*_test.go`, a `test`/`tests`/`__tests__`
+# directory segment). A test's job is routinely to exercise auth/token-bearing code
+# with a realistic, synthetic credential -- this project's own suite does exactly that
+# (see `test_coding_scope_and_diff.py`) -- so a match here is not evidence a governed
+# session leaked something.
+TEST_PATH = re.compile(
+    r"(^|/)(tests?|__tests__)/|(^|/)test_[^/]+\.\w+$|[^/]+\.(test|spec)\.\w+$|[^/]+_test\.\w+$"
+)
+
+
+@dataclass(frozen=True)
+class DiffRedaction:
+    """What a secret scan found in a diff, split by who actually wrote it.
+
+    `introduced` counts matches the agent added, outside a test path, that were *not*
+    already in the file: material a governed session is responsible for, and the only
+    kind that should fail one.
+
+    `carried` counts matches on context and removed lines, plus matches on added lines
+    whose exact text also appears on a removed or context line -- a whole-file rewrite
+    or a reformat re-adds pre-existing content verbatim, and that is not a leak the
+    agent created.
+
+    `test_fixture` counts matches added inside a path `TEST_PATH` recognises -- a
+    synthetic, realistic-looking credential is routine and expected there, not a leak.
+
+    `text` is redacted in every case: the stored artifact never keeps secret-shaped
+    text whatever its provenance.
+    """
+
+    text: str
+    introduced: int
+    introduced_kinds: tuple[str, ...]
+    carried: int
+    carried_kinds: tuple[str, ...]
+    test_fixture: int
+    test_fixture_kinds: tuple[str, ...]
+
+
+def redact_diff_content(unified: str) -> DiffRedaction:
     """Redact secret-like material in a unified diff's content lines only.
 
     Scanning the whole patch text also scanned Git's own metadata, and one of those
@@ -273,37 +314,86 @@ def redact_diff_content(unified: str) -> tuple[str, int, tuple[str, ...]]:
     untouched; a binary payload cannot be meaningfully matched by these text patterns,
     and key material is refused by path before it can reach a diff at all.
 
-    Returns the redacted text, the total redaction count, and the distinct pattern
-    *names* that matched (never the matched text) -- `email` and `card_pan` are broad
-    enough to match a perfectly ordinary code comment or test fixture, and naming which
-    kind fired is what lets a reviewer tell that apart from `aws_secret`/`private_key`/
-    `jwt` actually firing on real key material, without this function ever returning the
-    matched text itself.
+    Provenance is tracked separately from redaction, because they answer different
+    questions. Every hunk body match is redacted. But a match is only *introduced* --
+    the agent's responsibility, and grounds for failing the session -- when the agent
+    added it and the identical text is not also present on a removed or context line.
+    The demo checkout's `infra/deploy/auth.yaml` carries
+    `signing_key_secret: auth-signing-key`, a Kubernetes reference to a secret's *name*
+    rather than a credential; every session whose diff merely showed that line as
+    context used to fail on it. Comparing against the removed and context lines of the
+    same diff also means a whole-file rewrite, which re-adds unchanged content as `+`
+    lines, is not mistaken for the agent writing a new credential.
+
+    A brand-new file has nothing to compare against -- every line is an addition, so
+    provenance alone cannot exempt it. A new integration test for a GitHub-token-bearing
+    adapter legitimately needs a synthetic token to exercise the auth-header code path
+    (`tests/integration/test_github_evidence.py`, written by a real `codex` run against
+    `CHIR-1104`, constructs `GitHubEvidenceAdapter(..., <fake token>, ...)` inside a
+    `FakeGitHubRequester` double), and failed the session for it. `TEST_PATH` exempts
+    matches added under a recognised test path from failing the session, the same way
+    `carried` exempts pre-existing matches -- both are still redacted and still recorded,
+    neither blocks.
+
+    The distinct pattern *names* are returned, never the matched text: `email` and
+    `card_pan` are broad enough to match a perfectly ordinary comment or test fixture,
+    and naming which kind fired is what lets a reviewer tell that apart from
+    `private_key`/`jwt`/`api_key` firing on real key material.
     """
-    redactions = 0
-    kinds: list[str] = []
+    added_matches: list[tuple[str, str]] = []
+    preexisting_text: set[str] = set()
+    carried_matches: list[tuple[str, str]] = []
+    test_fixture_matches: list[tuple[str, str]] = []
     output: list[str] = []
     in_hunk = False
+    in_test_path = False
     for line in unified.splitlines(keepends=True):
         body = line.rstrip("\n")
+        if body.startswith("diff --git"):
+            in_hunk = False
+            # `diff --git a/<old path> b/<new path>` -- the new path is what a
+            # newly-added line ends up as, so that is what decides test-ness.
+            new_path = body.rsplit(" b/", 1)[-1] if " b/" in body else ""
+            in_test_path = bool(TEST_PATH.search(new_path))
+            output.append(line)
+            continue
         if body.startswith("@@"):
             in_hunk = True
             output.append(line)
             continue
-        if body.startswith("diff --git") or body.startswith("GIT binary patch"):
+        if body.startswith("GIT binary patch"):
             in_hunk = False
             output.append(line)
             continue
         if not in_hunk or body.startswith("--- ") or body.startswith("+++ "):
             output.append(line)
             continue
+        is_addition = body.startswith("+")
         for name, pattern in SECRET_PATTERNS:
-            line, count = pattern.subn(f"[REDACTED:{name.upper()}]", line)
-            redactions += count
-            if count and name not in kinds:
-                kinds.append(name)
+            # Recorded against the line as it stands before this pattern substitutes, so
+            # provenance is decided on exactly the text the redaction replaces.
+            found = [match.group(0) for match in pattern.finditer(line)]
+            for matched in found:
+                if not is_addition:
+                    carried_matches.append((name, matched))
+                    preexisting_text.add(matched)
+                elif in_test_path:
+                    test_fixture_matches.append((name, matched))
+                else:
+                    added_matches.append((name, matched))
+            line = pattern.sub(f"[REDACTED:{name.upper()}]", line)
         output.append(line)
-    return "".join(output), redactions, tuple(sorted(kinds))
+    introduced = [item for item in added_matches if item[1] not in preexisting_text]
+    carried = carried_matches + [item for item in added_matches if item[1] in preexisting_text]
+    return DiffRedaction(
+        text="".join(output),
+        introduced=len(introduced),
+        introduced_kinds=tuple(sorted({name for name, _ in introduced})),
+        carried=len(carried),
+        carried_kinds=tuple(sorted({name for name, _ in carried})),
+        test_fixture=len(test_fixture_matches),
+        test_fixture_kinds=tuple(sorted({name for name, _ in test_fixture_matches})),
+    )
 
 
 # Patterns broad enough to match ordinary content -- an address in a docstring, an
@@ -1695,13 +1785,27 @@ class CodingSessionService:
                 raise CodingAgentError(
                     "agent changed files outside warrant scope: " + ", ".join(outside)
                 )
-            if diff["secret_redactions"]:
+            any_redaction = (
+                diff["secret_redactions"]
+                or diff["carried_redactions"]
+                or diff["test_fixture_redactions"]
+            )
+            if any_redaction:
+                # Recorded regardless of outcome: a reviewer of a governed run must be
+                # able to see that redaction happened, including when it was
+                # pre-existing material or a test fixture that (correctly) did not fail
+                # the session.
                 self._event(
                     session_id,
                     "diff_secrets_redacted",
                     redactions=diff["secret_redactions"],
                     kinds=diff["secret_kinds"],
+                    carried=diff["carried_redactions"],
+                    carried_kinds=diff["carried_kinds"],
+                    test_fixture=diff["test_fixture_redactions"],
+                    test_fixture_kinds=diff["test_fixture_kinds"],
                 )
+            if diff["secret_redactions"]:
                 raise CodingAgentError(_diagnose_secret_redaction(diff["secret_kinds"]))
             self._event(
                 session_id,
@@ -2096,7 +2200,8 @@ class CodingSessionService:
         unified = self.repository.get_diff(base, worktree)
         if len(unified.encode()) > self.settings.coding_agent_max_output_bytes:
             raise CodingAgentError("coding-session diff exceeds the configured artifact limit")
-        unified, secret_redactions, secret_kinds = redact_diff_content(unified)
+        redaction = redact_diff_content(unified)
+        unified = redaction.text
         numstat = LocalRepositoryProvider._git(["diff", "--numstat", base, "--"], worktree, 30)
         changed: list[dict[str, Any]] = []
         additions = deletions = 0
@@ -2126,8 +2231,12 @@ class CodingSessionService:
             "additions": additions,
             "deletions": deletions,
             "unified_diff": unified,
-            "secret_redactions": secret_redactions,
-            "secret_kinds": list(secret_kinds),
+            "secret_redactions": redaction.introduced,
+            "secret_kinds": list(redaction.introduced_kinds),
+            "carried_redactions": redaction.carried,
+            "carried_kinds": list(redaction.carried_kinds),
+            "test_fixture_redactions": redaction.test_fixture,
+            "test_fixture_kinds": list(redaction.test_fixture_kinds),
             "head_revision": head_revision,
         }
 

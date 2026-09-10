@@ -595,3 +595,100 @@ the next most likely candidate, since it matches on a variable's *name* rather t
 shape of its value) to move into `BROAD_SECRET_KINDS`, or an operator asks for (b) --
 completing with a warning instead of failing -- once real-world false-positive rates are
 known.
+
+## D-ENG-028 — A secret already in the file is not the agent's leak
+
+**Context:** `D-ENG-027`'s revisit trigger fired within the day, but the cause was not
+pattern noise. Repeat real sessions kept failing on `secret_assignment`, and the source
+was the demo checkout itself: `demo_repo.py` writes
+`infra/deploy/auth.yaml` containing `signing_key_secret: auth-signing-key` — a
+Kubernetes-style reference to a secret's *name*, which is exactly the sort of thing that
+belongs in deploy config and is not a credential. `redact_diff_content` scanned every
+hunk body line, so a diff that merely showed that line as **context** around the agent's
+real change failed the session. The agent had written nothing secret, and could not have
+avoided the failure except by not touching the file.
+
+This is the same class of defect as the Git-metadata false positive (`D-ENG-024`'s
+neighbour): scanning material the agent did not author, then blaming the agent for it.
+
+**Options:** (a) move `secret_assignment` into `BROAD_SECRET_KINDS` so it reports but
+reads as low-confidence — treats a provenance bug as a confidence problem and weakens
+detection of real assigned credentials; (b) exclude the demo file's specific line —
+fixes one checkout and nothing else; (c) track provenance and fail only on secrets the
+agent actually introduced.
+
+**Chosen approach:** (c). `redact_diff_content` now returns a `DiffRedaction` splitting
+matches into `introduced` and `carried`. A match counts as introduced only when it
+appears on an added line **and** its identical text does not appear on a removed or
+context line of the same diff. Only `introduced` fails the session. `carried` is still
+redacted in the stored artifact and still recorded on the timeline as
+`diff_secrets_redacted`, attributed to the file rather than to the agent.
+
+**Why:** the guarantee worth having is "a governed session cannot introduce a
+credential", not "a governed session cannot run near one". The second is not a security
+property; it is an availability bug that makes whole directories undelegatable, and it
+punishes the agent for the repository's existing contents.
+
+**Trade-offs:** provenance is inferred from the diff alone rather than by reading the
+base revision, which keeps the function pure and cheap. The removed-or-context
+comparison is what makes a whole-file rewrite (which re-adds unchanged content as `+`
+lines) read correctly as carried rather than introduced. The residual gap: if an agent
+adds a credential whose exact text also happens to appear on a removed line, it reads as
+carried — but that text was already in the file by definition, so nothing new leaked.
+
+**Revisit trigger:** a case where introduced-vs-carried needs the base revision rather
+than the diff — for example scanning a file the diff does not touch at all — at which
+point this moves from a pure function to something that reads the checkout.
+
+## D-ENG-029 — A synthetic secret in a new test is not the agent's leak either
+
+**Context:** `D-ENG-028` closed the case where a match was pre-existing in a *modified*
+file. The same real `CHIR-1104` run, driven by an actual `codex` process against the
+production checkout, then failed on a different file: a brand-new
+`tests/integration/test_github_evidence.py`, whose `FakeGitHubRequester` test double
+takes a synthetic, PAT-shaped token to exercise `GitHubEvidenceAdapter`'s auth-header
+handling. A new file has no removed or context line — every line is an addition — so
+`introduced`-vs-`carried` cannot exempt it; the match reads as introduced by
+construction, whichever file it lands in.
+
+This is not a one-off. This project's *own* test suite does the identical thing
+throughout `tests/unit/test_coding_scope_and_diff.py` — `sk_live_0123456789abcdef`,
+`hunter2-actually-a-real-value`, `ghp_faketoken1234567890abcd` — because exercising
+credential-handling code honestly requires a credential-shaped value somewhere. Any
+ticket whose implementation needs a new test for auth-adjacent code was going to hit
+this.
+
+**Options:** (a) lower `secret_assignment`/`api_key` to `BROAD_SECRET_KINDS` so they
+report without failing — weakens detection of a real credential landing anywhere,
+including production code, to fix a test-only problem; (b) require every new test to
+reuse an existing fixture constant instead of a literal — not something this project can
+enforce on an external agent's writing style; (c) recognise the file's *path* as a test,
+and exempt matches added there the same way `carried` exempts pre-existing ones.
+
+**Chosen approach:** (c). `TEST_PATH` recognises this project's own convention
+(`tests/unit/test_*.py`, `tests/integration/test_*.py`) plus the common conventions of
+other stacks (`*.test.ts`, `*.spec.tsx`, `*_test.go`, a `test`/`tests`/`__tests__`
+directory segment). `redact_diff_content` tracks the current file from each diff's own
+`diff --git a/<old> b/<new>` header as it scans, and a match added under a recognised
+test path is counted as `test_fixture` rather than `introduced` -- still redacted in the
+stored artifact, still recorded on the timeline, never blocking. A test proves the
+narrowness deliberately: the identical token outside a test path still fails.
+
+**Why:** the guarantee worth having is still "a governed session cannot introduce a
+credential into the product," not "a governed session cannot write a test that needs a
+realistic-looking one." Path-based recognition is coarse compared to understanding that
+a string never leaves an in-memory test double, but it is auditable, it is what this
+project's own test-writing convention already satisfies, and — unlike a content
+heuristic keyed on the word "fake" or "test" appearing in the value — it cannot be
+defeated by an agent simply choosing a token that doesn't spell out its own fakeness.
+
+**Trade-offs:** a test file that copy-pastes a *real* credential into a fixture is
+exempted just as readily as a synthetic one — this trades a narrow blind spot (secrets
+belong in tests even less than elsewhere) for not blocking the overwhelming common case
+of legitimate test-writing. `carried` and `test_fixture` are deliberately reported as
+separate counts on the timeline rather than merged, so a reviewer can tell "this was
+already there" from "this is a new test fixture" without re-reading the diff.
+
+**Revisit trigger:** a real credential is found to have been introduced through a test
+path in practice, at which point the exemption should require the value to appear
+inside a test-double/mock construct specifically, not merely inside a test-path file.

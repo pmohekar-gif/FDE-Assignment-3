@@ -60,7 +60,7 @@ re-check, immutability trigger); the pull-request publisher abstraction and hard
 `gh` parsing; the Bifrost gateway provider; the Codex development hooks and
 `verify_agent_cli.py`; and the documentation corrections, including this one.
 
-**Produced in the defect-remediation pass (2026-09-10), 388 → 436 tests:** the
+**Produced in the defect-remediation pass (2026-09-10), 388 → 444 tests:** the
 protected-surface scope fix in `_scope_grants_surface`; `redact_diff_content`, which scans
 hunk bodies instead of Git metadata; `_scope_preflight`/`_assert_scope_exists` and the
 `scope_preflight` event; `_diagnose_empty_diff` and the `empty_diff_diagnosed` event; the
@@ -89,7 +89,7 @@ was complete; see the table.
 
 ## Verification performed on 2026-09-10 (defect-remediation pass)
 
-- **436 tests passed and 1 opt-in real-Codex test skipped** (unit 206, integration 216,
+- **444 tests passed and 1 opt-in real-Codex test skipped** (unit 213, integration 218,
   security 13, e2e 1 collected; the real-Codex e2e test is skipped unless
   `RUN_REAL_CODEX=1` and the CLI is present). Interpreter: CPython 3.10 on Linux, which
   is below the `requires-python = ">=3.11"` floor, so `uv sync` was bypassed and the

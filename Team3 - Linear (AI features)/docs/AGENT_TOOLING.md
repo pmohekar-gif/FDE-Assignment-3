@@ -40,7 +40,7 @@ Emits a non-blocking `systemMessage` restating the project's verification standa
 
 - Run tests as `pytest -o addopts=`. `pyproject.toml` sets `addopts = "-q"`, which hides
   the summary line, so a bare `pytest` shows dots and no counts.
-- Baseline is **436 passed, 1 skipped** (2026-09-10). Any other numbers are a regression
+- Baseline is **444 passed, 1 skipped** (2026-09-10). Any other numbers are a regression
   to explain, not to wave through.
 - Full gate is `make check`.
 
