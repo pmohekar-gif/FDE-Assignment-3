@@ -209,6 +209,8 @@
 {% endblock %}
 
 {% block scripts %}<script>
+const createdTicket=sessionStorage.getItem('warrant-ticket-created');
+if(createdTicket){sessionStorage.removeItem('warrant-ticket-created');requestAnimationFrame(()=>toast(`New ticket ${createdTicket} created. Redirected to Triage.`));}
 const requesterSelect=document.getElementById('requester-select'),agentSelect=document.getElementById('agent-select');
 const allowThreshold={{ allow_threshold|tojson }};
 const toolGrants={{ tool_grants|tojson }},neverGrantable={{ never_grantable_tools|tojson }};

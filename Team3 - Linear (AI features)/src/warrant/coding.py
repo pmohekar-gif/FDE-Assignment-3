@@ -1000,10 +1000,12 @@ class CodingSessionService:
         if not self.repository.is_git_repository():
             raise RepositoryError(self._not_a_git_checkout())
         existing = self.db.one(
-            "SELECT id FROM coding_sessions WHERE warrant_id=?", (warrant["id"],)
+            "SELECT id FROM coding_sessions WHERE warrant_id=? "
+            "AND state NOT IN ('COMPLETED','FAILED','CANCELLED')",
+            (warrant["id"],),
         )
         if existing:
-            raise Conflict("this warrant already has a coding session")
+            raise Conflict("this warrant already has an active coding session")
         base_revision = self.repository.get_current_revision()
         resolved_base = LocalRepositoryProvider._git(
             ["rev-parse", "--verify", "--quiet", f"{base_revision}^{{commit}}"],

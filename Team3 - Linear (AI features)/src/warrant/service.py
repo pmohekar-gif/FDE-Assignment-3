@@ -831,11 +831,9 @@ class WarrantService:
             )[:12]
         bounded_before_concurrency = list(proposed)
         held = [overlap["surface"] for overlap in retrieval.overlaps]
-        proposed = [
-            path
-            for path in proposed
-            if not any(fnmatch.fnmatch(path, item) or fnmatch.fnmatch(item, path) for item in held)
-        ]
+        # An approved newer delegation supersedes an overlapping active warrant. Keep the
+        # bounded proposal visible to the named approver; `decide()` revokes the older
+        # warrant immediately before issuing the replacement.
         surfaces = self.db.all("SELECT * FROM surfaces WHERE workspace_id=?", (workspace_id,))
         matched = [
             surface
@@ -1241,6 +1239,15 @@ class WarrantService:
                 "scope is fully held by a concurrent warrant; clear the conflict and "
                 "submit a newly evaluated delegation"
             )
+        if request.action == "approve":
+            overlaps = self.retrieval.find_overlaps(workspace_id, scope)
+            for warrant_id in dict.fromkeys(str(item["warrant_id"]) for item in overlaps):
+                self.revoke_warrant(
+                    warrant_id,
+                    workspace_id,
+                    approver["id"],
+                    f"Superseded by approved delegation {delegation_id}",
+                )
         approval_id = self.new_id("apr")
         self.db.execute(
             "INSERT INTO approvals VALUES (?,?,?,?,?,?,?)",

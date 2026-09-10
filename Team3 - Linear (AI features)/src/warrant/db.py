@@ -316,6 +316,9 @@ CREATE INDEX IF NOT EXISTS idx_agent_messages_conversation
   ON agent_messages(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_coding_sessions_workspace
   ON coding_sessions(workspace_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_coding_sessions_active_warrant
+  ON coding_sessions(warrant_id)
+  WHERE state IN ('QUEUED','PREPARING','RUNNING','VERIFYING','AWAITING_REVIEW');
 CREATE INDEX IF NOT EXISTS idx_coding_events_session ON coding_session_events(session_id, seq);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(workspace_id, issue_id, created_at);
@@ -337,6 +340,47 @@ class Database:
     def migrate(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            # Earlier versions allowed only one session for the lifetime of a warrant.
+            # Rebuild that table once so terminal sessions remain auditable while a failed
+            # or cancelled run can be retried. A partial unique index keeps the original
+            # safety property for non-terminal work: only one active session per warrant.
+            warrant_indexes = connection.execute("PRAGMA index_list(coding_sessions)").fetchall()
+            has_legacy_warrant_unique = any(
+                row["unique"]
+                and not row["partial"]
+                and [column["name"] for column in connection.execute(
+                    f"PRAGMA index_info({row['name']})"
+                ).fetchall()]
+                == ["warrant_id"]
+                for row in warrant_indexes
+            )
+            if has_legacy_warrant_unique:
+                connection.execute("PRAGMA foreign_keys=OFF")
+                connection.executescript(
+                    """
+                    CREATE TABLE coding_sessions_retryable (
+                      id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, delegation_id TEXT NOT NULL,
+                      warrant_id TEXT NOT NULL, issue_id TEXT NOT NULL, requester_id TEXT NOT NULL,
+                      source TEXT NOT NULL, provider TEXT NOT NULL, state TEXT NOT NULL,
+                      repository_root TEXT NOT NULL, base_revision TEXT NOT NULL, branch_name TEXT,
+                      worktree_path TEXT, contract_json TEXT NOT NULL, result_json TEXT,
+                      error TEXT, created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT,
+                      agent_pid INTEGER, host_pid INTEGER, worktree_removed_at TEXT
+                    );
+                    INSERT INTO coding_sessions_retryable SELECT * FROM coding_sessions;
+                    DROP TABLE coding_sessions;
+                    ALTER TABLE coding_sessions_retryable RENAME TO coding_sessions;
+                    CREATE TRIGGER coding_sessions_contract_immutable
+                    BEFORE UPDATE OF contract_json ON coding_sessions
+                    BEGIN SELECT RAISE(ABORT, 'coding-session execution contract is immutable'); END;
+                    CREATE INDEX idx_coding_sessions_workspace
+                      ON coding_sessions(workspace_id, created_at DESC);
+                    CREATE UNIQUE INDEX idx_coding_sessions_active_warrant
+                      ON coding_sessions(warrant_id)
+                      WHERE state IN ('QUEUED','PREPARING','RUNNING','VERIFYING','AWAITING_REVIEW');
+                    """
+                )
+                connection.execute("PRAGMA foreign_keys=ON")
             columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(warrants)").fetchall()
             }
