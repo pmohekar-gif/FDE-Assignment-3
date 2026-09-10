@@ -40,7 +40,10 @@
       <div class="tl">
         {% for event in group.events %}
         <div class="tl-row">
-          <span class="pip {{ 'bad' if 'den' in event.event_type or 'failed' in event.event_type or 'revok' in event.event_type else 'ok' }}" aria-hidden="true"></span>
+          {# Matched on whole event names: a substring test for 'den' also coloured
+             approval_defer red-or-green by accident, which is exactly the distinction an
+             auditor is reading this timeline for. #}
+          <span class="pip {{ 'bad' if event.event_type in ('approval_deny', 'policy_denied') or 'failed' in event.event_type or 'revok' in event.event_type else ('warn' if event.event_type == 'approval_defer' else 'ok') }}" aria-hidden="true"></span>
           <code>{{ event.event_type }}</code>
           <span class="what">{{ event.actor_type }} · {{ event.actor_id }}{% if event.verdict %} · {{ event.verdict }}{% endif %}{% if event.surfaces %} · {{ event.surfaces|join(', ') }}{% endif %}</span>
           <span class="when relative-time" data-short data-time="{{ event.created_at }}">{{ event.created_at }}</span>

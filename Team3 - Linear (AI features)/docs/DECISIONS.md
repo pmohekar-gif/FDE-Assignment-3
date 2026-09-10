@@ -284,3 +284,314 @@ must not imply a tool was used when it was unavailable.
 
 **Revisit trigger:** A future development environment provides Pstack; it may assist
 analysis and review but still must not become a runtime dependency.
+
+## D-ENG-019 — A protected surface is restricted per changed path, not per surface
+
+**Context:** A session's restricted-path list was built by testing each protected surface
+glob against the warrant's approved scope with the fnmatch arguments reversed
+(`fnmatch(surface_glob, scope_pattern)`). Both directions were wrong. An approval
+narrowed to a concrete file (`services/billing/retry.py`) never matched the surface glob
+it lived under, so `services/billing/**` stayed restricted and the very file the named
+owner had just approved was rejected as restricted material — every protected-surface
+delegation failed after approval. A broad grant (`services/**`) matched every nested
+glob, silently unlocking the irreversible `services/billing/ledger/**` surface nobody
+had approved.
+
+**Options:** Drop the restricted list and rely on the scope check alone; compare
+normalised path prefixes; test whether the approved scope entry falls under the surface
+glob.
+
+**Chosen approach:** `_scope_grants_surface(scope_pattern, surface_glob)` drops a
+protected surface from the restricted list only when an approved scope entry is at least
+as specific as that surface — the scope entry itself must fall under the surface glob.
+
+**Why:** It keeps the hierarchy meaningful in both directions: an approved path inside a
+protected surface is writable, and a wide grant still cannot reach a nested surface with
+its own owners and irreversibility. Deleting the restricted list would have made the
+nested-surface protection unexpressible.
+
+**Trade-offs:** For a single-level surface the restricted check now largely duplicates
+the scope check. That redundancy is deliberate — it fails closed if scope enforcement is
+ever loosened, and it distinguishes `RestrictedPathError` from an ordinary
+out-of-scope diff in the audit trail.
+
+**Revisit trigger:** Surfaces gaining semantics beyond globs (ownership by content type,
+per-branch protection) would need a real matcher rather than fnmatch.
+
+## D-ENG-020 — A session is refused when its approved scope is absent from the checkout
+
+**Context:** A warrant's scope comes from the issue's declared surfaces, which are only
+as good as the tracker's data. When none of those paths exist in `REPOSITORY_ROOT` the
+session is doomed before it starts: a real agent has nothing to edit, exits cleanly, and
+the session failed minutes later with `agent_failed: agent completed without producing a
+reviewable diff` — naming neither the scope nor the repository. Three different causes
+(wrong checkout, agent declined the work, writes landed on ignored paths) produced one
+indistinguishable message.
+
+**Options:** Leave the late failure and document it; warn but run anyway; refuse at
+launch; auto-create the missing paths.
+
+**Chosen approach:** Resolve every approved pattern against the checkout before the
+session row exists. If nothing resolves, refuse with a 409 that names the unresolved
+patterns, the repository root and its tracked-file count. The resolution is recorded as a
+`scope_preflight` event on sessions that do launch, and an exit-zero agent that still
+produces no diff is diagnosed into three distinct messages, with the evidence on an
+`empty_diff_diagnosed` event.
+
+**Why:** A session that cannot produce a reviewable diff is not a governance outcome, it
+is a misconfiguration, and the operator is the only one who can fix it. Auto-creating
+paths would manufacture a diff — a fake success in the one place the product must not
+have one.
+
+**Trade-offs:** A pattern is treated as resolvable when its parent directory exists, so
+legitimately-new files still work; a scope naming only new files in a new directory is
+refused and needs the directory created first.
+
+**Revisit trigger:** Tracker-declared surfaces becoming validated against the repository
+at issue-creation time, which would make this preflight redundant.
+
+## D-ENG-021 — Hold (defer) is a reversible hold, not a quiet denial
+
+**Context:** "Hold (defer)" wrote an `approvals` row and set the delegation to
+`deferred`. Nothing read that status, and two independent locks — `decide()` refusing any
+status other than `awaiting_approval`, and `UNIQUE(delegation_id)` on `approvals` — made
+it permanent. It was Deny under a gentler label, and neither it nor a denial was visible
+anywhere in the UI.
+
+**Options:** Remove the action; make the row non-unique and allow re-decision; add an
+explicit resume that lifts the hold.
+
+**Chosen approach:** `POST /v1/delegations/{id}/resume` returns a deferred delegation to
+`awaiting_approval`, gated on the same approver set as `decide()`. It deletes the hold
+row and appends `approval_resumed` to the audit ledger, so the hold and the lift both
+survive in the append-only record even though the current-decision row is cleared. The
+recorded decision (action, approver, rationale, scope) is now returned by
+`get_delegation` and rendered, and held or denied delegations carry a visible chip in the
+triage queue.
+
+**Why:** The four actions must mean what their labels say. A hold that cannot be lifted
+teaches operators to deny instead, which loses the distinction the audit trail depends
+on.
+
+**Trade-offs:** `approvals` holds only the current decision, so the hold row is removed
+on resume; the hash-chained ledger, not that table, is the history.
+
+**Revisit trigger:** A requirement to show every superseded decision in the product UI
+would mean making `approvals` append-only with a `current` flag.
+
+## D-ENG-022 — Remote repository URLs stay out of Code Intelligence
+
+**Context:** Code Intelligence indexes one configured local checkout. An obvious
+extension is "paste a Git URL, index it, ask questions, attach findings to a ticket."
+
+**Options:** Clone arbitrary URLs into a managed cache and index them; support read-only
+host APIs (GitHub/GitLab contents); keep the local-checkout boundary.
+
+**Chosen approach:** Keep the boundary (`PB-002`, `IC-002`). Code Intelligence continues
+to read `REPOSITORY_ROOT`; the GitHub adapter stays a read-only pull-request evidence
+proxy.
+
+**Why:** `assignment3.md` asks for an issue workflow with triage, duplicate detection,
+semantic search, or safe agent delegation — remote code search is none of those, and the
+graded core is the delegation path. Accepting a user-supplied URL also adds a
+server-side request surface, unbounded disk growth, third-party credential handling and
+a supply-chain path into the same process that runs coding-session worktrees, in a
+product whose entire claim is bounded authority. That is a security design task with its
+own threat model, not a feature increment, and it would compete with the delegation flow
+for the remaining time before submission.
+
+**Trade-offs:** A demo cannot point Code Intelligence at an arbitrary public repository
+without cloning it locally first and setting `REPOSITORY_ROOT` — which is one command,
+and is what `make demo-repo` already does for the demo checkout.
+
+**Revisit trigger:** A validated customer requirement for cross-repository questions,
+funded with the isolation work (separate process or container for clones, disk quotas,
+credential scoping, and an allow-list of hosts) that requirement implies.
+
+## D-ENG-023 — The provider phrases an answer from the evidence, not from a summary of it
+
+**Context:** `CODE_INTELLIGENCE_REFINEMENT_EXECUTION.md` states the provider "receives
+only the final redacted, bounded evidence set". It actually received one composed
+sentence containing module names and line labels — no code — so the model could only
+re-word a template while the UI labelled the result "AI synthesis".
+
+**Chosen approach:** `_provider_facts()` passes the composed summary plus the same
+bounded, secret-redacted snippets the operator sees, each labelled with its citation. The
+contextual Agent likewise passes its deterministic facts alongside the composed answer.
+The fixture provider is now labelled "SIMULATED synthesis · deterministic fixture, no
+model called" instead of "AI synthesis · fixture".
+
+**Why:** Either the documented guarantee or the code had to change, and the guarantee is
+the one worth keeping: a grounded answer must be checkable against evidence the reader
+can see.
+
+**Trade-offs:** More tokens per query when a real provider is configured. The
+`ContextBudget` caps (12 snippets / 12,000 characters) already bound it.
+
+## D-ENG-024 — A blocked agent-CLI hook is named, not blamed on the agent
+
+**Context:** A real `CHIR-1104` session with the `codex` runner failed as
+`agent completed without producing a reviewable diff: it exited cleanly and left the
+approved paths unchanged`. The runner transcript showed why:
+
+```
+hook: UserPromptSubmit
+hook: UserPromptSubmit Blocked
+```
+
+A `UserPromptSubmit` hook denied the prompt, so the model never received the task and the
+CLI exited 0 having done nothing. This project registers only `PostToolUse` and `Stop`
+hooks in `.codex/hooks.json`, so the blocking hook came from the operator's own Codex
+configuration, which the session inherits because `HOME` and `CODEX_HOME` must reach the
+subprocess for it to authenticate.
+
+On the evidence a session can see, that outcome is identical to an agent that read the
+code and decided no change was needed — the exit code is 0, the diff is empty, the
+approved paths exist. Only one line of the transcript separates "the agent declined" from
+"the agent was never asked", and they have opposite remedies.
+
+**Options:** leave it to the operator to read the transcript; fail earlier on any hook
+denial; parse the transcript and name the cause.
+
+**Chosen approach:** `blocked_hooks()` reads the CLI's own hook lines. A denial is always
+recorded as an `agent_hook_blocked` event, even when the run still produced a diff — a
+`PreToolUse` the agent worked around is not a session failure, but a reviewer of a
+governed run must be able to see it. When the diff is empty *and* a turn-gating hook
+(`UserPromptSubmit`, `SessionStart`) was blocked, that is reported as the cause ahead of
+every other explanation, together with the agent-configuration files that actually exist
+on the machine.
+
+**Why:** the empty-diff diagnosis is only useful if it points at the thing that has to
+change. Naming the agent's own configuration turns an afternoon of debugging the warrant
+into a one-line fix, and it keeps the product from taking the blame for an outcome it did
+not cause.
+
+**Trade-offs:** the detection depends on Codex's transcript format. It is deliberately
+narrow — a `hook: <Name> Blocked` line — and a format change degrades to the previous
+generic message rather than to a wrong one. `SessionStart Completed` in the same
+transcript is not treated as a denial, which is asserted by test.
+
+**Revisit trigger:** running the agent with an isolated `CODEX_HOME` (`IC-004`), which
+would make ambient hooks unreachable and this detection a backstop rather than the
+primary diagnosis.
+
+## D-ENG-025 — `CODING_AGENT_ISOLATED_HOME`: give governed sessions their own CODEX_HOME
+
+**Context:** `D-ENG-024`'s diagnostic (`scripts/diagnose_agent_hooks.py --run`) was built
+to tell apart a hook that fails (missing environment variable) from one that denies on
+purpose. Run against this project's operator's real configuration, it did its job: every
+registered hook exited 0, so the block was deliberate — but the denying `UserPromptSubmit`
+hook, read from `~/.codex/hooks.json`, turned out to belong to an unrelated project (its
+`if [ -f ... ]` guard names a path under a different repository entirely on the operator's
+machine). `CODING_AGENT_ENV_PASSTHROUGH` cannot fix that: the hook is not failing for want
+of a variable, and it has no logic this project controls or should be editing.
+
+**Options:** (a) leave it to the operator to find and disable the foreign hook by hand;
+(b) refuse to launch `codex` with an inherited `HOME`/`CODEX_HOME` at all, breaking
+authentication for every operator; (c) give each governed session a private `CODEX_HOME`
+that carries just enough of the real one to authenticate and pick the right model, without
+the hooks.
+
+**Chosen approach:** (c), gated behind `CODING_AGENT_ISOLATED_HOME` (default off, so
+existing deployments are unaffected). `prepare_isolated_agent_home()` copies `auth.json`
+verbatim and copies `config.toml` with its `[hooks...]` tables textually stripped
+(`strip_hooks_table()`) — not a full TOML parse-and-rewrite, because this project has no
+other need for a TOML writer and a targeted textual removal is easier to verify correct.
+`hooks.json` is not copied at all. The private home is a sibling of the session's worktree,
+never inside it, so it cannot be picked up by the diff or the scope checks that read the
+worktree; `_teardown_session` removes it alongside the worktree.
+
+**Why:** a governed session's approval already comes from the warrant, recorded and
+audited, with `--ask-for-approval never` because that recorded approval *is* the
+authorization. A hook belonging to some other tool on the operator's machine has no
+standing to add a second, silent approval gate on top of that — and unlike the CLI's own
+approval prompt, its refusal is not even visible as a decision, only as an empty diff.
+
+**Trade-offs:** this only isolates `~/.codex`. A hook registered by an MCP server, a
+system-wide shell profile, or anything else Codex loads outside its home directory is
+still in force; `agent_config_locations()` and the diagnostic script's output remain the
+way to find those. Copying `auth.json` duplicates a live credential on disk per session
+(cleaned up with the worktree); this is judged acceptable because the same file already
+sits unencrypted in the operator's home directory.
+
+**Revisit trigger:** a Codex release that reads hooks from somewhere other than
+`$CODEX_HOME/{hooks.json,config.toml}`, which would need a corresponding change to what
+`prepare_isolated_agent_home()` leaves behind.
+
+## D-ENG-026 — Fixed `.codex/hooks.json`'s own path resolution
+
+**Context:** Running `scripts/diagnose_agent_hooks.py --run` against this project's own
+`PostToolUse`/`Stop` hooks (registered in this repo's `.codex/hooks.json`, not the
+operator's global one) returned `EXIT 127: No such file or directory`, for a path one
+directory shallower than where the scripts actually live. The hooks resolved their own
+script location with `$(git rev-parse --show-toplevel 2>/dev/null || pwd)`, and this
+repository is a subdirectory of a larger Git checkout (the assignment's multi-team
+monorepo) rather than its own repository root — so `git rev-parse --show-toplevel`, run
+outside a governed session's isolated worktree, resolved to the monorepo root instead of
+this project's own directory.
+
+**Chosen approach:** replaced `$(git rev-parse --show-toplevel 2>/dev/null || pwd)` with
+plain `$(pwd)` in both hook commands. Codex invokes a project's hooks with its working
+directory already set to that project (the same `cwd` a governed session's worktree gets
+via `--cd`), so `pwd` is both simpler and correct in both places `git rev-parse` was
+trying to cover.
+
+**Why:** this project's own lint-on-edit and stop-reminder hooks were silently inert for
+any interactive `codex` session run directly against this checkout (as opposed to a
+governed session's isolated worktree, where the worktree's own toplevel happened to make
+the old command work by accident). A hook that always fails is worse than no hook: it
+still costs the timeout on every matching tool call.
+
+**Trade-offs:** none identified; `pwd` is strictly more predictable here than resolving a
+Git toplevel that may not be this directory.
+
+## D-ENG-027 — Name which secret pattern fired, instead of a dead-end refusal
+
+**Context:** Once `D-ENG-025` isolated a governed session from an unrelated project's
+ambient hook, a real `codex` run produced an in-scope diff that then hit a second gate:
+`_execute` raised `CodingAgentError("diff contains secret-like material and was
+redacted")` whenever `redact_diff_content` found anything, ending the session as
+`FAILED` with no further detail. `security.SECRET_PATTERNS` includes `email` and
+`card_pan`, both deliberately broad (the module's own comment: high-confidence shapes
+are ordered first specifically so these two cannot consume part of a real credential) —
+an address in a code comment or a long ordinary number is enough to trip either one. The
+diff was already safe by the time this fired: `redact_diff_content` had replaced the
+matched text with `[REDACTED:KIND]` before the row was ever written to
+`diff_artifacts`. Refusing the session anyway threw away a reviewable, already-redacted
+diff over a message that gave no way to tell a real leak from an ordinary comment
+without re-running the agent and reading raw output by hand — the same shape of problem
+`D-ENG-024` solved for hook denials.
+
+**Options:** (a) leave the message as-is and let the operator read the (already
+redacted) diff by hand to judge; (b) stop failing the session at all once the content is
+redacted, since the stored artifact is safe; (c) keep failing the session, but name which
+pattern(s) fired and whether each is a broad or a high-confidence one.
+
+**Chosen approach:** (c). `redact_diff_content` now returns the distinct pattern names
+that matched alongside the count (never the matched text). `_diagnose_secret_redaction`
+turns that into a message that names each kind and classifies it: `email`/`card_pan` are
+flagged as "not by itself evidence of a leak," anything else (`pem_block`,
+`connection_string`, `jwt`, `secret_assignment`, `bearer`, `api_key`) as "worth treating
+as a real leak until shown otherwise." A `diff_secrets_redacted` event records the kinds
+and count on the session timeline before the failure, alongside `agent_hook_blocked` and
+`empty_diff_diagnosed` in the same amber styling.
+
+**Why:** the security posture is unchanged — a session that trips a secret pattern still
+ends `FAILED`, and the matched text is still never stored or shown anywhere. What changed
+is that the operator no longer has to guess which of eight very different patterns fired,
+or whether it is worth an escalation, from an unqualified sentence. Option (b) was set
+aside deliberately: this project's own hook-blocking incident showed the cost of an
+agent-facing gate silently downgrading from "block" to "warn" without a specific,
+evidenced reason, and a secret-pattern hit is exactly the kind of event a delegation
+control plane should keep failing closed on rather than waving through by default.
+
+**Trade-offs:** the broad/narrow split is a judgment call baked into this project, not
+`security.py`'s. If a future pattern is added there without updating
+`BROAD_SECRET_KINDS`, it defaults to being treated as high-confidence, which is the
+safer failure direction.
+
+**Revisit trigger:** a pattern proves noisy enough in practice (`secret_assignment` is
+the next most likely candidate, since it matches on a variable's *name* rather than the
+shape of its value) to move into `BROAD_SECRET_KINDS`, or an operator asks for (b) --
+completing with a warning instead of failing -- once real-world false-positive rates are
+known.

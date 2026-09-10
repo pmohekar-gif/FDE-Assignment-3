@@ -568,7 +568,13 @@ class AgentService:
         answer, degraded = self._compose(intent, subject, facts)
         synthesized = False
         try:
-            response = self.warrant.provider.answer(request.query, [answer])
+            # The deterministic facts go with the composed answer, not just the answer:
+            # passing the summary alone left the provider re-wording a template with no
+            # access to the evidence the operator can see, while the response was still
+            # presented as a grounded answer.
+            response = self.warrant.provider.answer(
+                request.query, [answer, *(f"{fact.kind}: {fact.text}" for fact in facts)]
+            )
         except ProviderError:
             pass
         else:

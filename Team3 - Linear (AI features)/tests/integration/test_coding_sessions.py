@@ -276,7 +276,16 @@ def test_denied_or_unapproved_delegation_cannot_start_coding(client, headers, tm
 
 
 def test_human_approval_is_snapshotted_in_the_execution_contract(client, headers, tmp_path):
-    app, _ = session_client(client, tmp_path)
+    # PAY-4471's approved scope has to exist here: the session service refuses to launch
+    # against a checkout that does not contain the scope the warrant grants.
+    app, _ = session_client(
+        client,
+        tmp_path,
+        files={
+            "services/billing/retry.py": "RETRY_WINDOW_SECONDS = 5.0\n",
+            "web/checkout/RetryButton.tsx": "export const RETRY_LABEL = 'Retry payment';\n",
+        },
+    )
     delegation = create_delegation(
         app, headers, "PAY-4471", "kriti-developer", "coding-approved-contract"
     )
@@ -418,7 +427,9 @@ def test_revoking_the_warrant_mid_flight_aborts_before_the_runner(client, header
         return worktree
 
     coding._prepare_worktree = gated
-    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-revoke-midflight")
+    delegation = create_delegation(
+        app, headers, "WEB-4519", "chirayu-gupta", "coding-revoke-midflight"
+    )
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -459,7 +470,9 @@ def test_an_expired_warrant_aborts_the_session_before_the_runner(client, headers
         return worktree
 
     coding._prepare_worktree = gated
-    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-expire-midflight")
+    delegation = create_delegation(
+        app, headers, "WEB-4519", "chirayu-gupta", "coding-expire-midflight"
+    )
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,
@@ -670,7 +683,9 @@ def test_terminal_worktrees_and_branches_are_reclaimed_beyond_retention(client, 
     sessions = []
     # Two different owned, reversible web issues, so both reach ALLOW on their own merits.
     for issue in ("WEB-4519", "WEB-3001"):
-        delegation = create_delegation(app, headers, issue, "chirayu-gupta", f"coding-retention-{issue}")
+        delegation = create_delegation(
+            app, headers, issue, "chirayu-gupta", f"coding-retention-{issue}"
+        )
         started = app.post(
             "/v1/coding-sessions",
             headers=headers,
@@ -713,7 +728,9 @@ def test_the_diff_records_its_head_revision_without_publishing_a_pull_request(
     client, headers, tmp_path
 ):
     app, _ = session_client(client, tmp_path, files={"Makefile": PASSING_MAKEFILE})
-    delegation = create_delegation(app, headers, "WEB-4519", "chirayu-gupta", "coding-head-revision")
+    delegation = create_delegation(
+        app, headers, "WEB-4519", "chirayu-gupta", "coding-head-revision"
+    )
     started = app.post(
         "/v1/coding-sessions",
         headers=headers,

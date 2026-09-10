@@ -58,6 +58,12 @@ Observed refinement opportunities:
    12 snippets and 12,000 characters.
 5. The optional provider receives only the final redacted, bounded evidence set to phrase an
    answer. It cannot browse the repository, choose hidden files, or perform a write.
+   Enforced by `CodeIntelligenceService._provider_facts`, which passes the composed summary
+   plus exactly the budgeted, already-redacted snippets shown to the operator, each labelled
+   with its citation. This was previously a documented intention only: the provider used to
+   receive the composed summary alone, so it could re-word a template but could not read a
+   line of code. `tests/unit/test_code_synthesis_grounding.py` pins the contract in both
+   directions.
 
 Current failure behavior is not sufficient: an unavailable configured root can currently raise
 during application construction. Phase 1 must replace that with a recoverable unavailable state.

@@ -28,6 +28,7 @@ from .policy import (
 from .providers import LLMProvider, ProviderError, ProviderMalformed
 from .retrieval import RetrievalResult, RetrievalService
 from .schemas import (
+    CommentAssistNarrative,
     CommentCreate,
     CommentUpdate,
     Consequence,
@@ -349,8 +350,8 @@ class WarrantService:
             ).fetchone()
             if existing:
                 comment = dict(connection.execute("SELECT * FROM comments WHERE id=?", (existing["id"],)).fetchone())
-                mention = connection.execute("SELECT * FROM comment_mentions WHERE comment_id=?", (comment["id"],)).fetchone()
-                return {"comment": comment, "mention": dict(mention) if mention else None}
+                replayed = connection.execute("SELECT * FROM comment_mentions WHERE comment_id=?", (comment["id"],)).fetchone()
+                return {"comment": comment, "mention": dict(replayed) if replayed else None}
             if mentioned and not self._agent_enabled(workspace_id):
                 raise Forbidden("Warrant is disabled for this workspace")
             if mentioned:
@@ -373,7 +374,11 @@ class WarrantService:
         row = self.db.one("SELECT m.*,c.issue_id FROM comment_mentions m JOIN comments c ON c.id=m.comment_id WHERE m.id=? AND m.workspace_id=?", (mention_id, workspace_id))
         if not row:
             raise NotFound("mention not found")
-        self._comment_issue(workspace_id, self.db.one("SELECT external_key FROM issues WHERE id=?", (row["issue_id"],))["external_key"], actor_id)
+        # A mention whose issue has gone is a 404, not an unhandled TypeError on a None row.
+        issue_row = self.db.one("SELECT external_key FROM issues WHERE id=?", (row["issue_id"],))
+        if not issue_row:
+            raise NotFound("the issue this mention belongs to no longer exists")
+        self._comment_issue(workspace_id, issue_row["external_key"], actor_id)
         assistant = self.db.one("SELECT * FROM comments WHERE id=? AND deleted_at IS NULL", (row["assistant_comment_id"],))
         return {"id": row["id"], "state": row["state"], "assistant_comment": assistant, "provider": row["provider"], "model": row["model"], "citations": Database.loads(row["citations_json"], []), "uncertainties": Database.loads(row["uncertainty_json"], [])}
 
@@ -382,6 +387,8 @@ class WarrantService:
         if not row:
             raise NotFound("mention not found")
         issue = self.db.one("SELECT * FROM issues WHERE id=? AND workspace_id=?", (row["issue_id"], workspace_id))
+        if not issue:
+            raise NotFound("the issue this mention belongs to no longer exists")
         self._comment_issue(workspace_id, issue["external_key"], actor_id)
         if row["state"] != "working":
             return self.get_mention(workspace_id, mention_id, actor_id)
@@ -406,6 +413,12 @@ class WarrantService:
         try:
             response = self.provider.comment_assist(row["requested_text"], context)
             value = response.value
+            # The provider's return type is a union across every structured operation.
+            # Anything but the comment-assist shape is a provider contract violation, and
+            # is handled by the same failure path as malformed output rather than by
+            # reading attributes off whatever came back.
+            if not isinstance(value, CommentAssistNarrative):
+                raise ProviderMalformed("provider did not return a comment-assist narrative")
             citations = [value_id for value_id in value.citation_ids if value_id in allowed]
             if len(citations) != len(value.citation_ids):
                 raise ProviderError("provider cited context outside the allowed set")
@@ -1234,12 +1247,30 @@ class WarrantService:
             scope = request.narrowed_surfaces or []
             if not scope or not set(scope).issubset(set(decision.proposed_surfaces)):
                 raise InvalidEvidence("narrowed scope must be a non-empty subset of proposed scope")
-        if request.action == "approve" and not scope:
-            raise Conflict(
-                "scope is fully held by a concurrent warrant; clear the conflict and "
-                "submit a newly evaluated delegation"
-            )
         if request.action == "approve":
+            if not scope:
+                raise Conflict(
+                    "scope is fully held by a concurrent warrant; clear the conflict and "
+                    "submit a newly evaluated delegation"
+                )
+            # An operator who unticks surfaces and then presses the primary "approve"
+            # button used to get the full proposed scope anyway: the selection was simply
+            # discarded. Silently granting more than the human just chose is the one
+            # mistake this control plane exists to prevent, so a mismatched selection is
+            # refused and named rather than widened.
+            if request.narrowed_surfaces is not None and set(request.narrowed_surfaces) != set(
+                decision.proposed_surfaces
+            ):
+                raise InvalidEvidence(
+                    "approve issues the whole proposed scope; the submitted selection is "
+                    "different. Use the 'narrow' action to issue only the selected scope."
+                )
+        if request.action in {"approve", "narrow"}:
+            # Both warrant-issuing actions supersede an overlapping active warrant. This
+            # used to run for `approve` only, so narrowing onto a concurrently held
+            # surface issued a second live warrant over it -- two agents, one surface,
+            # no revocation. `_assess_risk` deliberately leaves held surfaces in the
+            # proposal precisely because this branch resolves them.
             overlaps = self.retrieval.find_overlaps(workspace_id, scope)
             for warrant_id in dict.fromkeys(str(item["warrant_id"]) for item in overlaps):
                 self.revoke_warrant(
@@ -1277,11 +1308,83 @@ class WarrantService:
                 {"rationale": request.rationale},
             )
             return self.get_delegation(delegation_id, workspace_id)
+        # The two authorising actions are audited on their own terms, not only through the
+        # `warrant_issued` event that follows. Without this the named approver's rationale
+        # never entered the hash-chained ledger for exactly the decisions that grant
+        # authority, and an auditor could not tell an approval from a narrowing.
+        self.audit.append(
+            workspace_id,
+            f"approval_{request.action}",
+            "human",
+            approver["id"],
+            "delegation",
+            delegation_id,
+            {
+                "rationale": request.rationale,
+                "scope": scope,
+                "proposed_scope": decision.proposed_surfaces,
+                "narrowed": request.action == "narrow",
+            },
+        )
         self._issue_warrant(delegation_id, workspace_id, approver["id"], scope)
         self.db.execute(
             "UPDATE delegations SET status='warrant_issued',updated_at=? WHERE id=?",
             (self.now(), delegation_id),
         )
+        return self.get_delegation(delegation_id, workspace_id)
+
+    def resume_delegation(
+        self, delegation_id: str, workspace_id: str, actor_id: str, note: str | None = None
+    ) -> dict[str, Any]:
+        """Lift a hold, returning a deferred delegation to the approval queue.
+
+        "Hold (defer)" is the one decision that is meant to be temporary: it records that
+        a named human postponed the call, without denying it and without issuing a
+        warrant. It had no counterpart, so a hold was permanent in practice -- `decide()`
+        refuses anything that is not `awaiting_approval`, and `approvals` is UNIQUE per
+        delegation, so a deferred delegation could never be decided again by any route.
+        Resuming clears the hold record and puts the delegation back in front of the same
+        approver set, with the whole sequence (defer, then resume) preserved in the
+        append-only audit ledger.
+        """
+        delegation = self._workspace_resource("delegations", delegation_id, workspace_id)
+        if delegation["status"] != "deferred":
+            raise Conflict("only a deferred delegation can be resumed")
+        decision_row = self.db.one(
+            "SELECT result_json FROM policy_decisions WHERE delegation_id=?", (delegation_id,)
+        )
+        if not decision_row:
+            raise Conflict("delegation has no policy decision")
+        decision = PolicyDecision.model_validate_json(decision_row["result_json"])
+        actor = self._workspace_resource("users", actor_id, workspace_id)
+        if actor["id"] not in decision.approver_ids and actor["role"] not in {"admin", "owner"}:
+            raise Forbidden("actor is not in the resolved approver set")
+        hold = self.db.one(
+            "SELECT * FROM approvals WHERE delegation_id=? AND action='defer'", (delegation_id,)
+        )
+        with self.db.transaction() as connection:
+            connection.execute(
+                "DELETE FROM approvals WHERE delegation_id=? AND action='defer'", (delegation_id,)
+            )
+            connection.execute(
+                "UPDATE delegations SET status='awaiting_approval',updated_at=? WHERE id=?",
+                (self.now(), delegation_id),
+            )
+        self.audit.append(
+            workspace_id,
+            "approval_resumed",
+            "human",
+            actor["id"],
+            "delegation",
+            delegation_id,
+            {
+                "note": note,
+                "held_by": hold["approver_id"] if hold else None,
+                "held_at": hold["decided_at"] if hold else None,
+                "hold_rationale": hold["rationale"] if hold else None,
+            },
+        )
+        self.telemetry(workspace_id, "approval_resumed", delegation_id, actor_id=actor["id"])
         return self.get_delegation(delegation_id, workspace_id)
 
     def _issue_warrant(
@@ -1787,6 +1890,15 @@ class WarrantService:
             "SELECT * FROM retrieval_evidence WHERE delegation_id=?", (delegation_id,)
         )
         warrant = self.db.one("SELECT * FROM warrants WHERE delegation_id=?", (delegation_id,))
+        # The recorded human decision was written but never read back, so a denied or
+        # held delegation showed no approver, no action and no rationale anywhere in the
+        # product -- it simply lost its approval controls and looked undecided.
+        approval = self.db.one(
+            "SELECT a.*,u.display_name,u.role FROM approvals a "
+            "LEFT JOIN users u ON u.id=a.approver_id AND u.workspace_id=? "
+            "WHERE a.delegation_id=?",
+            (workspace_id, delegation_id),
+        )
         verification = None
         if warrant:
             verification = self.db.one(
@@ -1812,6 +1924,21 @@ class WarrantService:
         )
         result["risk_assessment"] = Database.loads(risk["result_json"], None) if risk else None
         result["decision"] = Database.loads(decision["result_json"], None) if decision else None
+        result["approval"] = (
+            {
+                "id": approval["id"],
+                "action": approval["action"],
+                "approver_id": approval["approver_id"],
+                "approver_name": approval["display_name"] or approval["approver_id"],
+                "approver_role": approval["role"],
+                "scope_surfaces": Database.loads(approval["narrowed_scope_json"], []),
+                "rationale": approval["rationale"],
+                "decided_at": approval["decided_at"],
+            }
+            if approval
+            else None
+        )
+        result["resumable"] = delegation["status"] == "deferred"
         result["retrieval"] = (
             {
                 "mode": retrieval["mode"],

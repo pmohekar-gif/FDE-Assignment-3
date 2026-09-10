@@ -71,8 +71,10 @@ def issue_token(client: TestClient, username: str, password: str = DEMO_PASSWORD
 
 def test_disabled_mode_keeps_the_header_actor_path_and_switcher(open_client):
     assert open_client.get("/").status_code == 200
-    assert open_client.get("/v1/audit", headers={"X-Actor-ID": "priyanka-mohekar"}).status_code == 200
-    assert open_client.get("/v1/audit", headers={"X-Actor-ID": "kriti-developer"}).status_code == 403
+    admin = open_client.get("/v1/audit", headers={"X-Actor-ID": "priyanka-mohekar"})
+    assert admin.status_code == 200
+    lead = open_client.get("/v1/audit", headers={"X-Actor-ID": "kriti-developer"})
+    assert lead.status_code == 403
     assert open_client.get("/audit?actor_id=priyanka-mohekar").status_code == 200
 
     dashboard = open_client.get("/").text
@@ -84,7 +86,9 @@ def test_disabled_mode_has_no_sign_in_gate(open_client):
     redirected = open_client.get("/login", follow_redirects=False)
     assert redirected.status_code == 303
     assert redirected.headers["location"] == "/"
-    posted = open_client.post("/login", data={"username": "priyanka-mohekar"}, follow_redirects=False)
+    posted = open_client.post(
+        "/login", data={"username": "priyanka-mohekar"}, follow_redirects=False
+    )
     assert posted.status_code == 303
     assert SESSION_COOKIE_NAME not in posted.headers.get("set-cookie", "")
 
@@ -195,7 +199,8 @@ def test_forged_actor_header_cannot_escalate_to_admin(gated_client):
     # Authority follows the session, so the admin session succeeds where the header failed.
     gated_client.post("/logout", data={"csrf_token": "test-csrf"})
     assert sign_in(gated_client, "priyanka-mohekar").status_code == 303
-    assert gated_client.get("/v1/audit", headers={"X-Actor-ID": "kriti-developer"}).status_code == 200
+    gated = gated_client.get("/v1/audit", headers={"X-Actor-ID": "kriti-developer"})
+    assert gated.status_code == 200
 
 
 def test_body_declared_actor_must_match_the_session(gated_client):
@@ -316,7 +321,11 @@ def test_tampered_and_expired_cookies_are_rejected(gated_client):
 
 
 def test_token_endpoint_uses_shared_password_and_returns_distinct_roles(gated_client):
-    expected_roles = {"priyanka-mohekar": "admin", "chirayu-gupta": "owner", "kriti-developer": "lead"}
+    expected_roles = {
+        "priyanka-mohekar": "admin",
+        "chirayu-gupta": "owner",
+        "kriti-developer": "lead",
+    }
     for username, role in expected_roles.items():
         response = issue_token(gated_client, username)
         assert response.status_code == 200

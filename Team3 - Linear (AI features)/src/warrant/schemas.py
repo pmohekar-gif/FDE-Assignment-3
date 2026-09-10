@@ -202,8 +202,18 @@ class PolicyDecision(BaseModel):
 class HumanDecision(BaseModel):
     action: Literal["approve", "deny", "narrow", "defer"]
     approver_id: str = Field(min_length=2, max_length=80)
+    # Carries the operator's surface selection. Required for "narrow"; for "approve" it is
+    # optional but, when present, must equal the whole proposed scope -- an approve that
+    # silently dropped an unticked surface would grant more than the human chose.
     narrowed_surfaces: list[str] | None = None
     rationale: str | None = Field(default=None, max_length=1000)
+
+
+class DelegationResume(BaseModel):
+    """Lift a hold: return a deferred delegation to its approver set."""
+
+    actor_id: str = Field(min_length=2, max_length=80)
+    note: str | None = Field(default=None, max_length=1000)
 
 
 class EvidenceArtifact(BaseModel):

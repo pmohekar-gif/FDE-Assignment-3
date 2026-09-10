@@ -282,6 +282,12 @@
     <div class="rail-sec">
       <p class="rail-h">Human gate</p>
       <p class="note tight">A named approver must act. You may narrow the proposed scope; the server refuses widening and empty warrants.</p>
+      <ul class="note tight" style="margin:6px 0 0 16px;padding:0">
+        <li><strong>Approve as named authority</strong> — issues a warrant for the <em>whole</em> proposed scope. Untick a surface and this action is refused; use narrowing instead.</li>
+        <li><strong>Issue only the selected scope</strong> — issues a warrant limited to the ticked surfaces. The agent's write set and the restricted-path list are both derived from that narrower scope.</li>
+        <li><strong>Hold (defer)</strong> — postpones without denying. No warrant is issued, the delegation leaves the approval queue, and an approver can lift the hold later; both steps are audited.</li>
+        <li><strong>Deny</strong> — final. No warrant is ever issued for this delegation; a new one must be submitted and re-evaluated.</li>
+      </ul>
       <form id="decision-form" class="form-grid" style="margin-top:10px">
         <fieldset>
           <legend>Warrant scope</legend>
@@ -305,6 +311,26 @@
       </div>
       <div class="inline-error" id="decision-error" hidden></div>
       <p class="note">Every decision, rationale and identity is appended to the hash-chained audit ledger. Warrant TTL is {{ warrant_ttl_minutes }} minutes.</p>
+    </div>
+    {% endif %}
+
+    {% if d.approval %}
+    <div class="rail-sec">
+      <p class="rail-h">Recorded human decision</p>
+      <dl class="kv tight">
+        <dt>Action</dt><dd><code>{{ d.approval.action }}</code></dd>
+        <dt>Decided by</dt><dd>{{ d.approval.approver_name }}{% if d.approval.approver_role %} · {{ d.approval.approver_role }}{% endif %}</dd>
+        <dt>Decided at</dt><dd><span class="relative-time" data-time="{{ d.approval.decided_at }}">{{ d.approval.decided_at }}</span></dd>
+        <dt>Scope recorded</dt><dd>{% for path in d.approval.scope_surfaces %}<code>{{ path }}</code>{% if not loop.last %} {% endif %}{% else %}none{% endfor %}</dd>
+        <dt>Rationale</dt><dd>{{ d.approval.rationale or 'not given' }}</dd>
+      </dl>
+      {% if d.resumable %}
+      <p class="note tight">This delegation is on hold. Lifting the hold returns it to the same approver set with its policy decision and risk assessment intact; the hold and the lift both stay in the audit chain.</p>
+      <div class="rail-actions"><button class="btn pri" type="button" id="resume-hold">Lift hold and reopen approval</button></div>
+      <div class="inline-error" id="resume-error" hidden></div>
+      {% elif d.approval.action == 'deny' %}
+      <p class="note tight">Denial is final. Submit a newly evaluated delegation if the work is still needed.</p>
+      {% endif %}
     </div>
     {% endif %}
 
@@ -413,15 +439,31 @@ updateSelfApproval();window.addEventListener('warrant:actor',updateSelfApproval)
 async function decide(action){
   const selectedSurfaces=[...document.querySelectorAll('input[name=surface]:checked')].map(node=>node.value);
   if(selectedSurfaces.some(path=>!proposed.has(path))){renderError(decisionError,new ApiError(422,{error:'Selected scope is outside the policy proposal'}),'decision');return;}
-  if((action==='narrow'||action==='deny')&&!confirm(action==='deny'?'Deny this delegation?':'Issue only the selected narrower scope?'))return;
+  /* Approve means the whole proposed scope. Unticking surfaces and pressing it used to
+     grant everything anyway; the server now refuses that, and this keeps the operator
+     from discovering it as a 422. */
+  if(action==='approve'&&selectedSurfaces.length!==proposed.size){
+    renderError(decisionError,new ApiError(422,{error:`Approve issues the whole proposed scope (${proposed.size} surface(s)). You selected ${selectedSurfaces.length}. Use "Issue only the selected scope" to grant just those.`}),'decision');return;
+  }
+  if((action==='narrow'||action==='deny')&&!confirm(action==='deny'?'Deny this delegation? No warrant can ever be issued for it.':`Issue only the selected narrower scope (${selectedSurfaces.join(', ')})?`))return;
   const buttons=[...document.querySelectorAll('[data-action]')];buttons.forEach(button=>button.disabled=true);
   try{
     const body={action,approver_id:window.WARRANT.actor,rationale:document.getElementById('rationale')?.value||null};
-    if(action==='narrow')body.narrowed_surfaces=selectedSurfaces;
+    if(action==='narrow'||action==='approve')body.narrowed_surfaces=selectedSurfaces;
     await api(`/v1/delegations/${delegationId}/decision`,{method:'POST',body:JSON.stringify(body)});
     toast(`Decision recorded: ${action}`);setTimeout(()=>location.reload(),450);
   }catch(error){renderError(decisionError,error,error.status===403?'CODE_OWNER_REQUIRED boundary':'decision');buttons.forEach(button=>button.disabled=false);}
 }
+document.getElementById('resume-hold')?.addEventListener('click',async event=>{
+  const errorNode=document.getElementById('resume-error');errorNode.hidden=true;
+  const note=prompt('Why is this hold being lifted? (recorded in the audit chain)','Blocking question answered');
+  if(note===null)return;
+  event.currentTarget.disabled=true;
+  try{
+    await api(`/v1/delegations/${delegationId}/resume`,{method:'POST',body:JSON.stringify({actor_id:window.WARRANT.actor,note:note||null})});
+    toast('Hold lifted; delegation is awaiting approval again');setTimeout(()=>location.reload(),450);
+  }catch(error){renderError(errorNode,error,'resume');event.currentTarget.disabled=false;}
+});
 document.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',()=>decide(button.dataset.action)));
 
 /* ---------- warrant revocation ---------- */

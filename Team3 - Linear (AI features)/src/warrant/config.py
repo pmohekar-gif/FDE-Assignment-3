@@ -122,6 +122,20 @@ class Settings:
     repository_max_file_bytes: int = 512_000
     repository_max_results: int = 20
     coding_agent_provider: str = "codex"
+    # Extra environment variable NAMES the agent subprocess may see, on top of
+    # `coding.BASELINE_AGENT_ENV`. The agent CLI loads the operator's own hooks, and a
+    # hook that fails because a variable it expected is missing is reported by the CLI as
+    # a *denial* -- so an over-tight environment surfaces as a governed session that
+    # silently did nothing. Secret-shaped names are refused by
+    # `coding.validated_env_passthrough`.
+    coding_agent_env_passthrough: tuple[str, ...] = ()
+    # Run each governed session under a private CODEX_HOME (credentials and model config
+    # copied in, `hooks.json` left behind and `config.toml`'s `[hooks...]` tables
+    # stripped) instead of the operator's real one. A governed session already carries
+    # its own approval -- the warrant, and `--ask-for-approval never` -- so the
+    # operator's *global* hooks, installed by tools this project has never heard of, are
+    # an unrelated way for a session to fail closed. See `coding.prepare_isolated_agent_home`.
+    coding_agent_isolated_home: bool = False
     coding_session_root: Path = PROJECT_ROOT / ".runtime" / "coding-sessions"
     demo_repository_root: Path = PROJECT_ROOT / ".runtime" / "demo-repo"
     coding_agent_timeout_seconds: int = 900
@@ -208,6 +222,8 @@ class Settings:
             repository_max_file_bytes=int(os.getenv("REPOSITORY_MAX_FILE_BYTES", "512000")),
             repository_max_results=int(os.getenv("REPOSITORY_MAX_RESULTS", "20")),
             coding_agent_provider=os.getenv("CODING_AGENT_PROVIDER", "codex").lower(),
+            coding_agent_env_passthrough=_env_names("CODING_AGENT_ENV_PASSTHROUGH", ()),
+            coding_agent_isolated_home=_env_bool("CODING_AGENT_ISOLATED_HOME", False),
             coding_session_root=Path(
                 os.getenv(
                     "CODING_SESSION_ROOT",

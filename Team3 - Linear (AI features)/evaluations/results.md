@@ -2,7 +2,7 @@
 
 Status: **MEASURED_SYNTHETIC_POLICY_E2E_AND_RETRIEVAL**
 
-Measured: 2026-09-09T10:50:37.700071+00:00
+Measured: 2026-09-10T15:51:33.080282+00:00
 
 ## Metrics and proposed targets
 
@@ -19,7 +19,7 @@ Measured: 2026-09-09T10:50:37.700071+00:00
 | `operational_adversarial_non_allow_rate` | 1.00 (local conformance target) | `1.0` | **within_target** |
 | `risk_class_macro_f1` | >= 0.75 | `NOT_MEASURED` | **NOT_MEASURED** |
 | `retrieval_recall_at_10` | >= 0.85 | `1.0` | **within_target** |
-| `possible_duplicate_precision` | >= 0.85 | `1.0` | **within_target** |
+| `possible_duplicate_precision` | >= 0.85 | `0` | **outside_target** |
 | `semantic_search_recall_at_10` | >= 0.85 | `1.0` | **within_target** |
 | `exact_key_search_success` | 1.00 | `1.0` | **within_target** |
 | `brief_unsupported_authority_count` | 0 | `0` | **within_target** |

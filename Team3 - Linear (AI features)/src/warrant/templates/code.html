@@ -79,7 +79,9 @@ function setRepositoryAvailability(status){
   const message=document.getElementById('repository-unavailable-message');
   const available=status.availability?.available!==false;
   if(unavailable){unavailable.hidden=available;if(!available)message.textContent=status.availability.message;}
-  ['code-query','file-filter','symbol-filter','refresh-index'].forEach(id=>{
+  /* No file/symbol browser is rendered on this page; the ids it used to disable did
+     not exist. `/v1/code/files` and `/v1/code/symbols` remain API-only surfaces. */
+  ['code-query','refresh-index'].forEach(id=>{
     const node=document.getElementById(id);if(node)node.disabled=!available;
   });
   document.querySelector('#code-form button[type="submit"]')?.toggleAttribute('disabled',!available);
@@ -186,7 +188,7 @@ async function ask(query,scope={}){
   try{
     const body=await api('/v1/code/query',{method:'POST',body:JSON.stringify({query,repository_id:{{ repository_id|tojson }},limit:8,...scope})});
     recordCodeTelemetry('query_completed','query',{query_length:query.length,result_count:body.sources.length,source_count:body.sources.length,cached_index:body.cached_index,truncated:body.truncated});
-    answer.replaceChildren();const synthesis=body.synthesized?(body.synthesis_degraded?`AI synthesis fallback · ${body.synthesis_provider}`:`AI synthesis · ${body.synthesis_provider}`):'Deterministic repository answer · AI synthesis unavailable';answer.append(el('p',synthesis,'advisory'),el('p',body.answer));
+    answer.replaceChildren();const simulated=body.synthesis_provider==='fixture';const synthesis=body.synthesized?(simulated?`SIMULATED synthesis · deterministic fixture, no model called`:(body.synthesis_degraded?`AI synthesis fallback · ${body.synthesis_provider}`:`AI synthesis · ${body.synthesis_provider} · ${body.synthesis_model||'model unreported'}`)):'Deterministic repository answer · AI synthesis unavailable';answer.append(el('p',synthesis,'advisory'),el('p',body.answer));
     if(body.modules.length){
       const modules=el('div','','module-actions');
       body.modules.forEach(module=>{const source=body.sources.find(item=>item.module===module);const row=el('div','','module-action');row.append(el('b',module,'tool neutral'));if(source){row.append(el('span',`${source.path}:${source.start_line}-${source.end_line}`,'aside'),sourceActions(source.path,null,source.start_line));}modules.append(row)});

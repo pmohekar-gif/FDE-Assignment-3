@@ -99,7 +99,11 @@ def test_idempotent_manual_and_signed_webhook_ingress(client, headers):
     assert second["idempotent_replay"] is True
 
     raw = json.dumps(
-        {"issue_ref": "PAY-4471", "requester_id": "kriti-developer", "target_agent_id": "codex-cloud"}
+        {
+            "issue_ref": "PAY-4471",
+            "requester_id": "kriti-developer",
+            "target_agent_id": "codex-cloud",
+        }
     ).encode()
     timestamp = str(time.time())
     signature = sign_webhook("test-webhook-secret", timestamp, raw)
@@ -154,7 +158,9 @@ def test_openrouter_json_object_pipeline_keeps_deterministic_verdict(
 
     monkeypatch.setattr("warrant.providers.ChatCompletionsProvider._post_chat_completions", stub)
     client = openrouter_client(tmp_path)
-    created = create(client, headers, "WEB-4519", requester="chirayu-gupta", key="openrouter-ok").json()
+    created = create(
+        client, headers, "WEB-4519", requester="chirayu-gupta", key="openrouter-ok"
+    ).json()
     assert created["decision"]["verdict"] == "ALLOW"
     usage = client.app.state.db.one(
         "SELECT * FROM model_usage WHERE delegation_id=?", (created["id"],)

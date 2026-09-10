@@ -140,7 +140,9 @@ def test_shell_renders_sidebar_counts_palette_and_integrity_pill(client):
 
 def test_triage_queue_groups_by_verdict_with_sufficiency_rings(client, headers):
     create_delegation(client, headers, key="ui-queue-hold")
-    create_delegation(client, headers, issue="SEC-4502", requester="priyanka-mohekar", key="ui-deny")
+    create_delegation(
+        client, headers, issue="SEC-4502", requester="priyanka-mohekar", key="ui-deny"
+    )
     create_delegation(client, headers, issue="WEB-4519", requester="chirayu-gupta", key="ui-allow")
 
     page = client.get("/")
@@ -536,7 +538,9 @@ def test_coding_sessions_index_lists_sessions_and_reads_capabilities(client, hea
 
 def test_delegations_index_groups_every_delegation_by_verdict(client, headers):
     create_delegation(client, headers, key="ui-index-hold")
-    create_delegation(client, headers, issue="WEB-4519", requester="chirayu-gupta", key="ui-index-allow")
+    create_delegation(
+        client, headers, issue="WEB-4519", requester="chirayu-gupta", key="ui-index-allow"
+    )
     page = client.get("/delegations")
     assert page.status_code == 200
     assert "Verdict distribution" in page.text
@@ -574,9 +578,11 @@ def test_code_intelligence_page_exposes_index_status_and_refresh(client):
     assert "Where is the policy verdict computed?" in page.text
     assert "Where is an active warrant re-checked before execution?" in page.text
     assert "How is the audit chain hashed?" in page.text
-    assert "How does the authentication system work?" in page.text
-    assert "Who wrote the payment processing logic?" in page.text
-    assert "When was the search feature added?" in page.text
+    # Example queries must be answerable from the index this engine actually builds
+    # (paths, symbols, imports at one revision) -- never authorship or Git history.
+    assert "Where is the restricted-path check enforced?" in page.text
+    assert "Who wrote" not in page.text
+    assert "When was" not in page.text
     assert "Impact-preflight prompts for current issues" in page.text
     assert "payment retry idempotency" in page.text
     assert "authentication signing keys" in page.text

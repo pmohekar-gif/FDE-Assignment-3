@@ -101,6 +101,270 @@ def _is_baseline_restricted_path(path: str) -> bool:
     return name.endswith(".pem") or name.endswith(".key")
 
 
+# The variables every agent subprocess gets. `PATH`/`HOME`/`CODEX_HOME` are what the CLI
+# needs to find itself and authenticate; `USER`/`LOGNAME`/`SHELL`/`TERM`/locale are what
+# ordinary shell hooks assume exist. None of them is a credential except the API key,
+# which the CLI cannot run without.
+BASELINE_AGENT_ENV: tuple[str, ...] = (
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "CODEX_HOME",
+    "OPENAI_API_KEY",
+)
+# Names that may never be added to the passthrough list, however the operator spells the
+# rest of it. Widening the agent's environment is a legitimate operation; turning it into
+# a channel for unrelated credentials is not.
+SECRET_ENV_NAME = re.compile(
+    r"(SECRET|PASSWORD|PASSWD|TOKEN|CREDENTIAL|PRIVATE_KEY|API_KEY|APIKEY|SESSION_KEY"
+    r"|WEBHOOK|CSRF|_PAT$|^PAT$)",
+    re.IGNORECASE,
+)
+
+
+def validated_env_passthrough(names: Sequence[str]) -> tuple[str, ...]:
+    """De-duplicated extra variable names for the agent, or a typed refusal.
+
+    `OPENAI_API_KEY` is exempt from the secret-name refusal because it is in the baseline
+    already: the CLI cannot authenticate without it, and that is a deliberate, recorded
+    grant rather than an accidental one.
+    """
+    cleaned: list[str] = []
+    for raw in names:
+        name = str(raw).strip()
+        if not name or name in BASELINE_AGENT_ENV:
+            continue
+        if SECRET_ENV_NAME.search(name):
+            raise ValueError(
+                f"refusing to pass {name!r} to the coding agent: CODING_AGENT_ENV_PASSTHROUGH "
+                "must not carry secret-shaped variable names"
+            )
+        if name not in cleaned:
+            cleaned.append(name)
+    return tuple(cleaned)
+
+
+# Codex reports each lifecycle hook it fires on its own line, and appends "Blocked" when
+# that hook denied the event. A blocked `UserPromptSubmit` or `SessionStart` ends the turn
+# before the model is given the task at all: the CLI then exits 0 having done nothing,
+# which is indistinguishable from "the agent looked and decided no change was needed"
+# unless this line is read.
+HOOK_BLOCKED = re.compile(r"^\s*hook:\s*(?P<hook>[A-Za-z][A-Za-z0-9_-]{0,63})\s+Blocked\b", re.M)
+# Hooks that gate the turn itself. Anything blocked here means no work was even attempted.
+TURN_GATING_HOOKS = frozenset({"UserPromptSubmit", "SessionStart"})
+
+
+def blocked_hooks(output: str) -> list[str]:
+    """Hook names the agent CLI reported as having blocked an event, in order."""
+    seen: list[str] = []
+    for match in HOOK_BLOCKED.finditer(output or ""):
+        name = match.group("hook")
+        if name not in seen:
+            seen.append(name)
+    return seen
+
+
+def agent_config_locations() -> list[str]:
+    """Existing agent-CLI configuration files that could hold a blocking hook.
+
+    A governed session inherits the operator's ambient Codex configuration, because
+    `HOME` and `CODEX_HOME` have to reach the subprocess for it to authenticate at all
+    (see `SubprocessCodingAgentRunner._environment`). That means a hook the operator
+    installed globally — in no way visible in this repository — can silently deny a
+    governed run. When that happens, naming the files that actually exist is the
+    difference between a five-minute fix and an afternoon.
+    """
+    roots: list[Path] = []
+    codex_home = os.environ.get("CODEX_HOME")
+    if codex_home:
+        roots.append(Path(codex_home))
+    home = os.environ.get("HOME")
+    if home:
+        roots.append(Path(home) / ".codex")
+    found: list[str] = []
+    for root in roots:
+        for name in ("hooks.json", "config.toml"):
+            candidate = root / name
+            try:
+                exists = candidate.is_file()
+            except OSError:
+                exists = False
+            if exists and str(candidate) not in found:
+                found.append(str(candidate))
+    return found
+
+
+_TOML_TABLE_HEADER = re.compile(r"^\s*\[{1,2}([^\]]+?)\]{1,2}\s*$")
+
+
+def strip_hooks_table(text: str) -> str:
+    """Remove every `[hooks...]` / `[[hooks...]]` table from a config.toml's text.
+
+    Textual rather than a full TOML parse-and-rewrite: safe because a hook table is a
+    self-contained block headed by a `[hooks...]` or `[[hooks...]]` line and ended by the
+    next table header (or end of file), so everything else in the file -- `model`,
+    `provider`, sandbox settings -- passes through byte-for-byte instead of round-tripping
+    through a writer this project does not otherwise need.
+    """
+    kept: list[str] = []
+    skipping = False
+    for line in text.splitlines():
+        header = _TOML_TABLE_HEADER.match(line)
+        if header:
+            name = header.group(1).strip()
+            skipping = name == "hooks" or name.startswith("hooks.") or name.startswith("hooks ")
+        if not skipping:
+            kept.append(line)
+    body = "\n".join(kept)
+    return body + "\n" if text.endswith("\n") else body
+
+
+def prepare_isolated_agent_home(target: Path, source_home: Path) -> bool:
+    """A minimal CODEX_HOME for a governed session: credentials and model config, no hooks.
+
+    A governed session already carries its own approval -- the warrant, and
+    `--ask-for-approval never` -- so the operator's *global* Codex hooks, installed by
+    tools this project has never heard of, add nothing but an unrelated way for the
+    session to fail closed (see `agent_config_locations`). This copies just enough of the
+    operator's real `~/.codex` for the CLI to still authenticate and pick the configured
+    model, and leaves `hooks.json` behind entirely; `config.toml` usually carries both
+    hooks and model/provider settings in the same file, so only its `[hooks...]` tables
+    are stripped rather than the whole file being skipped.
+
+    Returns whether anything was actually copied. An operator with no `~/.codex` yet has
+    nothing to isolate from, and the caller should leave `CODEX_HOME` alone rather than
+    point it at an empty, unauthenticated directory in that case.
+    """
+    copied = False
+    auth_src = source_home / "auth.json"
+    if auth_src.is_file():
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(auth_src, target / "auth.json")
+        copied = True
+    config_src = source_home / "config.toml"
+    if config_src.is_file():
+        target.mkdir(parents=True, exist_ok=True)
+        filtered = strip_hooks_table(config_src.read_text("utf-8", errors="replace"))
+        (target / "config.toml").write_text(filtered, encoding="utf-8")
+        copied = True
+    return copied
+
+
+def redact_diff_content(unified: str) -> tuple[str, int, tuple[str, ...]]:
+    """Redact secret-like material in a unified diff's content lines only.
+
+    Scanning the whole patch text also scanned Git's own metadata, and one of those
+    lines is `index <old-blob>..<new-blob> <mode>`. The `card_pan` pattern
+    (13-19 digits with optional separators) matches an abbreviated blob pair that
+    happens to be all digits and dashes, so a completely ordinary diff was reported as
+    "diff contains secret-like material" and the session failed -- non-deterministically,
+    because whether it fires depends on the hashes Git computed. Redacting a metadata
+    line is also destructive: the recorded artifact stops naming the revisions a
+    reviewer needs to reproduce it.
+
+    Only hunk body lines (context, additions, deletions) are scanned. File headers,
+    `index` lines, hunk ranges, mode changes and binary payloads are passed through
+    untouched; a binary payload cannot be meaningfully matched by these text patterns,
+    and key material is refused by path before it can reach a diff at all.
+
+    Returns the redacted text, the total redaction count, and the distinct pattern
+    *names* that matched (never the matched text) -- `email` and `card_pan` are broad
+    enough to match a perfectly ordinary code comment or test fixture, and naming which
+    kind fired is what lets a reviewer tell that apart from `aws_secret`/`private_key`/
+    `jwt` actually firing on real key material, without this function ever returning the
+    matched text itself.
+    """
+    redactions = 0
+    kinds: list[str] = []
+    output: list[str] = []
+    in_hunk = False
+    for line in unified.splitlines(keepends=True):
+        body = line.rstrip("\n")
+        if body.startswith("@@"):
+            in_hunk = True
+            output.append(line)
+            continue
+        if body.startswith("diff --git") or body.startswith("GIT binary patch"):
+            in_hunk = False
+            output.append(line)
+            continue
+        if not in_hunk or body.startswith("--- ") or body.startswith("+++ "):
+            output.append(line)
+            continue
+        for name, pattern in SECRET_PATTERNS:
+            line, count = pattern.subn(f"[REDACTED:{name.upper()}]", line)
+            redactions += count
+            if count and name not in kinds:
+                kinds.append(name)
+        output.append(line)
+    return "".join(output), redactions, tuple(sorted(kinds))
+
+
+# Patterns broad enough to match ordinary content -- an address in a docstring, an
+# ordinary long number -- rather than only the shape of an actual secret. The other
+# patterns in `security.SECRET_PATTERNS` are, by that module's own design, ordered
+# structural/high-confidence shapes first specifically so a broad one cannot consume
+# part of a real credential; firing on the diff is not by itself evidence of a leak only
+# for the two named here.
+BROAD_SECRET_KINDS = frozenset({"email", "card_pan"})
+
+
+def _diagnose_secret_redaction(kinds: Sequence[str]) -> str:
+    """Name which pattern(s) fired, so a reviewer can judge real leak vs. false positive
+    without needing the redacted value -- which this message never includes.
+    """
+    named = ", ".join(kinds) if kinds else "an unnamed pattern"
+    broad = sorted(set(kinds) & BROAD_SECRET_KINDS)
+    narrow = sorted(set(kinds) - BROAD_SECRET_KINDS)
+    guidance = []
+    if narrow:
+        guidance.append(
+            f"{', '.join(narrow)} matches the shape of an actual credential and is worth "
+            "treating as a real leak until shown otherwise"
+        )
+    if broad:
+        guidance.append(
+            f"{', '.join(broad)} also matches ordinary content -- an address in a comment, "
+            "a variable merely named like a credential, an ordinary long number -- so it is "
+            "not by itself evidence of a leak"
+        )
+    detail = "; ".join(guidance) if guidance else "read the redacted diff to judge which"
+    return (
+        f"diff contains secret-like material ({named}) and was redacted before storage; "
+        f"the session was not completed. {detail}. The redacted diff itself is safe: it "
+        "was stored with [REDACTED:KIND] markers in place of the matched text, never the "
+        "text itself, and remains visible in this session's diff panel for review."
+    )
+
+
+def _scope_grants_surface(scope_pattern: str, surface_glob: str) -> bool:
+    """Whether an approved scope entry specifically grants a protected surface.
+
+    The surface map is a hierarchy: `services/billing/**` contains the separately owned,
+    irreversible `services/billing/ledger/**`. A protected surface may be dropped from a
+    session's restricted list only when the human-approved scope names that surface or
+    something inside it -- so the test is "does the scope entry fall under the surface
+    glob", i.e. `fnmatch(scope_pattern, surface_glob)`.
+
+    The arguments used to be the other way round (`fnmatch(surface_glob, scope_pattern)`),
+    which got both directions wrong. An approval narrowed to a concrete file
+    (`services/billing/retry.py`) never matched the surface glob it lived under, so the
+    surface stayed restricted and the very file the named owner had just approved was
+    rejected as restricted material -- every protected-surface delegation failed. In the
+    other direction a broad grant (`services/**`) matched every nested glob, silently
+    unlocking the irreversible ledger surface nobody had approved.
+    """
+    if scope_pattern == surface_glob:
+        return True
+    return fnmatch.fnmatch(scope_pattern, surface_glob)
+
+
 def _git_detail(result: subprocess.CompletedProcess[str]) -> str:
     """The last, user-safe line of a failed git invocation."""
     lines = (result.stderr or result.stdout or "").strip().splitlines()
@@ -144,6 +408,10 @@ class SubprocessCodingAgentRunner(CodingAgentRunner):
     def __init__(self, executable: str, settings: Settings) -> None:
         self.executable = executable
         self.settings = settings
+        # Validated here, at construction, so a secret-shaped passthrough name fails at
+        # startup rather than on the first governed session.
+        self.extra_env = validated_env_passthrough(settings.coding_agent_env_passthrough)
+        self.isolated_home = settings.coding_agent_isolated_home
         self.name = Path(executable).name
         self.real = True
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
@@ -169,19 +437,50 @@ class SubprocessCodingAgentRunner(CodingAgentRunner):
             ]
         raise CodingAgentError("unsupported real coding-agent executable")
 
-    @staticmethod
-    def _environment() -> dict[str, str]:
-        allowed = {
-            "PATH",
-            "HOME",
-            "TMPDIR",
-            "LANG",
-            "LC_ALL",
-            "TERM",
-            "CODEX_HOME",
-            "OPENAI_API_KEY",
-        }
-        return {key: value for key, value in os.environ.items() if key in allowed}
+    def _isolated_home_dir(self, workspace: Path) -> Path:
+        """Where this session's private CODEX_HOME lives: a sibling of its worktree.
+
+        Not inside the worktree -- that directory is what `git diff` and the scope
+        checks read, and a stray `.codex` underneath it would either pollute the diff or
+        have to be specially excluded everywhere that walks the checkout.
+        """
+        return workspace.parent / f".{workspace.name}.codex-home"
+
+    def _environment(self, workspace: Path | None = None) -> dict[str, str]:
+        """The variables the agent subprocess is allowed to see, by name.
+
+        The agent runs with a deliberately small environment so an unrelated credential
+        in the server's environment cannot reach it. But the agent CLI also loads the
+        operator's own hooks, and a hook that fails for any reason -- including a missing
+        variable it expected -- is treated by the CLI as a *denial*, not an error. A
+        `set -u` shell hook referencing `$USER`, or a Node hook needing `XDG_CACHE_HOME`,
+        therefore turns into "hook Blocked" and a governed session that silently does
+        nothing.
+
+        `USER`, `LOGNAME` and `SHELL` are in the baseline because virtually every shell
+        hook assumes them and none of them is a secret. Anything further is opt-in
+        through `CODING_AGENT_ENV_PASSTHROUGH`, and secret-shaped names are refused there
+        so widening this list cannot quietly become a credential leak.
+
+        When `CODING_AGENT_ISOLATED_HOME` is set and a workspace is given, `CODEX_HOME`
+        is pointed at a private copy instead of being passed through: see
+        `prepare_isolated_agent_home`. That copy is skipped, and the ambient `CODEX_HOME`
+        passed through as usual, if the operator has no `~/.codex` to copy from.
+        """
+        allowed = set(BASELINE_AGENT_ENV) | set(self.extra_env)
+        environment = {key: value for key, value in os.environ.items() if key in allowed}
+        if self.isolated_home and workspace is not None:
+            source_home = Path(
+                os.environ.get("CODEX_HOME") or str(Path(os.environ.get("HOME", "")) / ".codex")
+            )
+            isolated = self._isolated_home_dir(workspace)
+            if prepare_isolated_agent_home(isolated, source_home):
+                environment["CODEX_HOME"] = str(isolated)
+        return environment
+
+    def environment_names(self) -> list[str]:
+        """Sorted names of the variables this runner would pass. Never their values."""
+        return sorted(self._environment())
 
     def run(self, session_id: str, workspace: Path, prompt: str) -> RunnerResult:
         available, reason = self.is_available()
@@ -193,7 +492,7 @@ class SubprocessCodingAgentRunner(CodingAgentRunner):
             cwd=workspace,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            env=self._environment(),
+            env=self._environment(workspace),
             start_new_session=True,
         )
         with self._lock:
@@ -259,13 +558,87 @@ class MockCodingAgentRunner(CodingAgentRunner):
     def is_available(self) -> tuple[bool, str]:
         return True, "built-in visibly simulated runner"
 
+    # Comment syntax per extension, so an amended in-scope file still parses and the
+    # target repository's own checks stay meaningful. An extension that is absent here
+    # (`.json`, for instance) has no comment form, so such a file is never amended.
+    COMMENT_STYLES: dict[str, tuple[str, str]] = {
+        ".py": ("# ", ""),
+        ".sh": ("# ", ""),
+        ".yaml": ("# ", ""),
+        ".yml": ("# ", ""),
+        ".toml": ("# ", ""),
+        ".md": ("", ""),
+        ".txt": ("", ""),
+        ".ts": ("// ", ""),
+        ".tsx": ("// ", ""),
+        ".js": ("// ", ""),
+        ".jsx": ("// ", ""),
+        ".mjs": ("// ", ""),
+        ".cjs": ("// ", ""),
+        ".css": ("/* ", " */"),
+        ".html": ("<!-- ", " -->"),
+    }
+
+    @classmethod
+    def _target_path(cls, workspace: Path, allowed: Sequence[str]) -> str:
+        """The in-scope file this simulated run will amend.
+
+        An existing in-scope file whose language has a comment form is preferred, so the
+        simulated diff is a real modification of a real file -- the same shape a review
+        has to handle -- and the target repository's own verification still parses it.
+        Turning a glob into a literal filename (`web/**` -> `web/simulated`) is the last
+        resort: it invents a path the target repository may ignore, and an ignored write
+        produces no diff at all.
+        """
+        tracked: list[str] | None = None
+        for pattern in allowed:
+            if any(character in pattern for character in "*?["):
+                # fnmatch, not `Path.glob`: the warrant's patterns are matched with
+                # fnmatch everywhere else in this module, and `Path.glob("web/**")`
+                # yields directories rather than files on the supported interpreters.
+                if tracked is None:
+                    tracked = cls._amendable_files(workspace)
+                candidates = [path for path in tracked if fnmatch.fnmatch(path, pattern)]
+                if candidates:
+                    return candidates[0]
+                continue
+            candidate = workspace / pattern
+            if candidate.is_file() and candidate.suffix in cls.COMMENT_STYLES:
+                return pattern
+        fallback = str(allowed[0]) if allowed else "CODING_SESSION_MOCK.md"
+        return fallback.replace("**", "simulated").replace("*", "simulated")
+
+    @classmethod
+    def _amendable_files(cls, workspace: Path, limit: int = 20_000) -> list[str]:
+        """Sorted repo-relative files this runner could safely amend, bounded."""
+        found: list[str] = []
+        for directory, names, files in os.walk(workspace):
+            names[:] = [name for name in names if name != ".git"]
+            for name in files:
+                if Path(name).suffix not in cls.COMMENT_STYLES:
+                    continue
+                found.append(Path(directory, name).relative_to(workspace).as_posix())
+                if len(found) >= limit:
+                    return sorted(found)
+        return sorted(found)
+
+    @classmethod
+    def _simulated_note(cls, target: str, prompt: str) -> str:
+        opening, closing = cls.COMMENT_STYLES.get(Path(target).suffix, ("", ""))
+        summary = " ".join(prompt[:400].split())
+        lines = [
+            "Simulated coding-agent output",
+            "Written by the visibly labelled mock runner; it is not a real code change.",
+            f"Prompt summary: {summary}",
+        ]
+        return "".join(f"{opening}{line}{closing}\n" for line in lines)
+
     def run(self, session_id: str, workspace: Path, prompt: str) -> RunnerResult:
         if session_id in self._cancelled:
             return RunnerResult(-15, "SIMULATED runner cancelled", 0, cancelled=True)
         match = re.search(r"^Allowed paths: (.+)$", prompt, re.MULTILINE)
-        allowed = json.loads(match.group(1)) if match else []
-        target = str(allowed[0]) if allowed else "CODING_SESSION_MOCK.md"
-        target = target.replace("**", "simulated").replace("*", "simulated")
+        allowed = [str(item) for item in (json.loads(match.group(1)) if match else [])]
+        target = self._target_path(workspace, allowed)
         relative = Path(target)
         if relative.is_absolute() or ".." in relative.parts:
             raise CodingAgentError("mock runner refused an unsafe warrant path")
@@ -275,13 +648,13 @@ class MockCodingAgentRunner(CodingAgentRunner):
         except ValueError as exc:
             raise CodingAgentError("mock runner path escaped its worktree") from exc
         marker.parent.mkdir(parents=True, exist_ok=True)
-        prefix = marker.read_text() + "\n" if marker.exists() else ""
-        marker.write_text(
-            prefix + "# Simulated coding-agent output\n\n"
-            "This file was produced by the visibly labelled mock runner.\n\n"
-            f"Prompt summary: {prompt[:400]}\n"
-        )
-        return RunnerResult(0, "SIMULATED runner wrote CODING_SESSION_MOCK.md", 1)
+        existed = marker.is_file()
+        prefix = marker.read_text() if existed else ""
+        if prefix and not prefix.endswith("\n"):
+            prefix += "\n"
+        marker.write_text(prefix + ("\n" if existed else "") + self._simulated_note(target, prompt))
+        verb = "amended" if existed else "created"
+        return RunnerResult(0, f"SIMULATED runner {verb} {target}", 1)
 
     def cancel(self, session_id: str) -> bool:
         self._cancelled.add(session_id)
@@ -909,10 +1282,65 @@ class CodingSessionService:
             "SELECT glob FROM surfaces WHERE workspace_id=? AND protected=1", (workspace_id,)
         ):
             glob = str(row["glob"])
-            if any(fnmatch.fnmatch(glob, str(pattern)) for pattern in granted_scope):
+            if any(_scope_grants_surface(str(pattern), glob) for pattern in granted_scope):
                 continue
             restricted.append(glob)
         return list(dict.fromkeys(restricted))
+
+    def _scope_preflight(self, allowed_paths: Sequence[str]) -> dict[str, Any]:
+        """Whether the approved scope actually exists in the configured checkout.
+
+        A warrant's scope comes from the issue's declared surfaces, which are only as
+        good as the tracker's data. When none of them exist in `REPOSITORY_ROOT` the
+        session is doomed before it starts: a real agent has nothing to edit, exits
+        cleanly, and the session dies much later with a bare "no reviewable diff" that
+        names neither the scope nor the checkout. Resolving the scope up front turns
+        that into an actionable refusal at launch.
+
+        A pattern counts as resolvable when it matches a tracked path, or -- for a
+        concrete, glob-free pattern -- when its parent directory exists, since creating
+        a new file inside an existing directory is legitimate scoped work.
+        """
+        root = self.repository.root
+        listed = LocalRepositoryProvider._git(["ls-files", "-z"], root, 30)
+        tracked = [item for item in listed.stdout.split("\0") if item]
+        resolved: dict[str, list[str]] = {}
+        creatable: list[str] = []
+        unresolved: list[str] = []
+        for raw in allowed_paths:
+            pattern = str(raw)
+            matches = [path for path in tracked if fnmatch.fnmatch(path, pattern)]
+            if matches:
+                resolved[pattern] = matches[:20]
+                continue
+            if not any(character in pattern for character in "*?["):
+                candidate = (root / pattern).parent
+                if candidate.is_dir():
+                    creatable.append(pattern)
+                    continue
+            unresolved.append(pattern)
+        return {
+            "repository_root": str(root),
+            "tracked_file_count": len(tracked),
+            "resolved": resolved,
+            "creatable": creatable,
+            "unresolved": unresolved,
+            "satisfied": bool(resolved or creatable),
+        }
+
+    def _assert_scope_exists(self, allowed_paths: Sequence[str]) -> dict[str, Any]:
+        """Refuse a session whose whole approved scope is absent from the checkout."""
+        preflight = self._scope_preflight(allowed_paths)
+        if preflight["satisfied"]:
+            return preflight
+        missing = ", ".join(preflight["unresolved"][:6]) or "(empty scope)"
+        raise Conflict(
+            "the approved scope does not exist in the configured repository: "
+            f"{missing} not found in {preflight['repository_root']} "
+            f"({preflight['tracked_file_count']} tracked files). A coding session there "
+            "could not produce a reviewable diff. Point REPOSITORY_ROOT at the checkout "
+            "that owns these paths, or run `make demo-repo` and use the demo checkout."
+        )
 
     def _assert_warrant_live(
         self, session_id: str, warrant_id: str, workspace_id: str, stage: str
@@ -1016,6 +1444,10 @@ class CodingSessionService:
                 f"the configured repository has no commit to branch from ({base_revision}); "
                 "run `make demo-repo`, or make an initial commit in REPOSITORY_ROOT"
             )
+        # Refused before any worktree exists: a scope the checkout does not contain can
+        # never yield a reviewable diff, and failing at launch names both the scope and
+        # the repository instead of surfacing as an unexplained agent failure later.
+        preflight = self._assert_scope_exists(warrant["scope_surfaces"])
         session_id = self._id("ses")
         issue_key = detail["issue"]["external_key"]
         branch = self._derive_branch(issue_key, str(detail["issue"]["title"]), session_id)
@@ -1099,6 +1531,15 @@ class CodingSessionService:
         )
         self._event(
             session_id,
+            "scope_preflight",
+            repository_root=preflight["repository_root"],
+            tracked_file_count=preflight["tracked_file_count"],
+            resolved=preflight["resolved"],
+            creatable=preflight["creatable"],
+            unresolved=preflight["unresolved"],
+        )
+        self._event(
+            session_id,
             "verification_discovered",
             source=plan.source,
             checks=[check.to_dict() for check in plan.checks],
@@ -1172,6 +1613,16 @@ class CodingSessionService:
             # Installed here, not at construction, so a runner injected later still reports
             # its process id to the session row.
             runner.on_process_start = self._record_agent_pid
+            if isinstance(runner, SubprocessCodingAgentRunner):
+                # Names only, never values. The environment the agent was given is the
+                # one thing a "hook Blocked" outcome cannot be diagnosed without, and it
+                # is not otherwise recoverable after the run.
+                self._event(
+                    session_id,
+                    "agent_environment",
+                    variables=runner.environment_names(),
+                    passthrough=list(runner.extra_env),
+                )
             # Last gate before anything executes: the warrant may have been revoked or have
             # expired while the worktree was being prepared.
             self._assert_warrant_live(
@@ -1196,10 +1647,24 @@ class CodingSessionService:
                 raise CodingAgentError("coding agent timed out and was terminated")
             if result.exit_code != 0:
                 raise CodingAgentError(f"coding agent exited with status {result.exit_code}")
+            # A hook denial is recorded even when the run still produced a diff: a blocked
+            # PreToolUse the agent worked around is not a session failure, but it is
+            # something a reviewer of a governed run must be able to see.
+            blocked = blocked_hooks(safe_output)
+            if blocked:
+                self._event(
+                    session_id,
+                    "agent_hook_blocked",
+                    hooks=blocked,
+                    turn_gating=sorted(set(blocked) & TURN_GATING_HOOKS),
+                    agent_config_locations=agent_config_locations(),
+                )
             self._event(session_id, "agent_completed", duration_ms=result.duration_ms)
             diff = self._create_diff(session_id, worktree, session["base_revision"])
             if not diff["changed_files"]:
-                raise CodingAgentError("agent completed without producing a reviewable diff")
+                raise CodingAgentError(
+                    self._diagnose_empty_diff(session_id, worktree, contract, blocked)
+                )
             restricted_patterns = [str(item) for item in contract.get("restricted_paths") or []]
             if not restricted_patterns:
                 # Fail closed: an unenforceable contract is not a permissive one.
@@ -1231,7 +1696,13 @@ class CodingSessionService:
                     "agent changed files outside warrant scope: " + ", ".join(outside)
                 )
             if diff["secret_redactions"]:
-                raise CodingAgentError("diff contains secret-like material and was redacted")
+                self._event(
+                    session_id,
+                    "diff_secrets_redacted",
+                    redactions=diff["secret_redactions"],
+                    kinds=diff["secret_kinds"],
+                )
+                raise CodingAgentError(_diagnose_secret_redaction(diff["secret_kinds"]))
             self._event(
                 session_id,
                 "diff_generated",
@@ -1291,6 +1762,109 @@ class CodingSessionService:
         finally:
             self._threads.pop(session_id, None)
             self._reap_worktrees()
+
+    def _diagnose_empty_diff(
+        self,
+        session_id: str,
+        worktree: Path,
+        contract: dict[str, Any],
+        blocked: Sequence[str] = (),
+    ) -> str:
+        """Explain why an exit-zero agent run produced nothing reviewable.
+
+        "agent completed without producing a reviewable diff" is true but useless: it
+        names neither the scope the agent was given, nor whether those paths exist, nor
+        the two failure modes that are invisible in `git diff` -- a write that landed on
+        a path the target repository's `.gitignore` excludes, which `git add -N` skips,
+        and an agent-CLI hook that denied the prompt so the model never received the task.
+        Each cause needs a different remedy, so the message distinguishes them and the
+        same detail is recorded on the session timeline.
+        """
+        allowed = [str(item) for item in contract.get("allowed_paths") or []]
+        present: list[str] = []
+        absent: list[str] = []
+        for pattern in allowed:
+            listed = LocalRepositoryProvider._git(
+                ["ls-files", "--", pattern], worktree, 15
+            ).stdout.strip()
+            (present if listed else absent).append(pattern)
+        ignored = LocalRepositoryProvider._git(
+            ["status", "--porcelain", "--ignored=matching", "--untracked-files=all"], worktree, 30
+        )
+        ignored_writes = [
+            line[3:].strip()
+            for line in ignored.stdout.splitlines()
+            if line.startswith("!!") and not line[3:].strip().startswith(".git/")
+        ]
+        gating = sorted(set(blocked) & TURN_GATING_HOOKS)
+        locations = agent_config_locations() if blocked else []
+        detail = {
+            "allowed_paths": allowed,
+            "paths_present_in_checkout": present,
+            "paths_absent_from_checkout": absent,
+            "ignored_writes": ignored_writes[:20],
+            "blocked_hooks": list(blocked),
+            "turn_gating_hooks_blocked": gating,
+            "agent_config_locations": locations,
+        }
+        self._event(session_id, "empty_diff_diagnosed", **detail)
+        # Checked first: when the prompt itself was denied, nothing else in this
+        # diagnosis is evidence about anything.
+        if gating:
+            where = ", ".join(locations) or (
+                "nothing was found under $CODEX_HOME or ~/.codex"
+            )
+            row = self.db.one("SELECT provider FROM coding_sessions WHERE id=?", (session_id,))
+            runner = self.runners.get(str(row["provider"]) if row else "")
+            passed = (
+                ", ".join(runner.environment_names())
+                if isinstance(runner, SubprocessCodingAgentRunner)
+                else ", ".join(BASELINE_AGENT_ENV)
+            )
+            return (
+                "the coding agent never received the task: its "
+                + ", ".join(gating)
+                + " hook blocked the prompt, so the CLI exited cleanly without doing any "
+                "work. No warrant, scope or verification rule was involved, and this "
+                "project registers only PostToolUse and Stop in .codex/hooks.json, so the "
+                "blocked hook is not one of its own. The CLI reports a hook as blocked "
+                "both when it denies and when it merely fails, which leaves three things "
+                "to check. (1) Content: this prompt contains the phrase 'access secrets' "
+                "and lists .env, .pem and .key patterns as restricted paths, which a "
+                "prompt guard can match. (2) Environment: a governed session passes only "
+                f"{passed}, so a hook expecting anything else exits non-zero and is read "
+                "as a denial -- add the names it needs to CODING_AGENT_ENV_PASSTHROUGH. "
+                "(3) Unattended execution: the runner invokes `codex exec` with "
+                "--ask-for-approval never, because the warrant is the approval; a guard "
+                "that refuses non-interactive or auto-approved runs will deny every "
+                f"governed session. Agent configuration found: {where}; a globally "
+                "installed plugin can register hooks too."
+            )
+        if blocked:
+            return (
+                "agent completed without producing a reviewable diff, and its "
+                + ", ".join(blocked)
+                + " hook blocked at least one event during the run. Review that hook "
+                "before concluding the agent declined the work."
+            )
+        if ignored_writes:
+            return (
+                "agent wrote only files the target repository ignores, so nothing is "
+                "reviewable: " + ", ".join(ignored_writes[:6]) + ". Remove those paths "
+                "from the repository's ignore rules or scope the warrant to tracked files."
+            )
+        if absent and not present:
+            return (
+                "agent completed without producing a reviewable diff: none of the "
+                "approved paths exist in this checkout (" + ", ".join(absent[:6]) + "). "
+                "REPOSITORY_ROOT does not own the scope this warrant approved."
+            )
+        return (
+            "agent completed without producing a reviewable diff: it exited cleanly and "
+            "left the approved paths unchanged (" + (", ".join(present[:6]) or "none") + "). "
+            "Re-run with a more specific requested outcome, or check the agent output "
+            "recorded on this session for what it decided to do."
+        )
 
     def _session_checks(self, contract: dict[str, Any]) -> list[VerificationCheck]:
         """The checks this session is bound to, exactly as recorded when it started."""
@@ -1427,6 +2001,9 @@ class CodingSessionService:
             )
             return False
         worktree = Path(str(raw_path))
+        isolated_home = worktree.parent / f".{worktree.name}.codex-home"
+        if isolated_home.exists():
+            shutil.rmtree(isolated_home, ignore_errors=True)
         removed = True
         if worktree.exists():
             result = LocalRepositoryProvider._git(
@@ -1519,10 +2096,7 @@ class CodingSessionService:
         unified = self.repository.get_diff(base, worktree)
         if len(unified.encode()) > self.settings.coding_agent_max_output_bytes:
             raise CodingAgentError("coding-session diff exceeds the configured artifact limit")
-        secret_redactions = 0
-        for name, pattern in SECRET_PATTERNS:
-            unified, count = pattern.subn(f"[REDACTED:{name.upper()}]", unified)
-            secret_redactions += count
+        unified, secret_redactions, secret_kinds = redact_diff_content(unified)
         numstat = LocalRepositoryProvider._git(["diff", "--numstat", base, "--"], worktree, 30)
         changed: list[dict[str, Any]] = []
         additions = deletions = 0
@@ -1553,6 +2127,7 @@ class CodingSessionService:
             "deletions": deletions,
             "unified_diff": unified,
             "secret_redactions": secret_redactions,
+            "secret_kinds": list(secret_kinds),
             "head_revision": head_revision,
         }
 

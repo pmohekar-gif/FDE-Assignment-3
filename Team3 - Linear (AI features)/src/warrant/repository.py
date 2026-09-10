@@ -944,7 +944,10 @@ class CodeIntelligenceService:
             for entry in entries
             if not needle or needle in str(entry["path"]).casefold()
         ]
-        return {"indexed": True, "files": sorted(files, key=lambda item: item["path"])[:limit]}
+        return {
+            "indexed": True,
+            "files": sorted(files, key=lambda item: str(item["path"]))[:limit],
+        }
 
     def search_symbols(self, query: str = "", limit: int = 100) -> dict[str, Any]:
         """Search indexed definition names without returning file body text."""
@@ -1409,14 +1412,16 @@ class CodeIntelligenceService:
         synthesis_degraded = False
         if self.llm is not None:
             try:
-                response = self.llm.answer(query, [answer])
+                response = self.llm.answer(query, self._provider_facts(answer, budgeted))
             except ProviderError:
                 pass
             else:
                 if isinstance(response.value, AnswerResult):
-                    candidate = response.value.answer.strip()
-                    if candidate:
-                        answer = candidate
+                    # Deliberately not `candidate`: that name holds a CodeSource earlier
+                    # in this method, and reusing it made the types disagree.
+                    phrased = response.value.answer.strip()
+                    if phrased:
+                        answer = phrased
                         synthesized = True
                         synthesis_provider = response.provider
                         synthesis_model = response.model
@@ -1436,6 +1441,30 @@ class CodeIntelligenceService:
             synthesis_model=synthesis_model,
             synthesis_degraded=synthesis_degraded,
         )
+
+    @staticmethod
+    def _provider_facts(answer: str, sources: Sequence[CodeSource]) -> list[str]:
+        """The bounded, redacted evidence the provider is allowed to phrase an answer from.
+
+        Only the composed one-line summary used to be passed, so the model could see
+        module names and line labels but never a line of code -- it was re-wording a
+        template while the UI called the result "AI synthesis", and the documented
+        guarantee ("the provider receives only the final redacted, bounded evidence set")
+        was not what the code did. The snippets handed over here are the same ones shown
+        to the operator: already secret-redacted by `build_snippet`, already capped by
+        `ContextBudget`, and each labelled with the citation it came from, so the
+        provider's answer can be checked against what the reader can see.
+        """
+        facts = [answer]
+        for source in sources:
+            snippet = (source.snippet or "").strip()
+            if not snippet:
+                continue
+            facts.append(
+                f"{source.path}:{source.start_line}-{source.end_line} "
+                f"({source.edge}, {source.rank_tier}):\n{snippet}"
+            )
+        return facts
 
     def _compose_answer(
         self,

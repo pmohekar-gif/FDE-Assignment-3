@@ -37,6 +37,10 @@
   <span class="row-key">{{ item.external_key }}</span>
   <span class="row-title">{{ item.title }}</span>
   <span class="code-chip {{ tone(item.verdict) }}" title="{{ (item.reason_codes or ['no reason code recorded'])|join(', ') }}">{{ (item.reason_codes or ['NO_REASON_CODE'])[0] }}</span>
+  {#- A recorded human decision was visible only as a non-visual data attribute, so a held
+      or denied delegation sat in the queue looking identical to an undecided one. -#}
+  {% if item.status == 'deferred' %}<span class="code-chip hold" title="A named approver placed this on hold; it can be reopened from the delegation page">ON HOLD</span>
+  {% elif item.status == 'denied_by_human' %}<span class="code-chip deny" title="Denied by a named approver">DENIED</span>{% endif %}
   <span class="suff">{{ '%.2f'|format(item.evidence_sufficiency or 0) }}</span>
   <span class="row-team">{{ item.team }}</span>
   <span class="av" title="{{ item.requester_name }} · {{ item.requester_id }}">{{ item.requester_initials }}</span>

@@ -56,6 +56,7 @@ from .schemas import (
     Consequence,
     DelegationBriefTelemetry,
     DelegationCreate,
+    DelegationResume,
     EvidenceSubmission,
     GitHubPRLinkCreate,
     GitHubPRReviewSessionCreate,
@@ -787,13 +788,18 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
             request,
             "code.html",
             {
+                # Only questions this engine can actually answer. It indexes the working
+                # tree -- paths, symbols and imports at one revision -- and never reads
+                # Git history or authorship, so "who wrote this?" and "when was this
+                # added?" previously returned confident-looking keyword matches to
+                # questions the index holds no evidence for.
                 "example_queries": [
                     "Where is the policy verdict computed?",
                     "Where is an active warrant re-checked before execution?",
                     "How is the audit chain hashed?",
-                    "How does the authentication system work?",
-                    "Who wrote the payment processing logic?",
-                    "When was the search feature added?",
+                    "Where is the restricted-path check enforced?",
+                    "What imports the retrieval service?",
+                    "Where is CSRF required on a write endpoint?",
                 ],
                 "impact_example_queries": [
                     "Where is payment retry idempotency implemented, and what dependents and tests could a double-charge fix affect?",
@@ -1448,7 +1454,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
     async def code_files_endpoint(
         q: str = Query(default="", max_length=240),
         limit: int = Query(default=100, ge=1, le=200),
-    ) -> dict[str, Any]:
+    ) -> Any:
         if not settings.code_intelligence_enabled:
             return JSONResponse({"error": "Code Intelligence is disabled"}, status_code=503)
         if not code.availability()["available"]:
@@ -1463,7 +1469,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
     async def code_symbols_endpoint(
         q: str = Query(default="", max_length=240),
         limit: int = Query(default=100, ge=1, le=200),
-    ) -> dict[str, Any]:
+    ) -> Any:
         if not settings.code_intelligence_enabled:
             return JSONResponse({"error": "Code Intelligence is disabled"}, status_code=503)
         if not code.availability()["available"]:
@@ -1479,7 +1485,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         path: str = Query(min_length=1, max_length=512),
         start_line: int = Query(default=1, ge=1, le=1_000_000),
         line_count: int = Query(default=80, ge=1, le=120),
-    ) -> dict[str, Any]:
+    ) -> Any:
         if not settings.code_intelligence_enabled:
             return JSONResponse({"error": "Code Intelligence is disabled"}, status_code=503)
         if not code.availability()["available"]:
@@ -1490,7 +1496,7 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
     async def code_impact_endpoint(
         path: str = Query(min_length=1, max_length=512),
         symbol: str | None = Query(default=None, min_length=1, max_length=240),
-    ) -> dict[str, Any]:
+    ) -> Any:
         if not settings.code_intelligence_enabled:
             return JSONResponse({"error": "Code Intelligence is disabled"}, status_code=503)
         if not code.availability()["available"]:
@@ -1615,6 +1621,23 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
         if session_actor_id(request) is None and x_actor_id and x_actor_id != body.approver_id:
             raise Forbidden("acting identity must match approver_id")
         return service.decide(delegation_id, workspace(x_workspace_id), body)
+
+    @app.post("/v1/delegations/{delegation_id}/resume")
+    async def resume_delegation_endpoint(
+        request: Request,
+        delegation_id: str,
+        body: DelegationResume,
+        x_workspace_id: Annotated[str | None, Header()] = None,
+        x_actor_id: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> dict:
+        require_csrf(x_csrf_token)
+        declared_id(request, body.actor_id)
+        if session_actor_id(request) is None and x_actor_id and x_actor_id != body.actor_id:
+            raise Forbidden("acting identity must match actor_id")
+        return service.resume_delegation(
+            delegation_id, workspace(x_workspace_id), body.actor_id, body.note
+        )
 
     @app.get("/v1/warrants/{warrant_id}")
     async def get_warrant_endpoint(

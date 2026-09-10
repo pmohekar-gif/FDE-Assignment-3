@@ -13,7 +13,13 @@ from .db import Database
 from .policy import PolicyContext, evaluate_policy, load_policy
 from .providers import FixtureProvider
 from .retrieval import RetrievalService
-from .schemas import DelegationCreate, EvidenceArtifact, EvidenceSubmission, RiskAssessment
+from .schemas import (
+    DelegationCreate,
+    EvidenceArtifact,
+    EvidenceSubmission,
+    HumanDecision,
+    RiskAssessment,
+)
 from .seed import reset_and_seed
 from .service import Conflict, Gone, InvalidEvidence, WarrantService
 from .triage import TriageRecommendationService
@@ -172,6 +178,36 @@ def _e2e_slices() -> list[dict[str, Any]]:
                 ),
             )
 
+        def warrant_for(issue: str, requester: str, key: str) -> dict[str, Any]:
+            """A live warrant for `issue`, whatever verdict the policy reached.
+
+            The operational-adversarial slices below need a warrant to attack; they used
+            to assume specific seeded tickets auto-ALLOW. That coupled the slices to the
+            prose of a seeded issue, and when one ticket's text started matching a
+            sensitive data class the verdict became REQUIRE_APPROVAL, `["warrant"]` came
+            back `None`, and the whole harness died with a `TypeError` instead of
+            reporting a result. Approving through the real human gate keeps the slice
+            measuring what it is named after.
+            """
+            detail = create(issue, requester, key)
+            if detail["status"] == "awaiting_approval":
+                detail = service.decide(
+                    detail["id"],
+                    "ws-demo",
+                    HumanDecision(
+                        action="approve",
+                        approver_id="priyanka-mohekar",
+                        rationale="evaluation harness: named approval for an adversarial slice",
+                    ),
+                )
+            warrant = detail["warrant"]
+            if not warrant:
+                raise RuntimeError(
+                    f"{issue} produced no warrant (verdict "
+                    f"{detail['decision']['verdict']}); the slice cannot run"
+                )
+            return warrant
+
         results: list[dict[str, Any]] = []
         for issue, requester, expected in (
             ("PAY-4471", "kriti-developer", "REQUIRE_APPROVAL"),
@@ -191,7 +227,7 @@ def _e2e_slices() -> list[dict[str, Any]]:
             )
 
         incomplete = create("WEB-3001", "chirayu-gupta", "e2e-missing-tests")
-        incomplete_warrant = incomplete["warrant"]
+        incomplete_warrant = warrant_for("WEB-3001", "chirayu-gupta", "e2e-missing-tests")
         try:
             service.submit_evidence(
                 incomplete_warrant["id"],
@@ -217,8 +253,7 @@ def _e2e_slices() -> list[dict[str, Any]]:
             }
         )
 
-        expired = create("GROW-3003", "priyanka-mohekar", "e2e-expired")
-        expired_warrant = expired["warrant"]
+        expired_warrant = warrant_for("GROW-3003", "priyanka-mohekar", "e2e-expired")
         db.execute(
             "UPDATE warrants SET expires_at=? WHERE id=?",
             ("2000-01-01T00:00:00+00:00", expired_warrant["id"]),
@@ -248,7 +283,7 @@ def _e2e_slices() -> list[dict[str, Any]]:
             }
         )
 
-        replay_warrant = create("DATA-3004", "priyanka-mohekar", "e2e-replay")["warrant"]
+        replay_warrant = warrant_for("DATA-3004", "priyanka-mohekar", "e2e-replay")
         replay_evidence = EvidenceSubmission(
             nonce=replay_warrant["demo_nonce"],
             files=replay_warrant["scope_surfaces"],

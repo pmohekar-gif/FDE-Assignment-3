@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.codex/hooks/ruff_check.sh\"",
+            "command": "sh \"$(pwd)/.codex/hooks/ruff_check.sh\"",
             "statusMessage": "ruff check src tests",
             "timeout": 60
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.codex/hooks/stop_reminder.sh\"",
+            "command": "sh \"$(pwd)/.codex/hooks/stop_reminder.sh\"",
             "timeout": 10
           }
         ]

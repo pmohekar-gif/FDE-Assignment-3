@@ -40,8 +40,8 @@ Emits a non-blocking `systemMessage` restating the project's verification standa
 
 - Run tests as `pytest -o addopts=`. `pyproject.toml` sets `addopts = "-q"`, which hides
   the summary line, so a bare `pytest` shows dots and no counts.
-- Baseline is **268 passed, 1 skipped**. Any other numbers are a regression to explain,
-  not to wave through.
+- Baseline is **436 passed, 1 skipped** (2026-09-10). Any other numbers are a regression
+  to explain, not to wave through.
 - Full gate is `make check`.
 
 It deliberately does not return `decision: "block"`. Blocking on `Stop` restarts the turn
@@ -100,6 +100,68 @@ RESULT: all 5 checked flags are recognised by their CLI.
 The runner still does not support Claude Code, but its generated Codex argv now matches
 the installed CLI. This proves installation and flag compatibility only. The probe does
 not authenticate, contact the network, or execute a coding task, so a successful real
-Codex session remains a separate end-to-end check.
+Codex session remains a separate end-to-end check:
+`RUN_REAL_CODEX=1 pytest tests/e2e/test_real_codex_session.py`.
+
+## `make diagnose-agent-hooks`
+
+Answers one question: why did a governed coding session report `hook: <Name> Blocked`?
+
+That line means the agent CLI's own lifecycle hooks stopped the run — no warrant, scope
+or verification rule was involved. It is ambiguous in an important way: **the CLI prints
+it both when a hook deliberately denies and when a hook merely fails**, because a gating
+hook that exits non-zero is treated as a denial. The two have opposite fixes.
+
+A governed session also inherits the operator's *global* agent configuration, because
+`HOME` and `CODEX_HOME` must reach the subprocess for the CLI to authenticate. A hook
+installed globally, or by a globally installed plugin, is therefore in force even though
+nothing in this repository mentions it. This project registers only `PostToolUse` and
+`Stop`.
+
+```
+make diagnose-agent-hooks              # read-only: configuration + environment
+make diagnose-agent-hooks ARGS=--run   # also runs each hook under that environment
+```
+
+It prints three things:
+
+1. Every configuration file a session loads — `hooks.json` and `config.toml`, global
+   and project — the hooks each registers, and which of them gate the turn itself
+   (`UserPromptSubmit`, `SessionStart`). A file that cannot be parsed is reported as
+   unread rather than treated as hook-free.
+2. The environment a session gives the agent, and which variables it strips from your
+   shell — highlighting the ones a hook or the CLI most often needs. Proxy and CA-bundle
+   variables are the usual culprits on a corporate network; they are not passed by
+   default because a proxy URL can embed credentials.
+3. With `--run`, each hook's exit status under exactly that environment. **Non-zero means
+   the hook is failing, not deciding**: add the names it needs to
+   `CODING_AGENT_ENV_PASSTHROUGH` (secret-shaped names are refused). **Exit zero means it
+   is denying on purpose**, so read its logic — this project's prompt contains the phrase
+   "access secrets" and lists `.env`, `.pem` and `.key` restricted-path patterns, and the
+   runner passes `--ask-for-approval never` because the warrant *is* the approval.
+
+Read-only by default. `--run` executes your own hook scripts, so it is opt-in.
+
+### `CODING_AGENT_ISOLATED_HOME` — when the denial is real, but not yours
+
+Run the diagnostic against this repository's own operator hooks (2026-09-10): every
+registered hook exited 0 under the governed environment, so the block was a deliberate
+denial, not a failure — but the denying hook (`UserPromptSubmit`, from `~/.codex/hooks.json`)
+turned out to be a global hook installed by an unrelated project (its `if [ -f ... ]`
+guard names a path under a different repository entirely), not anything this project or
+its `.codex/hooks.json` registers.
+
+`CODING_AGENT_ISOLATED_HOME=true` runs each governed session under a private `CODEX_HOME`
+instead: your `auth.json` is copied in so the CLI still authenticates, `config.toml`'s
+`model`/`provider` settings come along, but `hooks.json` is left behind entirely and any
+`[hooks...]` tables in `config.toml` are stripped (`coding.prepare_isolated_agent_home`,
+`coding.strip_hooks_table`). A governed session already carries its own approval — the
+warrant, and `--ask-for-approval never` — so a global hook belonging to some other tool has
+no standing to gate it. The private home lives beside the session's worktree (never inside
+it, so it cannot pollute a diff) and is removed with it on teardown.
+
+Use `CODING_AGENT_ENV_PASSTHROUGH` when `--run` shows a hook failing (non-zero exit);
+use `CODING_AGENT_ISOLATED_HOME` when it shows a hook denying (exit 0) and that hook
+does not belong to this project.
 
 See `docs/LIMITATIONS.md` for the standing caveat on unverified external-agent execution.

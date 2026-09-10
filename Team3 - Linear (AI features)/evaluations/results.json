@@ -1,6 +1,6 @@
 {
   "status": "MEASURED_SYNTHETIC_POLICY_E2E_AND_RETRIEVAL",
-  "measured_at": "2026-09-09T10:50:37.700071+00:00",
+  "measured_at": "2026-09-10T15:51:33.080282+00:00",
   "dataset": {
     "path": "evaluations/golden.json",
     "cases": 120,
@@ -31,7 +31,7 @@
     "operational_adversarial_non_allow_rate": 1.0,
     "risk_class_macro_f1": "NOT_MEASURED",
     "retrieval_recall_at_10": 1.0,
-    "possible_duplicate_precision": 1.0,
+    "possible_duplicate_precision": 0,
     "semantic_search_recall_at_10": 1.0,
     "exact_key_search_success": 1.0,
     "brief_unsupported_authority_count": 0,
@@ -107,8 +107,8 @@
     },
     "possible_duplicate_precision": {
       "proposed_target": ">= 0.85",
-      "measured_value": 1.0,
-      "status": "within_target"
+      "measured_value": 0,
+      "status": "outside_target"
     },
     "semantic_search_recall_at_10": {
       "proposed_target": ">= 0.85",
@@ -228,106 +228,40 @@
     {
       "source": "PAY-3000",
       "returned": [
-        "PAY-3200",
-        "PAY-3050",
-        "PAY-3100",
-        "PAY-3150",
-        "PAY-3080",
-        "PAY-3040",
-        "PAY-3120",
-        "PAY-3155",
-        "PAY-3160",
-        "PAY-3195"
+        "PAY-4471"
       ],
       "relevant_hits": [
-        "PAY-3040",
-        "PAY-3080",
-        "PAY-3120",
-        "PAY-3160",
-        "PAY-3200"
+        "PAY-4471"
       ],
-      "predicted_duplicates": [
-        "PAY-3200"
-      ],
-      "duplicate_hits": [
-        "PAY-3200"
-      ]
+      "predicted_duplicates": [],
+      "duplicate_hits": []
     },
     {
       "source": "WEB-3001",
       "returned": [
-        "WEB-3201",
-        "WEB-3081",
-        "WEB-3121",
-        "WEB-3051",
-        "WEB-3041",
-        "WEB-3101",
-        "WEB-3151",
-        "WEB-3161",
-        "WEB-3131",
-        "WEB-3196"
+        "WEB-4519",
+        "WEB-3000"
       ],
       "relevant_hits": [
-        "WEB-3041",
-        "WEB-3081",
-        "WEB-3121",
-        "WEB-3161",
-        "WEB-3201"
+        "WEB-3000",
+        "WEB-4519"
       ],
-      "predicted_duplicates": [
-        "WEB-3201"
-      ],
-      "duplicate_hits": [
-        "WEB-3201"
-      ]
+      "predicted_duplicates": [],
+      "duplicate_hits": []
     },
     {
       "source": "GROW-3003",
-      "returned": [
-        "GROW-3203",
-        "GROW-3053",
-        "GROW-3153",
-        "GROW-3103",
-        "GROW-3083",
-        "GROW-3043",
-        "GROW-3123",
-        "GROW-3163",
-        "GROW-3148",
-        "GROW-3168"
-      ],
-      "relevant_hits": [
-        "GROW-3203"
-      ],
-      "predicted_duplicates": [
-        "GROW-3203"
-      ],
-      "duplicate_hits": [
-        "GROW-3203"
-      ]
+      "returned": [],
+      "relevant_hits": [],
+      "predicted_duplicates": [],
+      "duplicate_hits": []
     },
     {
       "source": "DATA-3004",
-      "returned": [
-        "DATA-3204",
-        "DATA-3104",
-        "DATA-3054",
-        "DATA-3154",
-        "DATA-3084",
-        "DATA-3044",
-        "DATA-3124",
-        "DATA-3099",
-        "DATA-3164",
-        "DATA-3059"
-      ],
-      "relevant_hits": [
-        "DATA-3204"
-      ],
-      "predicted_duplicates": [
-        "DATA-3204"
-      ],
-      "duplicate_hits": [
-        "DATA-3204"
-      ]
+      "returned": [],
+      "relevant_hits": [],
+      "predicted_duplicates": [],
+      "duplicate_hits": []
     }
   ],
   "search_cases": [
@@ -337,15 +271,15 @@
       "expected": "PAY-4471",
       "returned": [
         "PAY-4471",
+        "PAY-3000",
+        "EVAL-5001",
+        "CHIR-1102",
+        "PRI-2101",
+        "KRIT-4103",
+        "GAU-3203",
         "SEC-4502",
-        "WEB-3196",
-        "WEB-3396",
-        "DATA-3049",
-        "DATA-3249",
-        "WEB-3001",
-        "WEB-3201",
-        "WEB-3096",
-        "WEB-3296"
+        "GAU-3102",
+        "WEB-4519"
       ],
       "rank": 1,
       "hit": true
@@ -356,15 +290,15 @@
       "expected": "SEC-4502",
       "returned": [
         "SEC-4502",
-        "WEB-3061",
-        "WEB-3261",
-        "PLAT-3162",
-        "PLAT-3362",
-        "DATA-3114",
-        "DATA-3314",
-        "PAY-3010",
-        "PAY-3210",
-        "GROW-3013"
+        "EVAL-5001",
+        "PRI-2103",
+        "CHIR-1105",
+        "CHIR-1101",
+        "CHIR-1102",
+        "CHIR-1103",
+        "CHIR-1104",
+        "EVAL-5002",
+        "GAU-3101"
       ],
       "rank": 1,
       "hit": true
@@ -375,15 +309,15 @@
       "expected": "WEB-4519",
       "returned": [
         "WEB-4519",
+        "WEB-3000",
+        "EVAL-5001",
+        "WEB-3001",
+        "CHIR-1105",
+        "CHIR-1101",
+        "CHIR-1102",
+        "CHIR-1103",
         "DATA-3004",
-        "DATA-3009",
-        "DATA-3014",
-        "DATA-3019",
-        "DATA-3024",
-        "DATA-3029",
-        "DATA-3034",
-        "DATA-3039",
-        "DATA-3044"
+        "EVAL-5002"
       ],
       "rank": 1,
       "hit": true
@@ -395,14 +329,14 @@
       "returned": [
         "PAY-4471",
         "PAY-3000",
-        "PLAT-3152",
-        "PAY-3200",
-        "DATA-3104",
-        "PLAT-3352",
-        "DATA-3304",
+        "SEC-4502",
         "WEB-4519",
-        "WEB-3096",
-        "WEB-3296"
+        "KRIT-4102",
+        "PRI-2104",
+        "GAU-3203",
+        "PRI-2101",
+        "GAU-3102",
+        "CHIR-1104"
       ],
       "rank": 1,
       "hit": true
@@ -413,15 +347,15 @@
       "expected": "WEB-4519",
       "returned": [
         "WEB-4519",
-        "PLAT-3167",
-        "DATA-3119",
-        "PAY-3015",
-        "PLAT-3367",
-        "DATA-3319",
-        "PAY-3215",
-        "WEB-3066",
-        "WEB-3266",
-        "PLAT-3067"
+        "PAY-3000",
+        "KRIT-4102",
+        "WEB-3000",
+        "WEB-3001",
+        "GAU-3203",
+        "PAY-4471",
+        "GAU-3102",
+        "GAU-3103",
+        "GAU-3101"
       ],
       "rank": 1,
       "hit": true
@@ -432,15 +366,15 @@
       "expected": "SEC-4502",
       "returned": [
         "SEC-4502",
-        "WEB-3196",
-        "WEB-3396",
-        "DATA-3049",
-        "DATA-3249",
-        "WEB-3001",
-        "WEB-3201",
-        "WEB-3096",
-        "WEB-3296",
-        "WEB-3146"
+        "PRI-2103",
+        "PAY-3000",
+        "WEB-4519",
+        "KRIT-4101",
+        "CHIR-1104",
+        "CHIR-1102",
+        "GAU-3204",
+        "PRI-2101",
+        "EVAL-5001"
       ],
       "rank": 1,
       "hit": true
@@ -491,13 +425,17 @@
       "priority": "high",
       "labels": [
         "bug",
-        "customer-impact"
+        "customer-impact",
+        "fde-demo",
+        "kriti"
       ],
       "actual_team": "Payments",
       "actual_priority": "high",
       "actual_labels": [
         "bug",
-        "customer-impact"
+        "customer-impact",
+        "fde-demo",
+        "kriti"
       ]
     },
     {
@@ -505,12 +443,18 @@
       "team": "Platform",
       "priority": "urgent",
       "labels": [
+        "deny",
+        "fde-demo",
+        "prompt-injection",
         "security",
         "urgent"
       ],
       "actual_team": "Platform",
       "actual_priority": "urgent",
       "actual_labels": [
+        "deny",
+        "fde-demo",
+        "prompt-injection",
         "security",
         "urgent"
       ]
@@ -520,12 +464,20 @@
       "team": "Web",
       "priority": "low",
       "labels": [
-        "copy"
+        "chirayu",
+        "coding-session",
+        "copy",
+        "fde-demo",
+        "safe-scope"
       ],
       "actual_team": "Web",
       "actual_priority": "low",
       "actual_labels": [
-        "copy"
+        "chirayu",
+        "coding-session",
+        "copy",
+        "fde-demo",
+        "safe-scope"
       ]
     }
   ],

@@ -105,13 +105,19 @@
       <div class="tl">
         {% for event in s.events %}
         <div class="tl-row">
-          <span class="pip {{ 'bad' if 'failed' in event.event_type or 'cancel' in event.event_type else ('ok' if 'completed' in event.event_type or 'passed' in event.event_type or 'created' in event.event_type else 'info') }}" aria-hidden="true"></span>
+          {#- A blocked hook is amber, not green: `agent_hook_blocked` contains neither
+              "failed" nor "completed", so the substring test alone read it as neutral. -#}
+          <span class="pip {{ 'bad' if 'failed' in event.event_type or 'cancel' in event.event_type else ('warn' if event.event_type in ('agent_hook_blocked', 'empty_diff_diagnosed', 'diff_secrets_redacted') else ('ok' if 'completed' in event.event_type or 'passed' in event.event_type or 'created' in event.event_type else 'info')) }}" aria-hidden="true"></span>
           <code>{{ event.event_type }}</code>
           <span class="what">
             {%- if event.payload.error %}{{ event.payload.error }}
             {%- elif event.event_type == 'verification_discovered' %}{{ event.payload.source }} · {{ event.payload.checks|length }} checks: {% for check in event.payload.checks %}{{ check.command|join(' ') }}{{ ', ' if not loop.last }}{% endfor %}{% if event.payload.skipped %} · skipped {{ event.payload.skipped|length }}{% endif %}
             {%- elif event.event_type == 'verification_check_completed' %}{{ event.payload.name }} · exit {{ event.payload.exit_code }} · {{ event.payload.duration_ms }} ms · {{ 'passed' if event.payload.passed else 'FAILED' }}
             {%- elif event.event_type == 'agent_activity' %}exit {{ event.payload.exit_code }} · {{ event.payload.duration_ms }} ms{% if event.payload.output_truncated %} · output truncated{% endif %}
+            {%- elif event.event_type == 'agent_hook_blocked' %}{{ event.payload.hooks|default([])|join(', ') }} denied by the agent CLI's own hooks{% if event.payload.turn_gating %} · the prompt never reached the model{% endif %}{% if event.payload.agent_config_locations %} · configured in {{ event.payload.agent_config_locations|join(', ') }}{% endif %}
+            {%- elif event.event_type == 'empty_diff_diagnosed' %}{{ event.payload.paths_present_in_checkout|default([])|length }} of {{ event.payload.allowed_paths|default([])|length }} approved paths present{% if event.payload.ignored_writes %} · {{ event.payload.ignored_writes|length }} ignored write(s){% endif %}{% if event.payload.blocked_hooks %} · blocked hooks: {{ event.payload.blocked_hooks|join(', ') }}{% endif %}
+            {%- elif event.event_type == 'scope_preflight' %}{{ event.payload.resolved|default({})|length }} resolved · {{ event.payload.creatable|default([])|length }} creatable · {{ event.payload.unresolved|default([])|length }} unresolved in {{ event.payload.tracked_file_count|default(0) }} tracked files
+            {%- elif event.event_type == 'diff_secrets_redacted' %}{{ event.payload.redactions|default(0) }} match(es) · {{ event.payload.kinds|default([])|join(', ') }} · matched text replaced with [REDACTED:KIND] before storage, never kept
             {%- elif event.event_type == 'diff_generated' %}{{ event.payload.changed_files|default([])|length }} files · +{{ event.payload.additions|default(0) }} −{{ event.payload.deletions|default(0) }}
             {%- elif event.event_type == 'worktree_created' %}{{ event.payload.branch|default('') }}
             {%- elif event.event_type == 'session_created' %}{{ event.payload.provider }} · {{ event.payload.provider_kind }} · base {{ event.payload.base_revision[:12] }}

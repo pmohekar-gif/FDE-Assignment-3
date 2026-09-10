@@ -1,5 +1,6 @@
 .PHONY: setup doctor dev seed demo-reset demo-repo demo-repo-clean worktree-prune lint typecheck \
-        unit integration test eval live-check build check demo package clean verify-agent-cli
+        unit integration test eval live-check build check demo package clean verify-agent-cli \
+        diagnose-agent-hooks
 
 UV_CACHE_DIR ?= .uv-cache
 RUN = UV_CACHE_DIR=$(UV_CACHE_DIR) uv run
@@ -85,6 +86,12 @@ live-check:
 verify-agent-cli:
 	$(RUN) python scripts/verify_agent_cli.py
 
+# Why did a governed session report `hook: <Name> Blocked`? Lists the agent
+# configuration a session inherits, the environment it strips, and (with --run) each
+# hook's exit status under that environment. Read-only unless you pass ARGS=--run.
+diagnose-agent-hooks:
+	$(RUN) python scripts/diagnose_agent_hooks.py $(ARGS)
+
 lint:
 	$(RUN) python -m ruff check src tests
 
@@ -104,7 +111,7 @@ package:
 	zip -rq "$(ZIP)" . \
 	  -x '.venv/*' '.uv-cache/*' '.mypy_cache/*' '.pytest_cache/*' '.ruff_cache/*' \
 	     'dist/*' 'build/*' '*__pycache__*' '*.pyc' '.git/*' '.DS_Store' \
-	     'data/*.db' 'data/*.db-shm' 'data/*.db-wal' '.env'
+	     'data/*.db' 'data/*.db-shm' 'data/*.db-wal' '.env' '.runtime/*'
 	@if unzip -l "$(ZIP)" | grep -Eq '(\.venv/|\.uv-cache/|/dist/|__pycache__|\.env$$)'; then \
 	  echo "REFUSING: excluded path present in $(ZIP)"; exit 1; fi
 	@if grep -rEl '(sk|ghp|lin_api)_[A-Za-z0-9_-]{12,}' --exclude-dir=.venv --exclude-dir=.uv-cache \
