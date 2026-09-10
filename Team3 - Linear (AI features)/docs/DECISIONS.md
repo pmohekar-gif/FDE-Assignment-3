@@ -692,3 +692,56 @@ already there" from "this is a new test fixture" without re-reading the diff.
 **Revisit trigger:** a real credential is found to have been introduced through a test
 path in practice, at which point the exemption should require the value to appear
 inside a test-double/mock construct specifically, not merely inside a test-path file.
+
+## D-ENG-030 — Verification runs against the worktree's own code, not an ambient install
+
+**Context:** A real `codex` run against `CHIR-1104` (session `ses_43f5ee0aa48845ff`)
+completed its diff cleanly but then failed verification: `state FAILED`, `verification
+failed: test failed with exit code 2`. Reading `result_json.verification` straight out of
+the live database (not a reproduction — the actual stored failure) showed `make test`
+raising `ImportError: cannot import name 'GitHubEvidenceAdapter' from
+'warrant.adapters.github'`, and the traceback named this project's *real*
+`src/warrant/adapters/github.py` on disk, not the governed worktree's own copy that the
+agent had just edited. The demo checkout deliberately mirrors this project's own
+`src/warrant/...` package name and layout for realism; `CodingSessionService._run_check`
+built its subprocess environment as a plain passthrough allowlist
+(`PATH`/`HOME`/`TMPDIR`/`LANG`/`LC_ALL`) with no `PYTHONPATH` at all, so `import
+warrant...` inside the verification subprocess resolved through the interpreter's
+ordinary site-packages — the host's editable install of the real package — ahead of
+anything in the worktree. It worked for other tickets because their verification never
+happened to `import` a same-named module; `CHIR-1104`'s new test did.
+
+**Options:** (a) run verification inside a fully isolated interpreter/venv per session —
+correct in principle but a much larger change (provisioning, caching, per-stack support)
+for a problem that is really just import-path priority; (b) refuse to verify any ticket
+whose repository shares a package name with the host — fragile, and punishes the exact
+realistic demo setup that surfaced the bug; (c) set `PYTHONPATH` explicitly so the
+worktree's own code is resolved first, the same way `CODING_AGENT_ISOLATED_HOME`
+(`D-ENG-025`) already put the *agent's* environment ahead of the host's.
+
+**Chosen approach:** (c). A new `CodingSessionService._verification_environment(worktree)`
+builds the subprocess environment with `PYTHONPATH` set to the worktree root plus
+`worktree/src` when a `src/` layout is present, worktree paths first, so nothing ambient
+can shadow them; `_run_check` now passes this instead of the old inline dict. Covered by
+`test_verification_runs_against_the_worktrees_own_code_not_an_ambient_install`, which
+reproduces the collision generically with a throwaway `decoy` package (so the test
+doesn't depend on whether this package happens to be installed editable wherever it
+runs): an ambient `PYTHONPATH` claims one answer, the worktree's own untouched
+`src/decoy` claims another, and only the worktree's answer is accepted. Confirmed the
+test fails with the old dict and passes with the fix restored, not just that it passes.
+
+**Why:** verification exists to prove the agent's *own* change is correct; a check that
+can silently run against a different copy of the code than the one just edited is not
+verifying anything, and worse, fails unpredictably depending on what else happens to be
+installed on whichever machine hosts the session — exactly the "worked for one ticket,
+failed for another" symptom reported here.
+
+**Trade-offs:** this covers Python's two common layouts (flat and `src/`) but not every
+possible project structure or non-Python stack's own module-resolution mechanism (e.g. a
+Node project's `node_modules` shadowing); a worktree that itself vendors a conflicting
+`site-packages` under a non-standard path would still need its own handling.
+
+**Revisit trigger:** a verification failure traced to import/module resolution in a
+non-Python stack, or a worktree layout neither flat nor `src/`-rooted, at which point
+`_verification_environment` should grow stack-aware root detection instead of the current
+two fixed candidates.

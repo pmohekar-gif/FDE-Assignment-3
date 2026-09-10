@@ -1979,6 +1979,35 @@ class CodingSessionService:
         command = legacy or tuple(self.settings.verification_command)
         return [VerificationCheck("configured", command, "configured")] if command else []
 
+    @staticmethod
+    def _verification_environment(worktree: Path) -> dict[str, str]:
+        """The environment a verification check runs under: the worktree's own code first.
+
+        A verification check has to test the code actually sitting in this worktree, not
+        whatever same-named package happens to already be installed on the machine
+        running it. Without `PYTHONPATH` pointed at the worktree, `python -m unittest` (or
+        pytest) resolves `import <package>` through the interpreter's ordinary site
+        packages -- and when the checkout being governed shares its package name and
+        layout with the product that governs it (the demo checkout mirrors
+        `src/warrant/...` for realism), that resolves to the *host's* editable install of
+        the real package, not the agent's change. A `codex` run against `CHIR-1104` added
+        `GitHubEvidenceAdapter` to the worktree's `src/warrant/adapters/github.py`; its own
+        new test then failed with `ImportError: cannot import name 'GitHubEvidenceAdapter'`
+        from a traceback naming this project's real `src/warrant/adapters/github.py` --
+        proof the check ran against the wrong copy of the package entirely.
+
+        Both a flat layout (the package at the worktree root) and a `src/` layout are
+        covered, worktree-first so neither can be shadowed by an ambient install.
+        """
+        base = {
+            key: value
+            for key, value in os.environ.items()
+            if key in {"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL"}
+        }
+        roots = [worktree] + ([worktree / "src"] if (worktree / "src").is_dir() else [])
+        base["PYTHONPATH"] = os.pathsep.join(str(root) for root in roots)
+        return base
+
     def _run_check(self, worktree: Path, check: VerificationCheck) -> dict[str, Any]:
         """Run one check as an argv list — never a shell string, never `shell=True`."""
         command = list(check.command)
@@ -1996,11 +2025,7 @@ class CodingSessionService:
                 capture_output=True,
                 timeout=timeout,
                 check=False,
-                env={
-                    key: value
-                    for key, value in os.environ.items()
-                    if key in {"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL"}
-                },
+                env=self._verification_environment(worktree),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             return {

@@ -195,12 +195,13 @@ def target_client(client, tmp_path, files: dict[str, str], name: str, **override
     git(repo, "config", "user.name", "Test")
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "base")
+    verification_command = overrides.pop("verification_command", ("git", "diff", "--check"))
     settings = replace(
         client.app.state.settings,
         database_path=tmp_path / f"{name}.db",
         repository_root=repo,
         coding_session_root=tmp_path / f"{name}-runtime",
-        verification_command=("git", "diff", "--check"),
+        verification_command=verification_command,
         external_coding_agent_enabled=False,
         **overrides,
     )
@@ -545,3 +546,68 @@ def test_secret_shaped_content_names_which_pattern_fired_and_why_it_matters(
     # itself thrown away.
     assert "sk_live_0123456789abcdef" not in session["diff"]["unified_diff"]
     assert "REDACTED" in session["diff"]["unified_diff"]
+
+
+class TouchEmptyStateRunner(CodingAgentRunner):
+    """A change well inside WEB-4519's scope -- verification is what's under test here."""
+
+    name = "mock"
+    real = False
+
+    def is_available(self):
+        return True, "test runner"
+
+    def run(self, session_id, workspace, prompt):
+        target = workspace / "web" / "reports" / "EmptyState.tsx"
+        target.write_text("export const emptyState = 'Create your first report';\n")
+        return RunnerResult(0, "updated the empty-state copy", 1)
+
+    def cancel(self, session_id):
+        return False
+
+
+def test_verification_runs_against_the_worktrees_own_code_not_an_ambient_install(
+    client, headers, tmp_path, monkeypatch
+):
+    """The real repeat failure: a genuine `codex` run against `CHIR-1104` added
+    `GitHubEvidenceAdapter` to the worktree's own `src/warrant/adapters/github.py`, and
+    its own new test then failed with `ImportError: cannot import name
+    'GitHubEvidenceAdapter'` -- naming this project's *real* `src/warrant/adapters/
+    github.py`, not the worktree's copy. Verification never told the worktree's own
+    `src/` to take priority, so Python resolved `import warrant...` through whatever
+    same-named package the host already had installed.
+
+    Reproduced generically here with a `decoy` package rather than `warrant` itself, so
+    the test does not depend on whether this environment happens to have
+    `warrant-control-plane` installed editable: an ambient `PYTHONPATH` claims one
+    answer, the worktree's own `src/decoy` -- present in the base revision, not touched
+    by the agent, so it stays out of scope enforcement entirely -- claims another, and
+    only the worktree's answer may win.
+    """
+    ambient = tmp_path / "ambient-site-packages"
+    (ambient / "decoy").mkdir(parents=True)
+    (ambient / "decoy" / "__init__.py").write_text("SOURCE = 'ambient'\n")
+    monkeypatch.setenv("PYTHONPATH", str(ambient))
+
+    probe = "import decoy, sys\nsys.exit(0 if decoy.SOURCE == 'worktree' else 1)\n"
+    app, _ = target_client(
+        client,
+        tmp_path,
+        {
+            "web/reports/EmptyState.tsx": "export const emptyState = 'No activity';\n",
+            "src/decoy/__init__.py": "SOURCE = 'worktree'\n",
+        },
+        "decoy-package",
+        verification_command=("python3", "-c", probe),
+        verification_discovery_enabled=False,
+    )
+    app.app.state.coding.runners["mock"] = TouchEmptyStateRunner()
+    delegation = delegate(app, headers, "WEB-4519", "chirayu-gupta", "decoy-package")
+    started = app.post(
+        "/v1/coding-sessions",
+        headers=headers,
+        json={"delegation_id": delegation["id"], "provider": "mock", "source": "api"},
+    )
+    session = wait_for_terminal(app, started.json()["id"])
+    assert session["state"] == "COMPLETED", session["error"]
+    assert session["result"]["verification"]["passed"] is True, session["result"]["verification"]

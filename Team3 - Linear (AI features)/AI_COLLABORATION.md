@@ -60,7 +60,7 @@ re-check, immutability trigger); the pull-request publisher abstraction and hard
 `gh` parsing; the Bifrost gateway provider; the Codex development hooks and
 `verify_agent_cli.py`; and the documentation corrections, including this one.
 
-**Produced in the defect-remediation pass (2026-09-10), 388 → 444 tests:** the
+**Produced in the defect-remediation pass (2026-09-10), 388 → 445 tests:** the
 protected-surface scope fix in `_scope_grants_surface`; `redact_diff_content`, which scans
 hunk bodies instead of Git metadata; `_scope_preflight`/`_assert_scope_exists` and the
 `scope_preflight` event; `_diagnose_empty_diff` and the `empty_diff_diagnosed` event; the
@@ -76,10 +76,17 @@ lint/type backlog clearance; `blocked_hooks`/`agent_config_locations` and the
 and `strip_hooks_table`; the `.codex/hooks.json` path-resolution fix; and
 `_diagnose_secret_redaction` and the `diff_secrets_redacted` event, which name which
 secret pattern fired and whether it is a broad or a high-confidence one instead of
-failing a session with no way to tell the two apart. Test files added:
-`test_coding_scope_and_diff.py`, `test_code_synthesis_grounding.py`,
-`test_governed_session_recovery.py`, `test_delegation_actions.py`,
-`test_agent_hook_diagnostic.py`.
+failing a session with no way to tell the two apart; `TEST_PATH` and the
+`introduced`/`carried`/`test_fixture` provenance split in `redact_diff_content`, so a
+secret-shaped match pre-existing in the repository or added inside a recognised test
+path is still redacted and recorded but no longer blamed on the agent
+(`D-ENG-028`, `D-ENG-029`); and `_verification_environment`, which puts the worktree's
+own code (and its `src/`, when present) first in `PYTHONPATH` for every verification
+subprocess, fixing a real failure where `make test` resolved `import warrant...` through
+the host's own editable install instead of the worktree it was meant to check
+(`D-ENG-030`). Test files added: `test_coding_scope_and_diff.py`,
+`test_code_synthesis_grounding.py`, `test_governed_session_recovery.py`,
+`test_delegation_actions.py`, `test_agent_hook_diagnostic.py`.
 
 **Produced by neither:** all product, market, pricing, and user-research content. See the
 integrity boundary below.
@@ -89,8 +96,8 @@ was complete; see the table.
 
 ## Verification performed on 2026-09-10 (defect-remediation pass)
 
-- **444 tests passed and 1 opt-in real-Codex test skipped** (unit 213, integration 218,
-  security 13, e2e 1 collected; the real-Codex e2e test is skipped unless
+- **445 tests passed and 1 opt-in real-Codex test skipped** (unit 212, integration 219,
+  security 13, e2e 1 passed + 1 skipped collected; the real-Codex e2e test is skipped unless
   `RUN_REAL_CODEX=1` and the CLI is present). Interpreter: CPython 3.10 on Linux, which
   is below the `requires-python = ">=3.11"` floor, so `uv sync` was bypassed and the
   suite was run against pip-installed pinned dependency ranges with `PYTHONPATH=src`.
