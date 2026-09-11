@@ -22,6 +22,8 @@ MODEL_STRUCTURED_OUTPUT_MODES = {
     ("openrouter", "minimax/minimax-m3:free"): "json_object",
     ("bifrost", ""): "json_object",
     ("bifrost", "minimax-m3"): "json_object",
+    ("bifrost", "minimax/minimax-m3"): "json_object",
+
 }
 
 

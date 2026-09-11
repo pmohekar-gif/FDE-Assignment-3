@@ -183,12 +183,12 @@ def test_missing_api_key_raises_typed_provider_error():
 def test_auto_resolution_picks_minimax_m3_from_catalogue(monkeypatch):
     """With BIFROST_MODEL unset, the id comes from GET {origin}/v1/models."""
     gateway = _StubGateway(
-        ["openai/gpt-4.1-mini", "anthropic/claude-haiku-4-5", "minimax-m3", "minimax-m2"]
+        ["openai/gpt-4.1-mini", "anthropic/claude-haiku-4-5", "minimax/minimax-m3", "minimax-m2"]
     ).install(monkeypatch)
 
     provider = BifrostProvider(settings())
 
-    assert provider.model == "minimax-m3"
+    assert provider.model == "minimax/minimax-m3" 
     assert provider.model_auto_resolved is True
     assert len(gateway.model_calls) == 1
     # The catalogue lives on the gateway origin, not the /anthropic adapter.
@@ -204,7 +204,7 @@ def test_auto_resolution_accepts_vendor_prefixed_minimax_id(monkeypatch):
 
 
 def test_pick_bifrost_model_prefers_the_exact_id():
-    assert pick_bifrost_model(["openrouter/minimax-m3", "minimax-m3"]) == "minimax-m3"
+    assert pick_bifrost_model(["openrouter/minimax-m3", "minimax/minimax-m3"]) == "minimax-m3"
     assert pick_bifrost_model(["vendor/minimax-m3"]) == "vendor/minimax-m3"
     assert pick_bifrost_model(["openai/gpt-4.1-mini", "minimax-m2"]) is None
 
