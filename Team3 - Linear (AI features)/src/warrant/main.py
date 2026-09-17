@@ -33,6 +33,7 @@ from .db import Database
 from .policy import PolicyValidationError, granted_tools, load_policy
 from .pr_review import GitHubPRReviewService
 from .providers import ProviderError, build_provider
+from .repo_source import RepositoryCloneError
 from .repository import (
     REPOSITORY_UNAVAILABLE_CODE,
     REPOSITORY_UNAVAILABLE_MESSAGE,
@@ -413,6 +414,23 @@ def create_app(settings: Settings | None = None, auto_seed: bool = False) -> Fas
     @app.exception_handler(ProviderError)
     async def handle_provider_error(_: Request, exc: ProviderError) -> JSONResponse:
         return JSONResponse({"error": str(exc), "degraded": True}, status_code=503)
+
+    @app.exception_handler(RepositoryCloneError)
+    async def handle_repository_clone_error(
+        _: Request, exc: RepositoryCloneError
+    ) -> JSONResponse:
+        """A named repository could not be used: 400, not 503.
+
+        `RepositoryCloneError` subclasses `RepositoryError`, whose handler reports the
+        *configured* checkout's availability -- which says nothing about the repository
+        the caller asked for, and would hide the actual reason behind a generic 503. Every
+        case here (malformed URL, unsupported host, private repository with no token) is
+        fixed by the caller supplying something different, so it is a request error.
+        """
+        return JSONResponse(
+            {"error": str(exc), "type": type(exc).__name__, "repository_available": False},
+            status_code=400,
+        )
 
     @app.exception_handler(RepositoryError)
     async def handle_repository_error(_: Request, exc: RepositoryError) -> JSONResponse:

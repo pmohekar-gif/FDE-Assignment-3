@@ -222,6 +222,7 @@
       <h3>Launch a governed session</h3>
       <form class="inline-form" id="coding-form">
         <label class="field"><span>Runner</span><select id="coding-provider"></select></label>
+        <label class="field" id="coding-repository-field" hidden><span>Repository</span><input id="coding-repository" type="text" autocomplete="off" spellcheck="false" placeholder="owner/repo — blank uses the configured checkout"></label>
         <button class="btn pri center" type="submit">Start governed coding <span class="kbd inv">C</span></button>
       </form>
       <div id="capability-note"><p class="loading">Reading runner capabilities…</p></div>
@@ -511,6 +512,8 @@ document.getElementById('evidence')?.addEventListener('click',async()=>{
 
 /* ---------- coding session launcher: provider truth is never blurred ---------- */
 const providerSelect=document.getElementById('coding-provider');
+const repositoryField=document.getElementById('coding-repository-field');
+const repositoryInput=document.getElementById('coding-repository');
 async function loadCapabilities(){
   const note=document.getElementById('capability-note');
   if(!providerSelect||!note)return;
@@ -531,6 +534,15 @@ async function loadCapabilities(){
       note.append(row);
     });
     if(!caps.git_checkout.available)note.append(el('p',caps.git_checkout.reason,'note'));
+    /* The repository field is shown only when the server will actually honour it. An
+       always-visible input that silently does nothing is worse than no input at all. */
+    const selection=caps.repository_selection;
+    if(repositoryField&&selection){
+      repositoryField.hidden=!selection.enabled;
+      note.append(el('p',selection.enabled
+        ?`Per-session repositories enabled · clones into ${selection.clone_root} · ${selection.authenticated?'GITHUB_TOKEN present, private repositories reachable':'no GITHUB_TOKEN, public repositories only'} · blank field uses ${caps.git_checkout.root}`
+        :`${selection.reason} (${caps.git_checkout.root})`,'note'));
+    }
     note.append(el('p',`external_execution_enabled = ${caps.external_execution_enabled} · verification discovered from ${caps.verification.source}: ${caps.verification.checks.map(check=>check.command.join(' ')).join(', ')||'none'} · PR publishing ${caps.pr_publishing.enabled?'enabled':'disabled'}`,'note'));
   }catch(error){note.replaceChildren();const failure=el('div','','inline-error');note.append(failure);renderError(failure,error,'capability read');}
 }
@@ -541,7 +553,17 @@ async function startCoding(){
   if(!providerSelect){toast('No active warrant grants write_files');return;}
   errorNode.hidden=true;launchLog.hidden=false;launchLog.textContent=`Preflight: requesting ${providerSelect.value} runner for this active warrant…`;
   try{
-    const session=await api('/v1/coding-sessions',{method:'POST',body:JSON.stringify({delegation_id:delegationId,provider:providerSelect.value,source:'ui'})});
+    /* An empty value means the capability read failed and the select was never populated.
+       Sending "" fails schema validation as a 422 that blames the request rather than the
+       capability probe that actually broke, so omit the field and let the server default. */
+    const chosenProvider=providerSelect.value||null;
+    if(!chosenProvider){throw new Error('No runner is available — the capability read above failed. Fix that before starting a session.');}
+    /* Omitted, not empty: the server reads a missing repository_url as "use the
+       configured checkout", which is the behaviour that existed before this field. */
+    const payload={delegation_id:delegationId,provider:chosenProvider,source:'ui'};
+    const repository=(repositoryField&&!repositoryField.hidden&&repositoryInput?repositoryInput.value:'').trim();
+    if(repository){payload.repository_url=repository;launchLog.textContent=`Preflight: resolving ${repository} — a first clone can take a while…`;}
+    const session=await api('/v1/coding-sessions',{method:'POST',body:JSON.stringify(payload)});
     launchLog.textContent=`Session ${session.id} created. Opening persisted execution diagnostics…`;location.href=`/coding-sessions/${session.id}`;
   }catch(error){launchLog.textContent=`Preflight failed: ${error.message}`;renderError(errorNode,error,'coding session');}
 }

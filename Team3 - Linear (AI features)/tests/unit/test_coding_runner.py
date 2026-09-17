@@ -397,6 +397,64 @@ def test_mock_publisher_implements_the_publisher_contract_without_gh(tmp_path):
     assert GhPullRequestPublisher(enabled=False).is_available(tmp_path) is False
 
 
+def test_availability_reports_a_missing_repository_root_instead_of_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale REPOSITORY_ROOT must degrade to an unavailable reason, not a 500.
+
+    Regression for `D-ENG-031`. `availability()` spawned `gh auth status` with `cwd` set to
+    the configured repository root without checking that the directory exists.
+    `subprocess.run` raises `FileNotFoundError` for a missing `cwd`, nothing caught it, and
+    a read-only capability probe returned an unhandled 500 — which also emptied the UI's
+    provider list and produced a misleading 422 on the next request.
+    """
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/gh")
+    publisher = GhPullRequestPublisher(enabled=True)
+
+    missing = tmp_path / "moved-away"
+    assert not missing.exists()
+
+    availability = publisher.availability(missing)
+
+    assert availability.available is False
+    assert "does not" in availability.reason or "not an existing directory" in availability.reason
+    assert str(missing) in availability.reason
+    # The remedy is named, because the fault is configuration rather than the CLI.
+    assert "REPOSITORY_ROOT" in availability.reason
+
+
+def test_availability_reports_a_spawn_failure_instead_of_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OSError from the spawn itself is converted, not leaked (`D-ENG-031`)."""
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/gh")
+
+    def explode(*_args: object, **_kwargs: object) -> object:
+        raise OSError(2, "No such file or directory")
+
+    monkeypatch.setattr(subprocess, "run", explode)
+    publisher = GhPullRequestPublisher(enabled=True)
+
+    availability = publisher.availability(tmp_path)
+
+    assert availability.available is False
+    assert "gh" in availability.reason
+
+
+def test_run_converts_spawn_failure_into_a_typed_publish_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_run` matches `RepositoryProvider._git`: a spawn failure is typed (`D-ENG-031`)."""
+
+    def explode(*_args: object, **_kwargs: object) -> object:
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(subprocess, "run", explode)
+
+    with pytest.raises(PullRequestPublishError):
+        GhPullRequestPublisher(enabled=True)._run(["gh", "auth", "status"], tmp_path)
+
+
 def insert_session(db: Database, session_id: str, contract: str) -> None:
     db.execute(
         "INSERT INTO workspaces VALUES (?,?,?,?,?)", ("ws-test", "Test", "v1", "{}", "now")

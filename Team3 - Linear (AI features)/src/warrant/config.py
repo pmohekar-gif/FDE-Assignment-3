@@ -22,7 +22,7 @@ MODEL_STRUCTURED_OUTPUT_MODES = {
     ("openrouter", "minimax/minimax-m3:free"): "json_object",
     ("bifrost", ""): "json_object",
     ("bifrost", "minimax-m3"): "json_object",
-    ("bifrost", "minimax/minimax-m3"): "json_object",
+    ("bifrost", "minimax-m3"): "json_object",
 
 }
 
@@ -123,6 +123,13 @@ class Settings:
     repository_root: Path = PROJECT_ROOT
     repository_max_file_bytes: int = 512_000
     repository_max_results: int = 20
+    # Let a coding session name its own GitHub repository instead of running only against
+    # `repository_root`. Off by default: enabling it means the server clones from the
+    # network on an API request, which is a different trust and disk profile from reading
+    # one checkout that an operator placed on the box deliberately.
+    repository_clone_enabled: bool = False
+    repository_clone_root: Path = PROJECT_ROOT / ".runtime" / "repositories"
+    repository_clone_timeout_seconds: int = 300
     coding_agent_provider: str = "codex"
     # Extra environment variable NAMES the agent subprocess may see, on top of
     # `coding.BASELINE_AGENT_ENV`. The agent CLI loads the operator's own hooks, and a
@@ -223,6 +230,15 @@ class Settings:
             repository_root=Path(os.getenv("REPOSITORY_ROOT", str(PROJECT_ROOT))).resolve(),
             repository_max_file_bytes=int(os.getenv("REPOSITORY_MAX_FILE_BYTES", "512000")),
             repository_max_results=int(os.getenv("REPOSITORY_MAX_RESULTS", "20")),
+            repository_clone_enabled=_env_bool("REPOSITORY_CLONE_ENABLED", False),
+            repository_clone_root=Path(
+                os.getenv(
+                    "REPOSITORY_CLONE_ROOT", str(PROJECT_ROOT / ".runtime" / "repositories")
+                )
+            ).resolve(),
+            repository_clone_timeout_seconds=int(
+                os.getenv("REPOSITORY_CLONE_TIMEOUT_SECONDS", "300")
+            ),
             coding_agent_provider=os.getenv("CODING_AGENT_PROVIDER", "codex").lower(),
             coding_agent_env_passthrough=_env_names("CODING_AGENT_ENV_PASSTHROUGH", ()),
             coding_agent_isolated_home=_env_bool("CODING_AGENT_ISOLATED_HOME", False),

@@ -51,7 +51,7 @@ _QUERY_UPDATED_ISSUES = """
 query WarrantIssuesUpdatedSince($limit: Int, $filter: IssueFilter) {
   issues(
     first: $limit,
-    orderBy: {field: updatedAt, direction: DESC},
+    orderBy: updatedAt,
     filter: $filter
   ) {
     nodes {
@@ -66,6 +66,33 @@ query WarrantIssuesUpdatedSince($limit: Int, $filter: IssueFilter) {
 """
 
 _REQUEST_TIMEOUT = 15.0  # seconds
+# A GraphQL validation failure comes back as a 400 whose *body* carries the only useful
+# sentence ("Expected value of type 'PaginationOrderBy'..."). Enough of it to identify the
+# fault, capped so a long HTML error page cannot flood a UI toast or the audit record.
+_ERROR_BODY_LIMIT = 500
+
+
+def _request_failure(exc: httpx.HTTPError) -> str:
+    """Describe a failed Linear call, including the server's own explanation.
+
+    `raise_for_status()` raises `HTTPStatusError`, whose string form is a status code and a
+    link to MDN -- which says the request was malformed but never which part. Linear puts
+    the actual reason in the response body, and discarding it turns a one-line schema fix
+    into a debugging session. Transport errors have no body and keep the terse form.
+    """
+    base = f"Linear API request failed: {type(exc).__name__}: {exc}"
+    response = getattr(exc, "response", None)
+    if response is None:
+        return base
+    try:
+        body = (response.text or "").strip()
+    except (UnicodeDecodeError, RuntimeError):  # pragma: no cover - defensive
+        return base
+    if not body:
+        return base
+    if len(body) > _ERROR_BODY_LIMIT:
+        body = f"{body[:_ERROR_BODY_LIMIT]}... (truncated)"
+    return f"{base} -- Linear said: {body}"
 
 
 class AdapterConfigError(DomainError):
@@ -227,9 +254,7 @@ class LinearAdapter:
             )
             response.raise_for_status()
         except httpx.HTTPError as exc:
-            raise AdapterConfigError(
-                f"Linear API request failed: {type(exc).__name__}: {exc}"
-            ) from exc
+            raise AdapterConfigError(_request_failure(exc)) from exc
 
         payload = response.json()
         errors = payload.get("errors")
@@ -271,9 +296,7 @@ class LinearAdapter:
             )
             response.raise_for_status()
         except httpx.HTTPError as exc:
-            raise AdapterConfigError(
-                f"Linear API request failed: {type(exc).__name__}: {exc}"
-            ) from exc
+            raise AdapterConfigError(_request_failure(exc)) from exc
 
         payload = response.json()
         errors = payload.get("errors")

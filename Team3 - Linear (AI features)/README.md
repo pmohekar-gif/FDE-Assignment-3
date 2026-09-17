@@ -133,6 +133,9 @@ was not executed in this environment because the Docker daemon was unavailable.
 | `CODE_INTELLIGENCE_ENABLED` | `true` | Enables repository indexing and code Q&A. |
 | `REPOSITORY_ROOT` | project root | Repository the code index and coding-session service may inspect. Coding sessions need a Git checkout: `make demo-repo` creates one at `.runtime/demo-repo`. |
 | `DEMO_REPOSITORY_ROOT` | `.runtime/demo-repo` | Where `make demo-repo` materialises the demo checkout. |
+| `REPOSITORY_CLONE_ENABLED` | `false` | Lets a coding session name its own GitHub repository (`repository_url` on `POST /v1/coding-sessions`) instead of running against `REPOSITORY_ROOT`. Off by default: enabling it means the server clones from the network on an API request. |
+| `REPOSITORY_CLONE_ROOT` | `.runtime/repositories` | Where per-repository checkouts are cloned, as `<owner>/<name>`. Reused across sessions; fetched, never reset. |
+| `REPOSITORY_CLONE_TIMEOUT_SECONDS` | `300` | Budget for one clone or fetch. A first clone of a large repository is the slow case. |
 | `REPOSITORY_MAX_FILE_BYTES` | `512000` | Per-file indexing/read ceiling. |
 | `EXTERNAL_CODING_AGENT_ENABLED` | `false` | Explicit gate for real Codex subprocess execution. Mock remains visibly simulated. |
 | `CODING_AGENT_PROVIDER` | `codex` | Default runner: `codex`, or explicitly requested `mock`. |

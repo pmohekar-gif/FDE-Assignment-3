@@ -1,4 +1,4 @@
-# Role Evidence — Kriti Meheta
+# Role Evidence — Kriti Mehta
 
 **Role:** Engineer — inherits accountability for implementation, reliability, tests, deployment and telemetry from Gaurav Yadav
 **Team 3 · Linear (AI features) · Product: Warrant**
@@ -155,6 +155,28 @@ The team's remaining gap is **primary evidence from people outside it**, and the
 
 ---
 
+## 4a. First defect found by operating the build — `D-ENG-031`
+
+Surfaced on **2026-09-17** by running `make dev` and opening a delegation, before any of my three tickets were started.
+
+| | |
+| --- | --- |
+| **Symptom** | `GET /v1/coding-sessions/capabilities` → unhandled **500**; provider dropdown left empty; next `POST /v1/coding-sessions` → **422** |
+| **Root cause** | `GhPullRequestPublisher._run` passed `cwd=workspace` to `subprocess.run` with no guard. A stale `REPOSITORY_ROOT` pointing at a moved checkout made the spawn raise `FileNotFoundError`, and nothing caught it |
+| **Why it matters beyond the crash** | `RepositoryProvider._git`, one module away, **already** wraps the identical call in `except (OSError, subprocess.TimeoutExpired)` and raises a typed error. The publisher was written without the protection its sibling had — an inconsistency between two modules, not a one-off slip |
+| **Fix** | `_run` converts spawn failures into a typed `PullRequestPublishError`; `availability()` checks `workspace.is_dir()` first, names the remedy, and is documented as never raising. Three regression tests, each confirmed failing against a restored pre-fix copy of the methods |
+| **Recorded** | `docs/DECISIONS.md` → `D-ENG-031` |
+
+**Three things this tells me about the handover, and they are the useful part.**
+
+1. **The 422 was not a second bug.** It was the 500 wearing a different status code — the capability read failed, the provider `<select>` was never populated, and the empty string it submitted failed schema validation. A downstream symptom that blames the *request* is worse than a loud failure, because it sends you to the wrong layer. The template now refuses to submit rather than mislabel the fault.
+2. **This is the same failure shape as `DT-005`.** Walking the flow found what 445 green tests did not — for the second time. `EVIDENCE_BACKED_ROADMAP.md` item **N9** says every fix should enter the golden set as well as the unit suite; these three tests are unit-level only, so **N9 stays open and this defect is now an example of why.**
+3. **It landed in exactly the area handed to me.** `KRIT-4102` covers the routing and rerun changes on these surfaces, and `KRIT-4103` covers observability — and a probe that 500s instead of reporting a reason is precisely what better logging should make visible before a user trips over it.
+
+**Not claimed:** I did not find this; it surfaced when a teammate ran the build. I record it because it is now mine to carry, and because the inconsistency it exposes — two modules handling the same subprocess failure differently — deserves a sweep rather than a single patch.
+
+---
+
 ## 5. Handover risks I have inherited
 
 Stated on day one, while I can still see them clearly.
@@ -163,6 +185,7 @@ Stated on day one, while I can still see them clearly.
 | --- | --- | --- |
 | 1 | **Two changes have never been validated by anyone but their author**, and they touch the execution path — the surface where a governance product's claims are either true or false | `KRIT-4102`. Four days to deadline |
 | 2 | **The last recorded suite run (445 passed) used CPython 3.10**, below the project's own `requires-python = ">=3.11"` floor, with `uv sync` bypassed | `AI_COLLABORATION.md` says explicitly: *"Re-run `make check` on a 3.11+ interpreter before submitting."* **This has not been done, and it is now mine.** The count may move |
+| 2a | **One unit test is failing, unrelated to the above.** `tests/unit/test_bifrost_provider.py::test_pick_bifrost_model_prefers_the_exact_id` — `pick_bifrost_model(["openrouter/minimax-m3", "minimax/minimax-m3"])` returns `openrouter/minimax-m3` where the test expects `minimax-m3` | In `providers.py`, untouched by the `D-ENG-031` fix, so it is pre-existing. It bears directly on the **"445 passed"** figure quoted as evidence across the submission — which the 3.11 re-run was meant to confirm. The Bifrost gateway is the provider `AI_COLLABORATION.md` records as **"Never called"**, so this is dead-path logic; the count still has to be corrected or the test fixed |
 | 3 | **The golden set has no regression slice.** The four defects fixed on 2026-09-10 gained 41 unit tests and **zero evaluation cases**, so `make eval` cannot regress on the failures that reached the primary path | Roadmap item `N9`. If I fix anything under `KRIT-4102`, it must enter the golden set, or I will have repeated the same omission |
 | 4 | **Bus factor.** The engineer who built the system left the day before I arrived, with no overlap beyond a handover call | `docs/DECISIONS.md` (30 entries) and `docs/LIMITATIONS.md` are unusually complete, which is why this is a risk rather than a crisis. It is worth naming that the documentation is the reason the handover is survivable |
 | 5 | **`.env` is present in the repository root** (8.4 KB) and the assignment prohibits it in the archive | `make package` claims to refuse excluded paths and key-shaped strings. **Verify before zipping** — this is a submission-blocking item, not a nice-to-have |

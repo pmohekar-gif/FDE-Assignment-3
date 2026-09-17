@@ -19,6 +19,7 @@ from uuid import uuid4
 
 from .config import Settings
 from .db import Database
+from .repo_source import RepositoryCloneError, ensure_checkout, parse_repository_url
 from .repository import LocalRepositoryProvider, RepositoryError
 from .schemas import CodingSessionCreate
 from .security import SECRET_PATTERNS, normalise_untrusted
@@ -881,31 +882,64 @@ class GhPullRequestPublisher(PullRequestPublisher):
 
     @staticmethod
     def _run(args: list[str], cwd: Path, timeout: int = 60) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            args,
-            cwd=cwd,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=timeout,
-            env={
-                key: value
-                for key, value in os.environ.items()
-                if key in {"PATH", "HOME", "GH_TOKEN"}
-            },
-        )
+        """Run one argv without a shell, turning a spawn failure into a typed error.
+
+        `subprocess.run` raises `FileNotFoundError` when `cwd` does not exist, and that is a
+        different failure from the command itself exiting non-zero: the process never ran,
+        so there is no return code to inspect. Letting the bare `OSError` escape turned a
+        stale `REPOSITORY_ROOT` into an unhandled 500 on a read-only capability probe.
+        `RepositoryProvider._git` has always converted these; this method had not
+        (`D-ENG-031`).
+        """
+        try:
+            return subprocess.run(
+                args,
+                cwd=cwd,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=timeout,
+                env={
+                    key: value
+                    for key, value in os.environ.items()
+                    if key in {"PATH", "HOME", "GH_TOKEN"}
+                },
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise PullRequestPublishError(
+                f"could not execute `{args[0]}` in {cwd}: {type(exc).__name__}"
+            ) from exc
 
     def availability(self, workspace: Path) -> PublisherAvailability:
+        """Report whether publishing is possible. This never raises.
+
+        Every caller treats an unavailable publisher as an ordinary state with a reason
+        attached, so a probe that throws instead of answering breaks the contract and takes
+        the whole capabilities endpoint down with it.
+        """
         if not self.enabled:
             return PublisherAvailability(False, "PR publishing feature flag is disabled")
         if not shutil.which("gh"):
             return PublisherAvailability(False, "gh CLI is not installed")
-        auth = self._run(["gh", "auth", "status"], workspace)
-        if auth.returncode != 0:
-            return PublisherAvailability(False, "gh CLI is not authenticated")
-        remote = self._run(["git", "remote", "get-url", "origin"], workspace)
-        if remote.returncode != 0 or "github.com" not in remote.stdout.casefold():
-            return PublisherAvailability(False, "repository has no compatible GitHub origin")
+        # Checked before spawning anything: a missing or non-directory root is a
+        # configuration fault with a specific remedy, and naming it is more useful than the
+        # `FileNotFoundError` the spawn would otherwise raise.
+        if not workspace.is_dir():
+            return PublisherAvailability(
+                False,
+                f"configured repository root is not an existing directory: {workspace}. "
+                "Set REPOSITORY_ROOT to a real Git checkout, or run `make demo-repo` and "
+                "point it at the checkout that prints.",
+            )
+        try:
+            auth = self._run(["gh", "auth", "status"], workspace)
+            if auth.returncode != 0:
+                return PublisherAvailability(False, "gh CLI is not authenticated")
+            remote = self._run(["git", "remote", "get-url", "origin"], workspace)
+            if remote.returncode != 0 or "github.com" not in remote.stdout.casefold():
+                return PublisherAvailability(False, "repository has no compatible GitHub origin")
+        except PullRequestPublishError as exc:
+            return PublisherAvailability(False, str(exc))
         return PublisherAvailability(True, "available")
 
     @staticmethod
@@ -1083,8 +1117,57 @@ class CodingSessionService:
         )
         self._threads: dict[str, threading.Thread] = {}
         self._teardown_lock = threading.Lock()
+        self._providers: dict[str, LocalRepositoryProvider] = {
+            str(repository.root): repository
+        }
         self.host_pid = os.getpid()
         self.reconcile_orphaned_sessions()
+
+    def _provider_for(self, root: Path | str) -> LocalRepositoryProvider:
+        """The repository provider for one checkout, reusing the configured one by path.
+
+        A provider caches `is_git_repository()` and the ignore rules for its root, so
+        building a fresh one per call would re-shell-out to `git` on every timeline read.
+        Keying on the resolved path means the configured `REPOSITORY_ROOT` keeps the exact
+        instance it was constructed with.
+        """
+        resolved = Path(root).expanduser().resolve()
+        key = str(resolved)
+        provider = self._providers.get(key)
+        if provider is None:
+            provider = LocalRepositoryProvider(
+                resolved,
+                repository_id=self._repository_id(resolved),
+                max_file_bytes=self.settings.repository_max_file_bytes,
+                max_results=self.settings.repository_max_results,
+            )
+            self._providers[key] = provider
+        return provider
+
+    def _repository_id(self, root: Path) -> str:
+        """A stable identity for a cloned checkout: `owner/name` under the clone root.
+
+        The retrieval index is keyed by `repository_id`, so two different repositories
+        must not share one. Anything outside the managed clone root keeps the configured
+        provider's own id.
+        """
+        try:
+            relative = root.relative_to(self.settings.repository_clone_root)
+        except ValueError:
+            return self.repository.repository_id
+        return relative.as_posix() or self.repository.repository_id
+
+    def _session_provider(self, session: dict[str, Any]) -> LocalRepositoryProvider:
+        """The checkout a given session was created against, not whatever is configured now.
+
+        A session records its `repository_root` at creation. Reading it back is what makes
+        the worktree, the diff and the teardown act on the same repository the agent ran
+        in, even after another session for another repository has been started.
+        """
+        recorded = session.get("repository_root")
+        if not recorded:
+            return self.repository
+        return self._provider_for(str(recorded))
 
     @staticmethod
     def _now() -> str:
@@ -1159,6 +1242,17 @@ class CodingSessionService:
                 "root": str(self.repository.root),
                 "reason": "available" if git_ready else self._not_a_git_checkout(),
             },
+            "repository_selection": {
+                "enabled": self.settings.repository_clone_enabled,
+                "clone_root": str(self.settings.repository_clone_root),
+                "authenticated": bool(self.settings.github_token),
+                "hosts": ["github.com"],
+                "reason": (
+                    "a session may name its own GitHub repository"
+                    if self.settings.repository_clone_enabled
+                    else "disabled; sessions run against REPOSITORY_ROOT"
+                ),
+            },
             "verification": {
                 **self._discover_plan().to_dict(),
                 "discovery_enabled": self.settings.verification_discovery_enabled,
@@ -1181,18 +1275,60 @@ class CodingSessionService:
             },
         }
 
-    def _not_a_git_checkout(self) -> str:
+    def _not_a_git_checkout(self, repository: LocalRepositoryProvider | None = None) -> str:
         """The typed 503 for a non-Git root, with the root and the remedy in the message."""
         return (
             "coding sessions require the configured repository to be a Git checkout; "
-            f"{self.repository.root} is not one. Run `make demo-repo` and set "
+            f"{(repository or self.repository).root} is not one. Run `make demo-repo` and set "
             "REPOSITORY_ROOT to the demo checkout it prints, or point REPOSITORY_ROOT at "
             "an existing Git checkout."
         )
 
-    def _discover_plan(self) -> VerificationPlan:
+    def _resolve_repository(
+        self, repository_url: str | None
+    ) -> tuple[LocalRepositoryProvider, dict[str, Any] | None]:
+        """Decide which checkout this session runs against, cloning one if asked to.
+
+        No URL means the configured `REPOSITORY_ROOT`, which is the only behaviour that
+        existed before this and stays the default. A URL is validated, cloned or refreshed
+        under the managed clone root, and returned with the record of how it was obtained.
+
+        The feature flag is checked before the URL is parsed so that a deployment which
+        has not opted in gives one clear refusal rather than a confusing clone error.
+        """
+        if not repository_url or not repository_url.strip():
+            return self.repository, None
+        if not self.settings.repository_clone_enabled:
+            raise Forbidden(
+                "per-session repositories are disabled; set REPOSITORY_CLONE_ENABLED=true "
+                "to let a session name its own GitHub repository, or omit repository_url "
+                "to use the configured REPOSITORY_ROOT"
+            )
+        source = parse_repository_url(repository_url)
+        try:
+            checkout = ensure_checkout(
+                source,
+                self.settings.repository_clone_root,
+                token=self.settings.github_token,
+                timeout=self.settings.repository_clone_timeout_seconds,
+            )
+        except RepositoryCloneError:
+            raise
+        except OSError as exc:
+            raise RepositoryCloneError(
+                f"could not prepare a checkout for {source.slug}: {type(exc).__name__}"
+            ) from exc
+        return self._provider_for(checkout["root"]), checkout
+
+    def _discover_plan(self, root: Path | None = None) -> VerificationPlan:
+        """Discover the checks for one checkout. Defaults to the configured repository.
+
+        A session against a cloned repository must run *that* repository's checks -- its
+        `make test`, not the host project's -- so the root is a parameter rather than an
+        implicit read of `self.repository`.
+        """
         return discover_verification_plan(
-            self.repository.root,
+            self.repository.root if root is None else root,
             self.settings.verification_command,
             max_checks=self.settings.verification_max_checks,
             enabled=self.settings.verification_discovery_enabled,
@@ -1276,29 +1412,42 @@ class CodingSessionService:
         cleaned = re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")[:45]
         return cleaned or "work"
 
-    def _checked_out_branch(self) -> str | None:
+    def _checked_out_branch(self, repository: LocalRepositoryProvider | None = None) -> str | None:
         """The branch the target checkout has on HEAD, or None when HEAD is detached."""
         result = LocalRepositoryProvider._git(
-            ["symbolic-ref", "--quiet", "--short", "HEAD"], self.repository.root
+            ["symbolic-ref", "--quiet", "--short", "HEAD"],
+            (repository or self.repository).root,
         )
         name = result.stdout.strip()
         return name or None
 
-    def _branch_exists(self, branch: str) -> bool:
+    def _branch_exists(
+        self, branch: str, repository: LocalRepositoryProvider | None = None
+    ) -> bool:
         result = LocalRepositoryProvider._git(
-            ["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"], self.repository.root
+            ["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+            (repository or self.repository).root,
         )
         return result.returncode == 0 and bool(result.stdout.strip())
 
-    def _protected_branches(self) -> set[str]:
-        """Names no session may write to: the configured set plus the live checkout."""
+    def _protected_branches(
+        self, repository: LocalRepositoryProvider | None = None
+    ) -> set[str]:
+        """Names no session may write to: the configured set plus the live checkout.
+
+        The checked-out branch is read from the repository this session targets. Reading
+        it from the configured one instead would let a session against a cloned repository
+        write to that clone's live branch simply because the two use different names.
+        """
         protected = {name.casefold() for name in self.settings.protected_branches}
-        checked_out = self._checked_out_branch()
+        checked_out = self._checked_out_branch(repository)
         if checked_out:
             protected.add(checked_out.casefold())
         return protected
 
-    def _assert_branch_writable(self, branch: str) -> None:
+    def _assert_branch_writable(
+        self, branch: str, repository: LocalRepositoryProvider | None = None
+    ) -> None:
         """Refuse a session whose derived branch is protected.
 
         The previous guard compared the already-prefixed `agent/...` name against a bare
@@ -1307,7 +1456,7 @@ class CodingSessionService:
         the target repository currently has checked out.
         """
         leaf = branch.rsplit("/", 1)[-1]
-        protected = self._protected_branches()
+        protected = self._protected_branches(repository)
         for candidate in (branch, leaf):
             if candidate.casefold() in protected:
                 raise Forbidden(
@@ -1377,7 +1526,9 @@ class CodingSessionService:
             restricted.append(glob)
         return list(dict.fromkeys(restricted))
 
-    def _scope_preflight(self, allowed_paths: Sequence[str]) -> dict[str, Any]:
+    def _scope_preflight(
+        self, allowed_paths: Sequence[str], repository: LocalRepositoryProvider | None = None
+    ) -> dict[str, Any]:
         """Whether the approved scope actually exists in the configured checkout.
 
         A warrant's scope comes from the issue's declared surfaces, which are only as
@@ -1391,7 +1542,7 @@ class CodingSessionService:
         concrete, glob-free pattern -- when its parent directory exists, since creating
         a new file inside an existing directory is legitimate scoped work.
         """
-        root = self.repository.root
+        root = (repository or self.repository).root
         listed = LocalRepositoryProvider._git(["ls-files", "-z"], root, 30)
         tracked = [item for item in listed.stdout.split("\0") if item]
         resolved: dict[str, list[str]] = {}
@@ -1418,9 +1569,11 @@ class CodingSessionService:
             "satisfied": bool(resolved or creatable),
         }
 
-    def _assert_scope_exists(self, allowed_paths: Sequence[str]) -> dict[str, Any]:
+    def _assert_scope_exists(
+        self, allowed_paths: Sequence[str], repository: LocalRepositoryProvider | None = None
+    ) -> dict[str, Any]:
         """Refuse a session whose whole approved scope is absent from the checkout."""
-        preflight = self._scope_preflight(allowed_paths)
+        preflight = self._scope_preflight(allowed_paths, repository)
         if preflight["satisfied"]:
             return preflight
         missing = ", ".join(preflight["unresolved"][:6]) or "(empty scope)"
@@ -1481,13 +1634,19 @@ class CodingSessionService:
             expires_at=row["expires_at"] if row else None,
         )
 
-    def _derive_branch(self, issue_key: str, title: str, session_id: str) -> str:
+    def _derive_branch(
+        self,
+        issue_key: str,
+        title: str,
+        session_id: str,
+        repository: LocalRepositoryProvider | None = None,
+    ) -> str:
         """`agent/<issue-key>-<title-slug>`, uniquified only if that ref already exists."""
         branch = f"agent/{self._slug(issue_key)}-{self._slug(title)}"
-        self._assert_branch_writable(branch)
-        if self._branch_exists(branch):
+        self._assert_branch_writable(branch, repository)
+        if self._branch_exists(branch, repository):
             branch = f"{branch}-{session_id[-8:]}"
-            self._assert_branch_writable(branch)
+            self._assert_branch_writable(branch, repository)
         return branch
 
     def start(
@@ -1515,8 +1674,9 @@ class CodingSessionService:
         available, reason = runner.is_available()
         if not available:
             raise CodingAgentError(f"external coding agent unavailable: {reason}")
-        if not self.repository.is_git_repository():
-            raise RepositoryError(self._not_a_git_checkout())
+        repository, checkout = self._resolve_repository(request.repository_url)
+        if not repository.is_git_repository():
+            raise RepositoryError(self._not_a_git_checkout(repository))
         existing = self.db.one(
             "SELECT id FROM coding_sessions WHERE warrant_id=? "
             "AND state NOT IN ('COMPLETED','FAILED','CANCELLED')",
@@ -1524,10 +1684,10 @@ class CodingSessionService:
         )
         if existing:
             raise Conflict("this warrant already has an active coding session")
-        base_revision = self.repository.get_current_revision()
+        base_revision = repository.get_current_revision()
         resolved_base = LocalRepositoryProvider._git(
             ["rev-parse", "--verify", "--quiet", f"{base_revision}^{{commit}}"],
-            self.repository.root,
+            repository.root,
         )
         if resolved_base.returncode != 0 or not resolved_base.stdout.strip():
             raise RepositoryError(
@@ -1537,15 +1697,17 @@ class CodingSessionService:
         # Refused before any worktree exists: a scope the checkout does not contain can
         # never yield a reviewable diff, and failing at launch names both the scope and
         # the repository instead of surfacing as an unexplained agent failure later.
-        preflight = self._assert_scope_exists(warrant["scope_surfaces"])
+        preflight = self._assert_scope_exists(warrant["scope_surfaces"], repository)
         session_id = self._id("ses")
         issue_key = detail["issue"]["external_key"]
-        branch = self._derive_branch(issue_key, str(detail["issue"]["title"]), session_id)
-        plan = self._discover_plan()
+        branch = self._derive_branch(
+            issue_key, str(detail["issue"]["title"]), session_id, repository
+        )
+        plan = self._discover_plan(repository.root)
         if not plan.checks:
             raise CodingAgentError(
                 "no runnable verification check could be discovered or configured for "
-                f"{self.repository.root}"
+                f"{repository.root}"
             )
         worktree = (self.settings.coding_session_root / session_id).resolve()
         try:
@@ -1561,7 +1723,7 @@ class CodingSessionService:
             "risk": detail["risk_assessment"],
             "approval": self._approval_snapshot(detail, warrant, workspace_id),
             "warrant": {key: value for key, value in warrant.items() if key != "demo_nonce"},
-            "repository_id": self.repository.repository_id,
+            "repository_id": repository.repository_id,
             "base_revision": base_revision,
             "allowed_paths": warrant["scope_surfaces"],
             "restricted_paths": self._restricted_paths(workspace_id, warrant["scope_surfaces"]),
@@ -1592,7 +1754,7 @@ class CodingSessionService:
                 trusted_source or request.source,
                 provider_name,
                 "QUEUED",
-                str(self.repository.root),
+                str(repository.root),
                 base_revision,
                 branch,
                 str(worktree),
@@ -1619,6 +1781,23 @@ class CodingSessionService:
             branch=branch,
             host_pid=self.host_pid,
         )
+        if checkout is not None:
+            # The repository a session ran against is part of its record, not a detail of
+            # the server's configuration at the time. Recording how the checkout was
+            # obtained -- cloned now, or reused and possibly stale -- is what lets a
+            # reviewer tell whether the diff was taken against current `main`.
+            self._event(
+                session_id,
+                "repository_resolved",
+                slug=checkout["slug"],
+                clone_url=checkout["clone_url"],
+                root=str(checkout["root"]),
+                cloned=checkout["cloned"],
+                updated=checkout["updated"],
+                update_reason=checkout["update_reason"],
+                default_branch=checkout["branch"],
+                authenticated=checkout["authenticated"],
+            )
         self._event(
             session_id,
             "scope_preflight",
@@ -1651,7 +1830,7 @@ class CodingSessionService:
                 str(worktree),
                 session["base_revision"],
             ],
-            self.repository.root,
+            self._session_provider(session).root,
             60,
         )
         if result.returncode != 0:
@@ -1750,7 +1929,9 @@ class CodingSessionService:
                     agent_config_locations=agent_config_locations(),
                 )
             self._event(session_id, "agent_completed", duration_ms=result.duration_ms)
-            diff = self._create_diff(session_id, worktree, session["base_revision"])
+            diff = self._create_diff(
+                session_id, worktree, session["base_revision"], self._session_provider(session)
+            )
             if not diff["changed_files"]:
                 raise CodingAgentError(
                     self._diagnose_empty_diff(session_id, worktree, contract, blocked)
@@ -2134,9 +2315,13 @@ class CodingSessionService:
         if isolated_home.exists():
             shutil.rmtree(isolated_home, ignore_errors=True)
         removed = True
+        # Git refuses to remove a worktree from a repository that does not own it, so the
+        # teardown has to run against the checkout this session was created from rather
+        # than whichever one is configured now.
+        owner_root = self._session_provider(row).root
         if worktree.exists():
             result = LocalRepositoryProvider._git(
-                ["worktree", "remove", "--force", str(worktree)], self.repository.root, 60
+                ["worktree", "remove", "--force", str(worktree)], owner_root, 60
             )
             if result.returncode != 0 and worktree.exists():
                 inside = str(worktree.resolve()).startswith(
@@ -2151,7 +2336,7 @@ class CodingSessionService:
         branch_deleted = False
         if removed and row.get("branch_name") and not published:
             deleted = LocalRepositoryProvider._git(
-                ["branch", "-D", str(row["branch_name"])], self.repository.root, 30
+                ["branch", "-D", str(row["branch_name"])], owner_root, 30
             )
             branch_deleted = deleted.returncode == 0
         if removed:
@@ -2182,22 +2367,31 @@ class CodingSessionService:
         with self._teardown_lock:
             try:
                 rows = self.db.all(
-                    "SELECT id,worktree_path,branch_name FROM coding_sessions "
+                    "SELECT id,worktree_path,branch_name,repository_root FROM coding_sessions "
                     f"WHERE state IN ({placeholders}) AND worktree_removed_at IS NULL "
-                    "AND repository_root=? "
                     "ORDER BY COALESCE(finished_at,created_at) DESC, id DESC",
-                    (*sorted(TERMINAL_STATES), str(self.repository.root)),
+                    tuple(sorted(TERMINAL_STATES)),
                 )
             except Exception:
                 return 0
-            for row in rows[keep:]:
-                try:
-                    if self._teardown_session(row):
-                        removed += 1
-                except (RepositoryError, OSError):
-                    continue
-            if removed:
-                LocalRepositoryProvider._git(["worktree", "prune"], self.repository.root, 30)
+            # Retention is counted per repository. One shared window across every
+            # repository would mean starting three sessions against a new clone silently
+            # reaped the reviewable worktrees of an unrelated one.
+            by_root: dict[str, list[dict[str, Any]]] = {}
+            for row in rows:
+                by_root.setdefault(str(row["repository_root"] or ""), []).append(row)
+            pruned: set[str] = set()
+            for root, group in by_root.items():
+                for row in group[keep:]:
+                    try:
+                        if self._teardown_session(row):
+                            removed += 1
+                            pruned.add(root)
+                    except (RepositoryError, OSError):
+                        continue
+            for root in pruned:
+                if root:
+                    LocalRepositoryProvider._git(["worktree", "prune"], Path(root), 30)
         return removed
 
     def _signal_recorded_process(self, session: dict[str, Any]) -> bool:
@@ -2211,7 +2405,13 @@ class CodingSessionService:
             return False
         return True
 
-    def _create_diff(self, session_id: str, worktree: Path, base: str) -> dict[str, Any]:
+    def _create_diff(
+        self,
+        session_id: str,
+        worktree: Path,
+        base: str,
+        repository: LocalRepositoryProvider | None = None,
+    ) -> dict[str, Any]:
         # The revision the diff was actually taken against is part of the artifact, not a
         # side effect of publishing: a reviewer must be able to reproduce the diff even when
         # no PR is ever opened.
@@ -2222,7 +2422,7 @@ class CodingSessionService:
                 f"could not resolve the coding-session head revision: {_git_detail(head)}"
             )
         LocalRepositoryProvider._git(["add", "-N", "--", "."], worktree, 30)
-        unified = self.repository.get_diff(base, worktree)
+        unified = (repository or self.repository).get_diff(base, worktree)
         if len(unified.encode()) > self.settings.coding_agent_max_output_bytes:
             raise CodingAgentError("coding-session diff exceeds the configured artifact limit")
         redaction = redact_diff_content(unified)

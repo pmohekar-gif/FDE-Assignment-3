@@ -410,6 +410,11 @@ class CodingSessionCreate(BaseModel):
     provider: Literal["mock", "codex"] | None = None
     requested_outcome: str | None = Field(default=None, max_length=4000)
     source: Literal["ui", "api", "slack"] = "api"
+    # Which repository this session runs against. Omitted -> the server's configured
+    # REPOSITORY_ROOT, which is the only behaviour that existed before. Supplying one
+    # requires REPOSITORY_CLONE_ENABLED; the value is parsed and validated in
+    # `repo_source.parse_repository_url` rather than trusted as a path.
+    repository_url: str | None = Field(default=None, max_length=500)
 
 
 class CodingSessionCancel(BaseModel):

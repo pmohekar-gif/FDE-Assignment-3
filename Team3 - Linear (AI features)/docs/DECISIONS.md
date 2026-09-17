@@ -745,3 +745,199 @@ Node project's `node_modules` shadowing); a worktree that itself vendors a confl
 non-Python stack, or a worktree layout neither flat nor `src/`-rooted, at which point
 `_verification_environment` should grow stack-aware root detection instead of the current
 two fixed candidates.
+
+## D-ENG-031 — A capability probe reports a broken root; it never raises
+
+**Date:** 2026-09-17 · **Found by:** operating the product — `make dev`, then opening a
+delegation and letting the UI read coding-session capabilities.
+
+**Symptom:** `GET /v1/coding-sessions/capabilities` returned an unhandled **500**, with
+`FileNotFoundError: [Errno 2] No such file or directory` naming a `REPOSITORY_ROOT` that no
+longer existed because the checkout had been moved. Two further symptoms followed from that
+one fault and initially looked like separate bugs: the delegation page's provider dropdown
+stayed empty (its populate step runs only after a successful capability read), and the next
+`POST /v1/coding-sessions` returned **422** because the empty `<select>` submitted
+`provider: ""`, which satisfies neither `Literal["mock","codex"]` nor `None`.
+
+**Root cause:** `GhPullRequestPublisher._run` passed `cwd=workspace` straight to
+`subprocess.run` with no guard. `subprocess.run` raises `FileNotFoundError` when `cwd` does
+not exist — the process never starts, so there is no return code to inspect — and nothing
+caught it. `availability()` then propagated it out of a read-only probe.
+
+The same class was already handled correctly one module away: `RepositoryProvider._git`
+wraps its `subprocess.run` in `except (OSError, subprocess.TimeoutExpired)` and re-raises a
+typed `RepositoryError`, which `main.py` maps to a typed response. The publisher was written
+without the protection its sibling already had.
+
+**Options considered:** (a) validate `REPOSITORY_ROOT` at startup and refuse to boot —
+rejected, because the demo must survive a mis-set optional path and a config fault should
+not make the whole service unstartable; (b) catch the error at the endpoint — rejected, it
+treats the symptom and leaves every other caller of `_run` exposed; (c) make `_run` convert
+spawn failures into a typed `PullRequestPublishError` and make `availability()` honour its
+own contract by returning `PublisherAvailability(False, reason)`.
+
+**Chosen approach:** (c), plus an explicit `workspace.is_dir()` check before anything is
+spawned, so a configuration fault is named as one and carries its remedy
+(`REPOSITORY_ROOT`, `make demo-repo`) instead of surfacing as a stack trace. `availability()`
+is documented as never raising, because every caller —`capabilities()`,
+`create_draft_pull_request()`, `get_pull_request()` — already treats unavailability as an
+ordinary state with a reason attached.
+
+**Why:** a probe whose entire purpose is to answer "can this be used, and if not why not"
+must answer rather than throw. This is the product's own fail-safe rule applied to itself:
+degraded inputs reduce capability and say so, they do not take a surface down. An
+accountability tool that 500s while reporting its own readiness is making the argument
+against itself.
+
+**Tests:** three regression cases in `tests/unit/test_coding_runner.py` —
+`test_availability_reports_a_missing_repository_root_instead_of_raising`,
+`test_availability_reports_a_spawn_failure_instead_of_raising`,
+`test_run_converts_spawn_failure_into_a_typed_publish_error`. All three were confirmed
+failing against a restored pre-fix copy of the two methods and passing after, not merely
+passing now.
+
+**Also changed:** `templates/delegation.html` no longer submits an empty provider. It raises
+a legible error naming the failed capability read, so a downstream 422 can never again
+misattribute a capability fault to the request. This is defence in depth; the 500 was the
+bug.
+
+**Trade-offs:** `availability()` now swallows a genuine spawn fault into a reason string
+rather than a stack trace, so a systemic `gh` problem reads as "unavailable" in the UI. The
+reason text carries the exception class name to keep it diagnosable, and the underlying
+exception is still chained for anything that logs it.
+
+**Revisit trigger:** a second configuration path that can be set to a non-existent directory
+and is dereferenced without a guard — at which point the `is_dir()` check belongs in
+settings loading as a validated `Path` type, rather than being repeated at each call site.
+
+## D-ENG-032 — A session names its repository; the server clones it, never trusts it
+
+**Date:** 2026-09-17
+**Found by:** product question — pull-request publishing worked for one repository and no
+other, because `REPOSITORY_ROOT` names a single checkout and nothing else was reachable.
+
+**Symptom:** the deployment was bound to exactly one repository. Working on a second meant
+editing `.env` and restarting. The `coding_sessions.repository_root` column had been written
+per session since the schema was created, but every row held the same value, and the
+execution path read `self.repository` rather than the column — so the persistence was real
+and the capability behind it was not.
+
+**Root cause:** `CodingSessionService` held one `LocalRepositoryProvider` built at startup
+from `settings.repository_root`, and eleven call sites dereferenced it directly, including
+the worktree creation, the diff and the teardown.
+
+**Options considered:** (a) accept a filesystem path on the request — rejected: it makes
+an API caller able to name any directory the server process can read, which is a path
+traversal with extra steps; (b) accept a URL and clone per *session* into a throwaway
+directory — rejected: a fresh clone per session pays full network cost every time and
+loses the branches a reviewer may still need; (c) accept a validated GitHub URL, clone once
+per repository into a managed root keyed by `owner/name`, and reuse it — chosen.
+
+**Chosen approach:** a new `repo_source.py` owns the untrusted-input half: it parses the
+three forms people actually paste, refuses any non-GitHub host, refuses embedded
+credentials, validates owner and repository against GitHub's own character class, refuses a
+leading `-` so a name can never be read by `git` as a flag, and re-checks the resolved path
+against the clone root. `CodingSessionService` gained `_provider_for` and `_session_provider`,
+and the execution path now reads the session's own recorded root instead of the configured
+one. The feature is off unless `REPOSITORY_CLONE_ENABLED=true`.
+
+**Why:** the repository a session ran in is part of the session's record, not a property of
+the server's configuration at the time someone reads the record back. Threading the stored
+root through worktree creation, diffing and teardown is what makes that true; without it, a
+second repository would have produced worktree removals issued against the wrong checkout.
+
+**Security:** the token never enters argv. `ps` is world-readable, so a credential
+interpolated into a clone URL is a credential published to every local user; `git` is given
+a username in the URL and answers the password prompt through `GIT_ASKPASS`, whose helper
+reads it from its own environment. `GIT_TERMINAL_PROMPT=0` is set so a private repository
+with no usable credential fails fast instead of blocking a request thread on a prompt no
+one will answer. Git's own error text is scrubbed of the token before it reaches a message.
+
+**Refresh semantics:** an existing checkout is fetched and fast-forwarded, never reset. A
+reset would be the only destructive operation in the feature, and its single beneficiary
+would be freshness — while its cost would be a session branch whose pull request is still
+open. A fetch that fails degrades to the existing revision and says so on the timeline,
+because a stale checkout is still a working base to branch from.
+
+**Tests:** 26 unit cases in `tests/unit/test_repo_source.py` covering the parser, path
+containment and credential handling; 9 integration cases in
+`tests/integration/test_session_repository_selection.py` covering the wiring. Eight of the
+nine were confirmed failing against a restored pre-change copy of the resolution call and
+passing after — not merely passing now. The ninth asserts the unchanged default and
+correctly passes both ways.
+
+**Also changed:** `main.py` maps `RepositoryCloneError` to 400 rather than inheriting
+`RepositoryError`'s 503, because every case is fixed by the caller naming something
+different, and a 503 would report the *configured* checkout's health for a fault in the
+request. `delegation.html` shows the repository field only when the server says the feature
+is enabled. Worktree retention is now counted per repository; one shared window would have
+meant three sessions against a new clone silently reaping another repository's reviewable
+worktrees.
+
+**Trade-offs:** Code Intelligence still indexes `REPOSITORY_ROOT` only, so code Q&A and a
+cloned session can be looking at different repositories — recorded as `PB-002`. Clones are
+never garbage-collected. There is no per-user GitHub identity and no repository picker: the
+caller must already know the `owner/name`, and reachability is whatever one configured
+token can read — recorded as `PB-002a`.
+
+**Revisit trigger:** a session against a cloned repository needing code Q&A over that same
+repository, or the clone root growing past what the host can hold — whichever comes first.
+
+## D-ENG-033 — Linear's `orderBy` is an enum; the 400 that said so was thrown away
+
+**Date:** 2026-09-17
+**Found by:** "Check for Linear updates" in the UI, against a live `LINEAR_MODE=live`
+workspace.
+
+**Symptom:** every live update check failed with `Linear API request failed:
+HTTPStatusError: Client error '400 Bad Request' for url
+'https://api.linear.app/graphql'`, followed by a link to MDN's page about status 400.
+
+**Root cause:** two faults, one hiding the other.
+
+1. `_QUERY_UPDATED_ISSUES` sent `orderBy: {field: updatedAt, direction: DESC}`. That is
+   Relay-style ordering syntax; Linear's connections take `orderBy` as a
+   `PaginationOrderBy` *enum*, documented as `issues(orderBy: updatedAt)`
+   (https://linear.app/developers/pagination). The object literal fails schema validation
+   before the resolver runs, which is what produced the 400. Linear has no `direction`
+   argument at all — `orderBy: updatedAt` already means most-recently-updated first.
+2. Both live call sites caught `httpx.HTTPError` and formatted only `str(exc)`.
+   `HTTPStatusError`'s string form is a status code and a documentation link. Linear's
+   actual explanation was in the response *body*, which `raise_for_status()` does not put
+   in the message and the handler never read — so the operator got a generic 400 with no
+   indication of which part of the query was wrong.
+
+**Why the tests did not catch it:** `test_fetch_updated_issues_builds_bounded_filtered_graphql_request`
+stubs `httpx.post` and asserts the *variables*. The query string itself was never compared
+against the schema it is sent to, so a query that no Linear endpoint would accept passed a
+green suite. A stubbed transport can prove the request we meant to build; it cannot prove
+the request is valid.
+
+**Options considered:** (a) drop ordering entirely and sort client-side — rejected: the
+`first: $limit` window would then take an arbitrary slice before the sort, so a poll could
+miss recent updates; (b) keep the object and add a `direction` field Linear does not have
+— not a real option, listed because it is the shape the original code assumed; (c) use the
+documented enum — chosen.
+
+**Chosen approach:** `orderBy: updatedAt`, plus a shared `_request_failure` helper that
+appends the response body to the raised message, truncated at 500 characters so an HTML
+error page cannot flood a UI toast or an audit record. Transport errors carry no response
+and keep the terse form.
+
+**Tests:** three new cases in `tests/unit/test_linear_adapter_updates.py` —
+`test_updated_issues_order_by_is_the_bare_enum_linear_documents` (asserts the query text,
+not just the variables), `test_a_failed_linear_call_reports_what_linear_actually_said`,
+`test_a_long_error_body_is_truncated_rather_than_flooding_the_surface`. All three confirmed
+failing against a restored pre-fix copy of the adapter and passing after. A fourth,
+`test_a_transport_failure_with_no_response_keeps_the_terse_message`, passes both ways by
+design and guards the regression in the other direction.
+
+**Trade-offs:** error messages now carry third-party response text into a surface a user
+reads. Linear's GraphQL errors do not echo the request, so the API key cannot appear in
+them; the truncation cap bounds the blast radius of an unexpected body. If another adapter
+adopts this helper against a service that *does* echo request headers, the body needs
+scrubbing first.
+
+**Revisit trigger:** a second Linear query gaining ordering or pagination arguments — at
+which point the query strings deserve validation against a checked-in copy of the schema,
+rather than against a stubbed transport that accepts anything.

@@ -4,7 +4,7 @@
 **Team 3 · Linear (AI features) · Product: Warrant**
 **Last revised:** 2026-09-11 · **v3** — adds three findings from the Week 1–2 engineering sessions that went against claims I had made: the injection claim was too absolute, the golden set has no regression slice, and the latency finding was reported without its budget.
 
-> **Handover, 2026-09-11.** Engineering accountability passed to **Kriti Meheta** on this date. This file is retained unchanged as the record of the work described in it; nothing here is attributable to her, and nothing she does from today is attributable to me. Two changes I shipped on 2026-09-10 — ticket-creation-to-coding-session routing with a notification trigger, and a rerun control in the delegation view — went to her for validation **unvalidated by anyone but me**, along with the observability logging task I had planned next. See `ROLE_EVIDENCE_Kriti_Meheta.md`.
+> **Handover, 2026-09-11.** Engineering accountability passed to **Kriti Mehta** on this date. This file is retained unchanged as the record of the work described in it; nothing here is attributable to her, and nothing she does from today is attributable to me. Two changes I shipped on 2026-09-10 — ticket-creation-to-coding-session routing with a notification trigger, and a rerun control in the delegation view — went to her for validation **unvalidated by anyone but me**, along with the observability logging task I had planned next. See `ROLE_EVIDENCE_Kriti_Mehta.md`.
 
 ---
 

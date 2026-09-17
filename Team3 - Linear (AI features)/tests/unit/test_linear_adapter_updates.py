@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from warrant.adapters.linear import LinearAdapter
+import httpx
+import pytest
+
+from warrant.adapters.linear import AdapterConfigError, LinearAdapter
 from warrant.config import Settings
 
 
@@ -90,6 +93,92 @@ def test_fetch_updated_issues_parses_empty_connection(monkeypatch):
     monkeypatch.setattr("warrant.adapters.linear.httpx.post", post)
 
     assert LinearAdapter(settings()).fetch_updated_issues(limit=5) == []
+
+
+def test_updated_issues_order_by_is_the_bare_enum_linear_documents(monkeypatch):
+    """`orderBy` on a Linear connection is a `PaginationOrderBy` enum, not an object.
+
+    The query previously sent `orderBy: {field: updatedAt, direction: DESC}` -- Relay-style
+    syntax that Linear's schema does not accept -- so every live "Check for Linear updates"
+    failed schema validation with a 400 before it reached the resolver. The existing
+    coverage asserted the *variables* and stubbed the transport, so nothing ever compared
+    the query text against the schema it is sent to.
+
+    Source: https://linear.app/developers/pagination -- `issues(orderBy: updatedAt)`.
+    """
+    sent: list[str] = []
+
+    def post(url, *, headers, json, timeout):
+        sent.append(json["query"])
+        return _Response({"data": {"issues": {"nodes": []}}})
+
+    monkeypatch.setattr("warrant.adapters.linear.httpx.post", post)
+
+    LinearAdapter(settings()).fetch_updated_issues(limit=5)
+
+    query = sent[0]
+    assert "orderBy: updatedAt" in query
+    assert "field:" not in query, "an object literal here is a 400 from Linear"
+    assert "direction:" not in query, "Linear's orderBy enum carries no direction"
+
+
+def test_a_failed_linear_call_reports_what_linear_actually_said(monkeypatch):
+    """A 400 whose body is discarded leaves the operator with a status code and an MDN link."""
+
+    class _Failing:
+        status_code = 400
+        text = (
+            '{"errors":[{"message":"Expected value of type PaginationOrderBy, '
+            'found {field: updatedAt}."}]}'
+        )
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError(
+                "Client error '400 Bad Request'", request=None, response=self
+            )
+
+        def json(self):  # pragma: no cover - never reached once raise_for_status fires
+            return {}
+
+    monkeypatch.setattr(
+        "warrant.adapters.linear.httpx.post", lambda *a, **k: _Failing()
+    )
+
+    with pytest.raises(AdapterConfigError) as caught:
+        LinearAdapter(settings()).fetch_updated_issues(limit=5)
+
+    message = str(caught.value)
+    assert "PaginationOrderBy" in message, "the server's own explanation must survive"
+    assert "HTTPStatusError" in message
+
+
+def test_a_long_error_body_is_truncated_rather_than_flooding_the_surface(monkeypatch):
+    class _Failing:
+        text = "x" * 5000
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("boom", request=None, response=self)
+
+        def json(self):  # pragma: no cover
+            return {}
+
+    monkeypatch.setattr("warrant.adapters.linear.httpx.post", lambda *a, **k: _Failing())
+
+    with pytest.raises(AdapterConfigError) as caught:
+        LinearAdapter(settings()).fetch_updated_issues(limit=5)
+
+    assert "(truncated)" in str(caught.value)
+    assert len(str(caught.value)) < 800
+
+
+def test_a_transport_failure_with_no_response_keeps_the_terse_message(monkeypatch):
+    def post(*args, **kwargs):
+        raise httpx.ConnectError("name resolution failed")
+
+    monkeypatch.setattr("warrant.adapters.linear.httpx.post", post)
+
+    with pytest.raises(AdapterConfigError, match="ConnectError"):
+        LinearAdapter(settings()).fetch_updated_issues(limit=5)
 
 
 def _issue_datetime(value: str):
